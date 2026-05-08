@@ -19,8 +19,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@ConditionalOnProperty(name = "spring.ai.anthropic.api-key", havingValue = AnthropticClaudeCodeConfiguration.CLAUDE_CODE_OATH_TOKEN_PLACEHOLDER)
-public class AnthropticClaudeCodeConfiguration {
+@ConditionalOnProperty(name = "spring.ai.anthropic.api-key", havingValue = AnthropicClaudeCodeConfiguration.CLAUDE_CODE_OATH_TOKEN_PLACEHOLDER)
+public class AnthropicClaudeCodeConfiguration {
 
     public static final String CLAUDE_CODE_OATH_TOKEN_PLACEHOLDER = "<claude-code-bearer-token>";
 
