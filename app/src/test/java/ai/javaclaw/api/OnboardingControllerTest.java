@@ -1,6 +1,7 @@
 package ai.javaclaw.api;
 
 import ai.javaclaw.configuration.ConfigurationManager;
+import ai.javaclaw.onboarding.AgentOnboardingProviders;
 import ai.javaclaw.onboarding.api.OnboardingController;
 import ai.javaclaw.onboarding.steps.S1_WelcomeStep;
 import ai.javaclaw.onboarding.steps.S2_ProviderStep;
@@ -19,9 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(value = OnboardingController.class, properties = {
-        "agent.workspace=file:../workspace"
-})
+@WebMvcTest(value = OnboardingController.class, properties = {"agent.workspace=file:../workspace"})
 @Import({S1_WelcomeStep.class, S2_ProviderStep.class, S3_CredentialsStep.class, S4_AgentMdStep.class, S6_CompleteStep.class})
 class OnboardingControllerTest {
 
@@ -30,6 +29,9 @@ class OnboardingControllerTest {
 
     @MockitoBean
     private ConfigurationManager configurationManager;
+
+    @MockitoBean
+    private AgentOnboardingProviders agentOnboardingProviders;
 
     @Test
     void providerSubmissionWithoutSelectionShowsFlashError() throws Exception {

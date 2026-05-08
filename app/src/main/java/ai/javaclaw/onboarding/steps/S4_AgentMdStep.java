@@ -42,7 +42,6 @@ public class S4_AgentMdStep implements OnboardingProvider {
         if (agentContent == null) {
             agentContent = readFile(AGENT_MD);
             if (agentContent == null) agentContent = readFile("AGENT.md");
-            if (agentContent == null) agentContent = readFile("AGENT-ORIGINAL.md");
             if (agentContent == null) agentContent = "";
         }
         model.put("agentContent", agentContent);

@@ -1,7 +1,8 @@
 package ai.javaclaw.onboarding.steps;
 
-import ai.javaclaw.SupportedProvider;
 import ai.javaclaw.configuration.ConfigurationManager;
+import ai.javaclaw.onboarding.AgentOnboardingProvider;
+import ai.javaclaw.onboarding.AgentOnboardingProviders;
 import ai.javaclaw.onboarding.OnboardingProvider;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
@@ -19,9 +20,11 @@ public class S2_ProviderStep implements OnboardingProvider {
     static final String SESSION_MODEL = "onboarding.model";
     static final String SESSION_API_KEY = "onboarding.apiKey";
 
+    private final AgentOnboardingProviders agentOnboardingProviders;
     private final Environment env;
 
-    public S2_ProviderStep(Environment env) {
+    public S2_ProviderStep(AgentOnboardingProviders agentOnboardingProviders, Environment env) {
+        this.agentOnboardingProviders = agentOnboardingProviders;
         this.env = env;
     }
 
@@ -36,7 +39,7 @@ public class S2_ProviderStep implements OnboardingProvider {
 
     @Override
     public void prepareModel(Map<String, Object> session, Map<String, Object> model) {
-        model.put("providers", SupportedProvider.supportedAgents());
+        model.put("providers", agentOnboardingProviders.getAll());
         model.put("selectedProvider", session.getOrDefault(SESSION_PROVIDER, env.getProperty("spring.ai.model.chat", "")));
     }
 
@@ -46,17 +49,14 @@ public class S2_ProviderStep implements OnboardingProvider {
         if (providerId == null || providerId.isBlank()) {
             return "Choose one of the supported providers to continue.";
         }
-        SupportedProvider provider = SupportedProvider.from(providerId).orElse(null);
-        if (provider == null) {
-            return "Choose one of the supported providers to continue.";
-        }
+        AgentOnboardingProvider agentOnboardingProvider = agentOnboardingProviders.getById(providerId);
         // Clear downstream session state when provider changes
         String currentProvider = (String) session.get(SESSION_PROVIDER);
-        if (!provider.id().equals(currentProvider)) {
+        if (!agentOnboardingProvider.getId().equals(currentProvider)) {
             session.remove(SESSION_MODEL);
             session.remove(SESSION_API_KEY);
         }
-        session.put(SESSION_PROVIDER, provider.id());
+        session.put(SESSION_PROVIDER, agentOnboardingProvider.getId());
         return null;
     }
 
@@ -66,13 +66,11 @@ public class S2_ProviderStep implements OnboardingProvider {
         String model = (String) session.get(SESSION_MODEL);
         String apiKey = (String) session.getOrDefault(SESSION_API_KEY, "");
 
-        SupportedProvider provider = SupportedProvider.from(providerId).orElse(null);
-        if (provider == null) return;
-
+        AgentOnboardingProvider agentOnboardingProvider = agentOnboardingProviders.getById(providerId);
         Map<String, Object> props = new LinkedHashMap<>();
-        provider.saveProperty(props, "chat.options.model", model);
-        provider.saveProperty(props, "api-key", apiKey);
-        props.put("spring.ai.model.chat", provider.id());
+        agentOnboardingProvider.saveProperty(props, "chat.options.model", model);
+        agentOnboardingProvider.saveProperty(props, "api-key", apiKey);
+        props.put("spring.ai.model.chat", agentOnboardingProvider.getId().replace(".", "-"));
         configurationManager.updateProperties(props);
     }
 }

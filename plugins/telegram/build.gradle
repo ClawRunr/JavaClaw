@@ -8,6 +8,9 @@ dependencies {
     implementation 'org.telegram:telegrambots-springboot-longpolling-starter:9.4.0'
     implementation 'org.telegram:telegrambots-client:9.4.0'
 
+    implementation 'org.commonmark:commonmark:0.21.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-strikethrough:0.21.0'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

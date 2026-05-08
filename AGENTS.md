@@ -18,6 +18,7 @@ This project represents a Java version of OpenClaw. OpenClaw is an open-source, 
 - **Agent Framework:** Spring AI Agent Utils (Anthropic agent framework)
 - **Database:** H2 (embedded)
 - **Templating:** Pebble 4.1.1
+- **Discord:** JDA 6.1.1 (Gateway / WebSocket)
 - **Telegram:** Telegrambots 9.4.0 (long-polling)
 
 ---
@@ -26,13 +27,23 @@ This project represents a Java version of OpenClaw. OpenClaw is an open-source, 
 
 ```
 root
-├── base/           ← Core: agent, tasks, tools, channels, config
-├── app/            ← Spring Boot entry point, onboarding UI, web routes, chat channel
-└── channels/
-    └── telegram/   ← Telegram long-poll channel
+├── base/               ← Core: agent, tasks, tools, channels, config
+├── app/                ← Spring Boot entry point, onboarding UI, web routes, chat channel
+├── providers/
+│   ├── anthropic/      ← Anthropic (Claude) provider + Claude Code OAuth support
+│   ├── openai/         ← OpenAI (GPT) provider
+│   ├── ollama/         ← Ollama local provider (no API key required)
+│   └── google/         ← Google Gen AI (Gemini) provider
+└── plugins/
+    ├── telegram/       ← Telegram long-poll channel
+    ├── brave/          ← Brave web search tool
+    ├── discord/        ← Discord Gateway channel
+    └── playwright/     ← Playwright browser tool
 ```
 
-`app` depends on `base` + `channels:telegram`. `ChatChannel` lives inside `app/`.
+`app` depends on `base` + all `providers/` + all `plugins/`. `ChatChannel` lives inside `app/`.
+
+Each **provider** implements `AgentOnboardingProvider` (in `base`) and is auto-discovered by Spring. Each **plugin** is an optional Spring Boot auto-configuration module that contributes tools or channels.
 
 ---
 
@@ -96,10 +107,16 @@ User/Agent → TaskManager.create()
 | `MCP Tools` | `SyncMcpToolCallbackProvider` |
 | `BraveWebSearchTool` | 15 results (only if Brave API key configured) |
 
-**Supported LLM Providers** (`SupportedProvider.java`):
-- `OLLAMA` — local, no API key required
-- `OPENAI` — GPT-5.4
-- `ANTHROPIC` — Claude Sonnet 4.6
+**Supported LLM Providers** — each lives in its own `providers/<name>/` module and implements `AgentOnboardingProvider`:
+
+| Provider | Module | Default Model | API Key |
+|---|---|---|---|
+| `anthropic` | `providers/anthropic` | `claude-sonnet-4-6` | Required (or Claude Code OAuth) |
+| `openai` | `providers/openai` | `gpt-5.4` | Required |
+| `ollama` | `providers/ollama` | `qwen3.5:27b` | Not required (local) |
+| `google.genai` | `providers/google` | `gemini-3-flash-preview` | Required |
+
+The `AnthropicAgentOnboardingProvider` additionally supports a **system-wide token** via `AnthropicClaudeCodeOAuthTokenExtractor` — if a Claude Code OAuth token is found locally, it is offered as a zero-config option during onboarding.
 
 ---
 
@@ -112,6 +129,7 @@ Incoming message → ChannelMessageReceivedEvent (channel name, message text)
 ```
 
 - **`ChannelRegistry`**: Registers channels, tracks last-active channel so background task replies are routed correctly.
+- **`DiscordChannel`**: JDA `ListenerAdapter`; accepts DMs from the configured user and guild messages only when the bot is mentioned.
 - **`TelegramChannel`**: `SpringLongPollingBot`; filters by `allowedUsername`; stores `chatId` for routing background replies.
 - **`ChatChannel`**: WebSocket-first delivery (`setWsSession()`/`clearWsSession()`); falls back to buffering replies in `ConcurrentLinkedQueue` exposed via `drainPendingMessages()` REST endpoint when no WebSocket session is active.
 
@@ -136,7 +154,7 @@ Incoming message → ChannelMessageReceivedEvent (channel name, message text)
 - **Web:** Search (Brave API) and smart web fetching.
 - **MCP:** Support for Model Context Protocol tools (via `SyncMcpToolCallbackProvider`).
 - **Skills:** Custom modular skills loaded from `workspace/skills/` at runtime.
-- **Channels:** Telegram (implemented), Chat (implemented).
+- **Channels:** Chat, Telegram, and Discord are implemented.
 
 ---
 
@@ -146,16 +164,16 @@ Incoming message → ChannelMessageReceivedEvent (channel name, message text)
 - **htmx v2.0.8 (https://htmx.org/docs/):** htmx is a strong fit for this app because it keeps the interaction model server-driven: the server returns HTML fragments, not JSON, and htmx swaps them into the DOM. We are using `hx-boost` which "boosts" normal anchors and form tags to use AJAX instead (preventing reloading of css and js). This has the nice fallback that, if the user does not have javascript enabled, the site will continue to work. Both Bulma and htmx are already included in `base.html.peb`.
 
 ### Onboarding UI
-Entry point: `GET /index` → `IndexController.java` (redirects to `/onboarding/`) → `OnboardingController.java`. 7-step session-based flow:
+Entry point: `GET /index` → `IndexController.java` (redirects to `/onboarding/`) → `OnboardingController.java`. Session-based flow:
 1. Welcome
-2. Provider selection (Ollama / OpenAI / Anthropic)
-3. Credentials (API key + model)
+2. Provider selection — dynamically populated from all `AgentOnboardingProvider` beans (Anthropic, OpenAI, Ollama, Google Gen AI, + any future providers)
+3. Credentials (API key + model — skipped for providers where `requiresApiKey()` is `false`)
 4. `AGENT.md` editor (system prompt customization)
 5. MCP servers configuration (optional)
-6. Telegram bot token + allowed username (optional)
+6. Plugin-contributed steps (e.g. Telegram bot token, Brave API key, Playwright) — injected by each plugin's `OnboardingProvider`
 7. Complete summary
 
-Templates: `templates/onboarding/` (index + 7 step partials). Saves config via `ConfigurationManager.updateProperty()`.
+Templates live under `templates/onboarding/`, with plugin steps contributed from their own modules. Saves config via `ConfigurationManager.updateProperty()`.
 
 ---
 
@@ -165,7 +183,7 @@ Templates: `templates/onboarding/` (index + 7 step partials). Saves config via `
 |---|---|
 | **Event-Driven** | `ChannelMessageReceivedEvent`, `ConfigurationChangedEvent`, JobRunr background dispatch |
 | **Template Method** | `AbstractTask` subclassed by `Task`, `RecurringTask` |
-| **Strategy** | Multiple `Channel` implementations (Telegram, Chat) |
+| **Strategy** | Multiple `Channel` implementations (Discord, Telegram, Chat) |
 | **Record Types** | `TaskResult`, `CheckListItem` — structured LLM response types |
 | **Markdown as State** | Tasks stored as `.md` files — queryable, diffable, human-readable |
 | **Single Agent Instance** | `DefaultAgent` wraps `ChatClient`; all prompts routed through it |
@@ -176,5 +194,7 @@ Templates: `templates/onboarding/` (index + 7 step partials). Saves config via `
 ## Tests
 
 - `base/src/test/` — `TaskManagerTest`: task creation, file naming, JobRunr integration (in-memory storage + background server).
-- `channels/telegram/src/test/` — `TelegramChannelTest`: unauthorized user rejection, authorized message flow (mocked).
+- `plugins/discord/src/test/` — `DiscordChannelTest`, `DiscordOnboardingProviderTest`: authorized Discord flow + onboarding config handling.
+- `plugins/telegram/src/test/` — `TelegramChannelTest`: unauthorized user rejection, authorized message flow (mocked).
+- `providers/anthropic/src/test/` — `AnthropicClaudeCodeBackendTest`: Claude Code OAuth token extraction.
 - `app/src/test/` — `OnboardingControllerTest`: session-based workflow; `JavaClawApplicationTests`: full Spring context load with Testcontainers.

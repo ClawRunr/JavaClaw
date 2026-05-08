@@ -7,6 +7,7 @@ dependencies {
     implementation 'org.springframework.modulith:spring-modulith-starter-core'
     implementation 'org.jobrunr:jobrunr-spring-boot-4-starter:8.5.1'
     implementation 'org.apache.commons:commons-lang3'
+    implementation 'com.fasterxml.jackson.core:jackson-core'
 
     // No idea?
     runtimeOnly 'io.netty:netty-resolver-dns-native-macos:4.2.10.Final'
@@ -14,10 +15,9 @@ dependencies {
     implementation 'org.springframework.ai:spring-ai-client-chat'
     implementation 'org.springframework.ai:spring-ai-starter-mcp-client'
 
-    implementation 'org.springframework.ai:spring-ai-starter-model-anthropic'
-    implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
-    implementation 'org.springframework.ai:spring-ai-starter-model-openai'
     implementation 'org.springaicommunity:spring-ai-agent-utils:0.6.0-SNAPSHOT'
+    implementation 'org.springaicommunity:tool-search-tool:2.0.1'
+    implementation 'org.springaicommunity:tool-searcher-lucene:2.0.1'
 
     runtimeOnly 'com.h2database:h2'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'

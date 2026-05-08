@@ -118,6 +118,7 @@ public class ChatHtml {
 
     private static String labelFor(String conversationId) {
         if ("web".equals(conversationId)) return "Web Chat";
+        if (conversationId.startsWith("discord-")) return "Discord (" + conversationId.substring("discord-".length()) + ")";
         if (conversationId.startsWith("telegram-")) return "Telegram (" + conversationId.substring("telegram-".length()) + ")";
         return conversationId;
     }

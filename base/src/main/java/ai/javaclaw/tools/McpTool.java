@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
 
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -67,27 +68,22 @@ public class McpTool {
             
             Parameters:
             - name: Unique identifier for the server (letters, numbers, hyphens, underscores only).
-            - command: The executable command to launch the MCP server process
+            - command: The executable command to launch the MCP server process with the arguments
                        (e.g., "npx -y @modelcontextprotocol/server-brave-search").
-            - args: Optional additional arguments, comma-separated (e.g., "--port,8080"). Leave blank if not needed.
             - env: Optional environment variables in "KEY=VALUE" format, one per line. Leave blank if not needed.
             """)
-    public String addStdioMcpServer(String name, String command, String args, String env) {
+    public String addStdioMcpServer(String name, String commandWithArgs, String env) {
         if (!name.matches("[a-zA-Z0-9_-]+")) {
             return "Error: Server name may only contain letters, numbers, hyphens and underscores.";
         }
+        if (commandWithArgs.trim().isEmpty()) {
+            return "Error: Command can not be empty.";
+        }
         try {
             Map<String, Object> props = new LinkedHashMap<>();
-            props.put("spring.ai.mcp.client.stdio.connections." + name + ".command", command);
-            if (args != null && !args.isBlank()) {
-                List<String> argList = Arrays.stream(args.split(","))
-                        .map(String::trim)
-                        .filter(s -> !s.isEmpty())
-                        .toList();
-                if (!argList.isEmpty()) {
-                    props.put("spring.ai.mcp.client.stdio.connections." + name + ".args", argList);
-                }
-            }
+            List<String> commandAndArgs = new ArrayList<>(Arrays.asList(commandWithArgs.split("\\s+")));
+            props.put("spring.ai.mcp.client.stdio.connections." + name + ".command", commandAndArgs.removeFirst());
+            props.put("spring.ai.mcp.client.stdio.connections." + name + ".args", commandAndArgs);
             if (env != null && !env.isBlank()) {
                 for (String line : env.split("\n")) {
                     line = line.trim();

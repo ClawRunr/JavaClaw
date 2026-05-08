@@ -1,10 +1,17 @@
 plugins {
     id 'java-library'
     id 'org.springframework.boot'
+    id 'com.google.cloud.tools.jib' version '3.5.3'
 }
 
 dependencies {
     implementation project(':base')
+    implementation project(':providers:anthropic')
+    implementation project(':providers:google')
+    implementation project(':providers:ollama')
+    implementation project(':providers:openai')
+
+    implementation project(':plugins:discord')
     implementation project(':plugins:telegram')
     implementation project(':plugins:playwright')
     implementation project(':plugins:brave')
@@ -33,4 +40,22 @@ dependencies {
 
 bootRun {
     workingDir = rootProject.projectDir
+}
+
+jib {
+    to {
+        image = 'jobrunr.io/javaclaw'
+        tags = ['latest']
+    }
+    extraDirectories {
+        paths {
+            path {
+                from = rootProject.file('workspace')
+                into = '/workspace'
+            }
+            permissions = [
+                    '/workspace': '755'
+            ]
+        }
+    }
 }

@@ -75,10 +75,10 @@ public class ChatChannel implements Channel {
      * Sends a raw HTML fragment to the active WebSocket session.
      * Used by the WebSocket handler to push user/agent bubbles and typing indicators.
      */
-    public void sendHtml(String html) throws IOException {
+    public void sendHtml(String... html) throws IOException {
         WebSocketSession session = wsSession.get();
         if (session != null && session.isOpen()) {
-            session.sendMessage(new TextMessage(html));
+            session.sendMessage(new TextMessage(String.join(System.lineSeparator(), html)));
         }
     }
 

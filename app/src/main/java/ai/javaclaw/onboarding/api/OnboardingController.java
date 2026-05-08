@@ -1,10 +1,9 @@
 package ai.javaclaw.onboarding.api;
 
-import ai.javaclaw.SupportedProvider;
 import ai.javaclaw.configuration.ConfigurationManager;
+import ai.javaclaw.onboarding.AgentOnboardingProviders;
 import ai.javaclaw.onboarding.OnboardingProvider;
 import jakarta.servlet.http.HttpSession;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,12 +23,12 @@ public class OnboardingController {
     private static final String COMPLETE_STEP_ID = "complete";
     private static final String ONBOARDING_TEMPLATE = "onboarding/index";
 
-    private final Environment environment;
+    private final AgentOnboardingProviders agentOnboardingProviders;
     private final ConfigurationManager configurationManager;
     private final List<OnboardingProvider> steps;
 
-    public OnboardingController(Environment environment, ConfigurationManager configurationManager, List<OnboardingProvider> steps) {
-        this.environment = environment;
+    public OnboardingController(AgentOnboardingProviders agentOnboardingProviders, ConfigurationManager configurationManager, List<OnboardingProvider> steps) {
+        this.agentOnboardingProviders = agentOnboardingProviders;
         this.configurationManager = configurationManager;
         this.steps = steps;
     }
@@ -41,7 +40,7 @@ public class OnboardingController {
 
     @GetMapping("/onboarding/{stepId}")
     public String getStep(@PathVariable String stepId, HttpSession session, Model model) {
-        OnboardingProvider onboardingProvider = findProvider(stepId);
+        OnboardingProvider onboardingProvider = findOnboardingProvider(stepId);
         if (onboardingProvider == null) {
             return "redirect:/onboarding/" + steps.getFirst().getStepId();
         }
@@ -49,7 +48,8 @@ public class OnboardingController {
         // When arriving at the complete step via GET (e.g. by skipping the last optional step),
         // save configuration if the session still holds onboarding data.
         if (COMPLETE_STEP_ID.equals(stepId) && session.getAttribute("onboarding.provider") != null) {
-            String providerLabel = saveAndComplete(session);
+            String providerLabel = agentOnboardingProviders.getById((String) session.getAttribute("onboarding.provider")).getLabel();
+            saveAndComplete(session);
             if (providerLabel != null) model.addAttribute("providerLabel", providerLabel);
         }
 
@@ -72,7 +72,7 @@ public class OnboardingController {
 
     @PostMapping("/onboarding/{stepId}")
     public String postStep(@PathVariable String stepId, @RequestParam Map<String, String> formParams, HttpSession session, RedirectAttributes redirectAttrs) {
-        OnboardingProvider provider = findProvider(stepId);
+        OnboardingProvider provider = findOnboardingProvider(stepId);
         if (provider == null) {
             return "redirect:/onboarding/" + steps.getFirst().getStepId();
         }
@@ -88,17 +88,16 @@ public class OnboardingController {
 
         String nextId = nextStepId(stepId);
         if (COMPLETE_STEP_ID.equals(nextId)) {
-            String providerLabel = saveAndComplete(session);
+            String providerLabel = agentOnboardingProviders.getById((String) session.getAttribute("onboarding.provider")).getLabel();
             if (providerLabel != null) redirectAttrs.addFlashAttribute("providerLabel", providerLabel);
+            saveAndComplete(session);
         }
 
         return "redirect:/onboarding/" + (nextId != null ? nextId : COMPLETE_STEP_ID);
     }
 
-    private String saveAndComplete(HttpSession session) {
+    private void saveAndComplete(HttpSession session) {
         Map<String, Object> finalSession = sessionToMap(session);
-        String providerId = (String) finalSession.getOrDefault("onboarding.provider", "");
-        String providerLabel = SupportedProvider.from(providerId).map(SupportedProvider::label).orElse(null);
         try {
             for (OnboardingProvider p : steps) {
                 p.saveConfiguration(finalSession, configurationManager);
@@ -107,10 +106,9 @@ public class OnboardingController {
             throw new RuntimeException("Failed to save onboarding configuration", e);
         }
         clearOnboardingSession(session);
-        return providerLabel;
     }
 
-    private OnboardingProvider findProvider(String stepId) {
+    private OnboardingProvider findOnboardingProvider(String stepId) {
         return steps.stream()
                 .filter(p -> p.getStepId().equals(stepId))
                 .findFirst()

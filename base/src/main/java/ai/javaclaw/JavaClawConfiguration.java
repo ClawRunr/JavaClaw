@@ -8,9 +8,9 @@ import ai.javaclaw.tools.CheckListTool;
 import ai.javaclaw.tools.McpTool;
 import ai.javaclaw.tools.TaskTool;
 import org.springaicommunity.agent.tools.FileSystemTools;
-import org.springaicommunity.agent.tools.ShellTools;
 import org.springaicommunity.agent.tools.SkillsTool;
 import org.springaicommunity.agent.tools.SmartWebFetchTool;
+import org.springaicommunity.tool.search.ToolSearchToolCallAdvisor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
@@ -24,6 +24,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import org.springframework.ai.model.SpringAIModelProperties;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -60,9 +61,16 @@ public class JavaClawConfiguration {
     }
 
     @Bean
+    public ChatClient.Builder chatClientBuilder(ObjectProvider<ChatModel> chatModelProvider) {
+        ChatModel chatModel = chatModelProvider.getIfUnique(() -> prompt -> new ChatResponse(List.of(new Generation(new AssistantMessage("No AI model has been configured. If you did configure a model recently, restart JavaClaw manually for the changes to take effect.")))));
+        return ChatClient.builder(chatModel);
+    }
+
+    @Bean
     @DependsOn({"mcpHeaderCustomizer"})
     public ChatClient chatClient(ChatClient.Builder chatClientBuilder,
                                  ChatMemory chatMemory,
+                                 ObjectProvider<ToolSearchToolCallAdvisor> toolSearchToolCallAdvisorProvider,
                                  SyncMcpToolCallbackProvider mcpToolProvider,
                                  TaskManager taskManager,
                                  ConfigurationManager configurationManager,
@@ -77,6 +85,11 @@ public class JavaClawConfiguration {
         String agentPrompt = agentMd.getContentAsString(StandardCharsets.UTF_8) + System.lineSeparator()
                 + workspace.createRelative("INFO.md").getContentAsString(StandardCharsets.UTF_8) + System.lineSeparator();
 
+        ToolCallAdvisor toolCallAdvisor = toolSearchToolCallAdvisorProvider.getIfAvailable();
+        if (toolCallAdvisor == null) {
+            toolCallAdvisor = ToolCallAdvisor.builder().build();
+        }
+
         chatClientBuilder
                 .defaultAdvisors(new SimpleLoggerAdvisor())
                 .defaultSystem(p -> p.text(agentPrompt).param(AgentEnvironment.ENVIRONMENT_INFO_KEY, AgentEnvironment.info()))
@@ -87,13 +100,13 @@ public class JavaClawConfiguration {
                         CheckListTool.builder().build(),
                         McpTool.builder().configurationManager(configurationManager).build(),
                         //Bash execution tool
-                        ShellTools.builder().build(),// built-in shell tools
+                        //ShellTools.builder().build(),// built-in shell tools
                         // Read, Write and Edit files tool
                         FileSystemTools.builder().build(),// built-in file system tools
                         // Smart web fetch tool
                         SmartWebFetchTool.builder(chatClientBuilder.clone().build()).build())
                 .defaultAdvisors(
-                        ToolCallAdvisor.builder().build(),
+                        toolCallAdvisor,
                         MessageChatMemoryAdvisor.builder(chatMemory).build()
                 );
 

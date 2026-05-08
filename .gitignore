@@ -38,9 +38,9 @@ out/
 .vscode/
 
 mcp/*
-workspace/context/*
-workspace/skills/*
+workspace/
+!workspace/INFO.md
+!workspace/AGENT-ORIGINAL.md
+!workspace/AGENT.md
 !workspace/skills/skill-creator
-workspace/tasks/*
-workspace/app.*
 *.private*

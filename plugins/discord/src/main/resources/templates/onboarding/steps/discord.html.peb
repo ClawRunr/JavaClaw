@@ -1,0 +1,49 @@
+<div id="onboarding-step" class="step-fragment">
+    <p class="is-uppercase has-text-weight-semibold has-text-grey is-size-7 mb-3">Step {{ currentStepNumber }} of {{ totalSteps }}</p>
+    <h2 class="title is-3 mb-3">Connect Discord.</h2>
+    <p class="subtitle is-5 has-text-grey-dark">
+        Configure a Discord bot token and the single Discord user ID that is allowed to control the agent.
+        Direct messages are accepted, and server messages are processed when the bot is mentioned.
+    </p>
+
+    {% if error %}
+    <article class="message is-danger">
+        <div class="message-body">{{ error }}</div>
+    </article>
+    {% endif %}
+
+    <form method="post" action="/onboarding/discord">
+        <div class="field">
+            <label class="label" for="discordToken">Discord bot token</label>
+            <div class="control">
+                <input id="discordToken" class="input is-medium" type="password" name="discordToken" value="{{ discordToken }}" placeholder="Paste the Discord bot token" autocomplete="off">
+            </div>
+        </div>
+
+        <div class="field">
+            <label class="label" for="discordAllowedUser">Allowed Discord user ID</label>
+            <div class="control">
+                <input id="discordAllowedUser" class="input is-medium" type="text" name="discordAllowedUser" value="{{ discordAllowedUser }}" placeholder="123456789012345678 or <@123456789012345678>" autocomplete="off" autocapitalize="none" spellcheck="false">
+            </div>
+            <p class="help">Use the Discord numeric user ID for the only user who should be able to control the bot.</p>
+        </div>
+
+        <div class="notification is-light mt-4">
+            <p class="has-text-weight-semibold mb-2">Discord app requirements</p>
+            <ul class="has-text-grey-dark">
+                <li>Invite the bot to your server or message it directly.</li>
+                <li>Enable the <code>Message Content Intent</code> in the Discord Developer Portal.</li>
+            </ul>
+            <p class="has-text-grey-dark mt-2">Stored properties</p>
+            <p class="has-text-grey-dark">agent.channels.discord.token</p>
+            <p class="has-text-grey-dark">agent.channels.discord.allowed-user</p>
+        </div>
+
+        <div class="buttons mt-4">
+            <a class="button is-light is-medium" href="{{ previousStepUrl }}">Back</a>
+            <button class="button is-primary is-medium" type="submit">Continue</button>
+            {% if isOptional %}<a class="button is-ghost is-medium" href="{{ nextStepUrl }}">Skip</a>{% endif %}
+            <span class="button is-ghost is-medium htmx-indicator">Saving...</span>
+        </div>
+    </form>
+</div>

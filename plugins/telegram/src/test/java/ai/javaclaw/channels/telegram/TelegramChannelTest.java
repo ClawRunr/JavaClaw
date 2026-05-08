@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
@@ -90,7 +91,7 @@ class TelegramChannelTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void usernameMatchingIsCaseInsensitive() throws TelegramApiException {
+    void usernameMatchingIsCaseInsensitive() {
         TelegramChannel channel = channel("Allowed_User");
         when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
 
@@ -100,7 +101,7 @@ class TelegramChannelTest {
     }
 
     @Test
-    void stripsLeadingAtFromConfiguredUsername() throws TelegramApiException {
+    void stripsLeadingAtFromConfiguredUsername() {
         TelegramChannel channel = channel("@Allowed_User");
         when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
 
@@ -110,7 +111,7 @@ class TelegramChannelTest {
     }
 
     @Test
-    void stripsLeadingAtFromIncomingUsername() throws TelegramApiException {
+    void stripsLeadingAtFromIncomingUsername() {
         TelegramChannel channel = channel("allowed_user");
         when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
 
@@ -124,7 +125,7 @@ class TelegramChannelTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void usesChannelChatIdAsConversationId() throws TelegramApiException {
+    void usesChannelChatIdAsConversationId() {
         TelegramChannel channel = channel("allowed_user");
         when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
 
@@ -134,7 +135,7 @@ class TelegramChannelTest {
     }
 
     @Test
-    void includesMessageThreadIdInConversationId() throws TelegramApiException {
+    void includesMessageThreadIdInConversationId() {
         TelegramChannel channel = channel("allowed_user");
         when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
 
@@ -188,6 +189,44 @@ class TelegramChannelTest {
         channel.sendMessage("hello");
 
         verifyNoInteractions(telegramClient);
+    }
+
+    // -----------------------------------------------------------------------
+    // Message formatting (Markdown → HTML)
+    // -----------------------------------------------------------------------
+
+    @Test
+    void sendMessageConvertsMarkdownToTelegramHtml() throws TelegramApiException {
+        TelegramChannel channel = channel("allowed_user");
+        when(agent.respondTo(anyString(), anyString()))
+                .thenReturn("Here is **bold** text and a [link](https://example.com)");
+
+        channel.consume(updateFrom("allowed_user", "hello", 42L, 567));
+
+        verify(telegramClient).execute(argThat((SendMessage msg) ->
+                ParseMode.HTML.equals(msg.getParseMode()) &&
+                        "Here is <strong>bold</strong> text and a <a href=\"https://example.com\">link</a>"
+                                .equals(msg.getText())
+        ));
+    }
+
+
+    @Test
+    void sendMessageFallbacksToSendingRawTextWhenFailingToSendHtml() throws TelegramApiException {
+        TelegramChannel channel = channel("allowed_user");
+        when(agent.respondTo(anyString(), anyString()))
+                .thenReturn("Here is **bold** text and an image: ![An example image](/assets/images/clawrunr.png)");
+
+        when(telegramClient.execute(argThat((SendMessage msg) ->
+                ParseMode.HTML.equals(msg.getParseMode())
+        ))).thenThrow(new TelegramApiException("Invalid HTML"));
+
+        channel.consume(updateFrom("allowed_user", "hello", 42L, 567));
+
+        verify(telegramClient).execute(argThat((SendMessage msg) ->
+                msg.getParseMode() == null &&
+                        msg.getText().equals("Here is **bold** text and an image: ![An example image](/assets/images/clawrunr.png)")
+        ));
     }
 
     // -----------------------------------------------------------------------
