@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.Map;
 
+import static ai.javaclaw.channels.discord.DiscordUtils.normalizeUserId;
+
 @Component
 @Order(53)
 public class DiscordOnboardingProvider implements OnboardingProvider {
@@ -71,19 +73,5 @@ public class DiscordOnboardingProvider implements OnboardingProvider {
                     ALLOWED_USER_PROPERTY, allowedUser
             ));
         }
-    }
-
-    private static String normalizeUserId(String userId) {
-        if (userId == null) {
-            return null;
-        }
-        String normalized = userId.trim();
-        if (normalized.startsWith("<@") && normalized.endsWith(">")) {
-            normalized = normalized.substring(2, normalized.length() - 1);
-            if (normalized.startsWith("!")) {
-                normalized = normalized.substring(1);
-            }
-        }
-        return normalized.isBlank() ? null : normalized;
     }
 }
