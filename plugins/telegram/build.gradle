@@ -5,12 +5,10 @@ plugins {
 dependencies {
     implementation project(':base')
     implementation 'org.springframework.boot:spring-boot-starter'
-    implementation 'org.telegram:telegrambots-springboot-longpolling-starter:9.4.0'
-    implementation 'org.telegram:telegrambots-client:9.4.0'
-
-    implementation 'org.commonmark:commonmark:0.21.0'
-    implementation 'org.commonmark:commonmark-ext-gfm-strikethrough:0.21.0'
+    implementation(libs.telegrambots.client)
+    implementation(libs.telegrambots.springboot.longpolling.starter)
+    implementation(libs.commonmark.java)
+    implementation(libs.commonmark.ext.gfm.strikethrough)
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

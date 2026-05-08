@@ -1,7 +1,7 @@
 plugins {
     id 'java-library'
     id 'org.springframework.boot'
-    id 'com.google.cloud.tools.jib' version '3.5.3'
+    alias(libs.plugins.jib)
 }
 
 dependencies {
@@ -22,7 +22,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-restclient'
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
-    implementation 'io.pebbletemplates:pebble-spring-boot-starter:4.1.1'
+    implementation(libs.pebble.spring.starter)
 
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
     runtimeOnly 'com.h2database:h2'
@@ -34,8 +34,6 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-websocket-test'
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
-
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 bootRun {
