@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.Ordered;
@@ -19,7 +20,9 @@ import org.springframework.web.socket.WebSocketSession;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -108,6 +111,7 @@ public class ChatChannel implements Channel {
     /**
      * Loads conversation history for the given conversationId as HTML bubbles.
      * Returns a single welcome bubble if no history exists yet.
+     * Tool-call messages are grouped with their final assistant response.
      */
     public List<String> loadHistoryAsHtml(String conversationId) {
         List<Message> history = chatMemoryRepository.findByConversationId(conversationId);
@@ -115,20 +119,68 @@ public class ChatChannel implements Channel {
             return List.of(ChatHtml.agentBubble("Hi! I'm your JavaClaw assistant. How can I help you today?"));
         }
         List<String> bubbles = new ArrayList<>();
+        List<Message> turnMessages = new ArrayList<>();
         for (Message msg : history) {
-            if (msg instanceof UserMessage) bubbles.add(ChatHtml.userBubble(msg.getText()));
-            else if (msg instanceof AssistantMessage) bubbles.add(ChatHtml.agentBubble(msg.getText()));
+            if (msg instanceof UserMessage) {
+                turnMessages.clear();
+                bubbles.add(ChatHtml.userBubble(msg.getText()));
+            } else if (msg instanceof AssistantMessage am) {
+                turnMessages.add(am);
+                if (!am.hasToolCalls()) {
+                    bubbles.add(ChatHtml.agentTurn(am.getText(), buildToolSteps(turnMessages)));
+                    turnMessages.clear();
+                }
+            } else {
+                turnMessages.add(msg); // ToolResponseMessage — needed for call/result pairing
+            }
         }
         return bubbles;
     }
 
+    private static List<ChatHtml.ToolStep> buildToolSteps(List<Message> turnMessages) {
+        Map<String, String> resultById = new LinkedHashMap<>();
+        for (Message msg : turnMessages) {
+            if (msg instanceof ToolResponseMessage trm) {
+                for (ToolResponseMessage.ToolResponse tr : trm.getResponses()) {
+                    resultById.put(tr.id(), tr.responseData());
+                }
+            }
+        }
+        List<ChatHtml.ToolStep> steps = new ArrayList<>();
+        for (Message msg : turnMessages) {
+            if (msg instanceof AssistantMessage am && am.hasToolCalls()) {
+                for (AssistantMessage.ToolCall tc : am.getToolCalls()) {
+                    steps.add(new ChatHtml.ToolStep(tc.name(), tc.arguments(), resultById.getOrDefault(tc.id(), "")));
+                }
+            }
+        }
+        return steps;
+    }
+
     /**
      * Handles a chat message from the web UI for the given conversationId.
+     * Returns a {@link ChatResult} containing the agent's text response plus any tool calls
+     * that were executed during this turn.
      */
-    public String chat(String conversationId, String message) {
+    public ChatResult chat(String conversationId, String message) {
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), message));
-        return agent.respondTo(conversationId, message);
+        String text = agent.respondTo(conversationId, message);
+        return new ChatResult(text, extractCurrentTurnToolSteps(conversationId));
     }
+
+    private List<ChatHtml.ToolStep> extractCurrentTurnToolSteps(String conversationId) {
+        List<Message> history = chatMemoryRepository.findByConversationId(conversationId);
+        int start = 0;
+        for (int i = history.size() - 1; i >= 0; i--) {
+            if (history.get(i) instanceof UserMessage) {
+                start = i + 1;
+                break;
+            }
+        }
+        return buildToolSteps(history.subList(start, history.size()));
+    }
+
+    public record ChatResult(String text, List<ChatHtml.ToolStep> toolSteps) {}
 
     private static String buildBackgroundMessageHtml(String text) {
         return Htmx.oobAppend("chat-messages", ChatHtml.agentBubble(text));

@@ -9,8 +9,10 @@ import org.springframework.ai.chat.client.advisor.api.BaseAdvisor;
 import org.springframework.ai.chat.client.advisor.api.BaseChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.util.Assert;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -19,10 +21,12 @@ import reactor.core.scheduler.Scheduler;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.SequencedSet;
+import java.util.stream.Collectors;
 
 /**
- * A copy of Springs MessageChatMemoryAdvisor that does not add duplicate messages from memory if they are contained in the chatClientRequest.prompt().getInstructions()
+ * A copy of Spring's MessageChatMemoryAdvisor that does not add duplicate messages from memory if they are contained in the chatClientRequest.prompt().getInstructions()
  */
 public final class MessageChatMemoryAdvisor implements BaseChatMemoryAdvisor {
 
@@ -60,10 +64,8 @@ public final class MessageChatMemoryAdvisor implements BaseChatMemoryAdvisor {
 
         List<Message> instructions = chatClientRequest.prompt().getInstructions();
 
-        // 1. Remove duplicated messages by means of LinkedHashSet
-        SequencedSet<Message> allMessages = new LinkedHashSet<>(this.chatMemory.get(conversationId));
-        allMessages.addAll(instructions);
-        List<Message> processedMessages = new ArrayList<>(allMessages);
+        // 1. Remove duplicated messages based on content, ignoring metadata.
+        List<Message> processedMessages = deduplicate(this.chatMemory.get(conversationId), instructions);
 
         // 2.1. Ensure system message, if present, appears first in the list.
         for (int i = 0; i < processedMessages.size(); i++) {
@@ -114,6 +116,60 @@ public final class MessageChatMemoryAdvisor implements BaseChatMemoryAdvisor {
                 .flatMapMany(streamAdvisorChain::nextStream)
                 .transform(flux -> new ChatClientMessageAggregator().aggregateChatClientResponse(flux,
                         response -> this.after(response, streamAdvisorChain)));
+    }
+
+    /**
+     * Merges {@code memoryMessages} and {@code instructions} into an ordered list with
+     * duplicates removed. Deduplication is based on message content only —
+     * {@code metadata} is deliberately ignored because
+     * {@link org.springframework.ai.chat.messages.AbstractMessage#equals} includes it,
+     * and the persisted copy of a message may have different metadata than the in-flight
+     * copy (e.g. tool-call assistant messages with a {@code null} vs {@code ""} text).
+     * Memory messages appear first; instructions are appended in order, skipping any
+     * that are already present.
+     */
+    static List<Message> deduplicate(List<Message> memoryMessages, List<Message> instructions) {
+        SequencedSet<MessageWrapper> seen = new LinkedHashSet<>(memoryMessages.stream().map(MessageWrapper::new).toList());
+        instructions.stream().map(MessageWrapper::new).forEach(seen::add);
+        return seen.stream().map(MessageWrapper::message).toList();
+    }
+
+    /**
+     * Wraps a {@link Message} with {@code equals}/{@code hashCode} based on content
+     * only, deliberately ignoring {@code metadata}. This is necessary because
+     * {@link org.springframework.ai.chat.messages.AbstractMessage#equals} includes
+     * metadata, which may differ between the persisted copy and the in-flight copy
+     * of the same logical message.
+     */
+    private record MessageWrapper(Message message) {
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof MessageWrapper w)) return false;
+            Message a = this.message, b = w.message;
+            if (a.getMessageType() != b.getMessageType()) return false;
+            if (a instanceof AssistantMessage am && b instanceof AssistantMessage bm) {
+                if (am.hasToolCalls() || bm.hasToolCalls())
+                    return Objects.equals(am.getToolCalls(), bm.getToolCalls());
+            }
+            if (a instanceof ToolResponseMessage tm1 && b instanceof ToolResponseMessage tm2)
+                return Objects.equals(tm1.getResponses(), tm2.getResponses());
+            return Objects.equals(normalizeText(a), normalizeText(b));
+        }
+
+        @Override
+        public int hashCode() {
+            if (message instanceof AssistantMessage am && am.hasToolCalls())
+                return Objects.hash(message.getMessageType(), am.getToolCalls());
+            if (message instanceof ToolResponseMessage tm)
+                return Objects.hash(message.getMessageType(), tm.getResponses());
+            return Objects.hash(message.getMessageType(), normalizeText(message));
+        }
+
+        private static String normalizeText(Message m) {
+            String t = m.getText();
+            return (t == null) ? "" : t;
+        }
     }
 
     public static Builder builder(ChatMemory chatMemory) {

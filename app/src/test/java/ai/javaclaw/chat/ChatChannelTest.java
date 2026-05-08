@@ -132,16 +132,19 @@ class ChatChannelTest {
     @Test
     void chatDelegatesToAgentWithConversationId() {
         when(agent.respondTo("web", "hello")).thenReturn("hi");
+        when(chatMemoryRepository.findByConversationId("web")).thenReturn(List.of());
 
-        String response = chatChannel.chat("web", "hello");
+        ChatChannel.ChatResult result = chatChannel.chat("web", "hello");
 
-        assertThat(response).isEqualTo("hi");
+        assertThat(result.text()).isEqualTo("hi");
+        assertThat(result.toolSteps()).isEmpty();
         verify(agent).respondTo(eq("web"), eq("hello"));
     }
 
     @Test
     void chatUsesSuppliedConversationId() {
         when(agent.respondTo(eq("telegram-42"), any())).thenReturn("reply");
+        when(chatMemoryRepository.findByConversationId("telegram-42")).thenReturn(List.of());
 
         chatChannel.chat("telegram-42", "hello");
 

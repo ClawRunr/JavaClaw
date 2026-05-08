@@ -31,7 +31,7 @@ class FileSystemChatMemoryRepositoryTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void saveAndReloadConversation() throws IOException {
+    void saveAndReloadConversation() {
         List<Message> messages = List.of(
                 new UserMessage("Hello!"),
                 new AssistantMessage("Hi there, how can I help?")
@@ -55,7 +55,8 @@ class FileSystemChatMemoryRepositoryTest {
         assertThat(content)
                 .contains("createdAt:")
                 .contains("updatedAt:")
-                .contains("user: Hi");
+                .contains("role: user")
+                .contains("content: Hi");
     }
 
     @Test
@@ -117,7 +118,7 @@ class FileSystemChatMemoryRepositoryTest {
         assertThat(loaded).extracting(Message::getText)
                 .containsExactly("Question 1", "Answer 1", "Question 2", "Answer 2");
     }
-    
+
     @Test
     void appendAllAddsMessagesToExistingConversation() {
         repository.saveAll("web", List.of(new UserMessage("Hello!")));

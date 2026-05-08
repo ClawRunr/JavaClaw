@@ -11,12 +11,48 @@ public class ChatHtml {
 
     private ChatHtml() {}
 
+    public record ToolStep(String name, String arguments, String result) {}
+
+    /**
+     * Renders the full agent turn: a collapsible thinking row (if tool steps exist)
+     * immediately followed by the response bubble.
+     */
+    public static String agentTurn(String text, List<ToolStep> steps) {
+        if (steps.isEmpty()) return agentBubble(text);
+        return thinkingRow(steps) + agentBubble(text);
+    }
+
+    private static String thinkingRow(List<ToolStep> steps) {
+        String label = steps.size() == 1 ? "Used 1 tool" : "Used " + steps.size() + " tools";
+        StringBuilder stepsHtml = new StringBuilder();
+        for (ToolStep step : steps) {
+            String resultBlock = step.result() != null && !step.result().isBlank()
+                    ? "\n<pre class=\"ar-thinking__step-result\">%s</pre>".formatted(HtmlUtils.htmlEscape(step.result()))
+                    : "";
+            stepsHtml.append("""
+                    <details class="ar-thinking__step" open>
+                        <summary class="ar-thinking__step-summary">&#128295; %s</summary>
+                        <pre class="ar-thinking__step-args">%s</pre>%s
+                    </details>""".formatted(
+                    HtmlUtils.htmlEscape(step.name()),
+                    HtmlUtils.htmlEscape(step.arguments()),
+                    resultBlock));
+        }
+        return """
+                <div class="ar-thinking">
+                    <details class="ar-thinking__body">
+                        <summary class="ar-thinking__toggle">%s</summary>
+                        <div class="ar-thinking__steps">%s</div>
+                    </details>
+                </div>""".formatted(label, stepsHtml);
+    }
+
     public static String agentBubble(String text) {
         return """
                 <article class="ar-msg ar-msg--agent">\
                 <div class="ar-msg__avatar">JC</div>\
                 <div class="ar-msg__bubble">%s</div>\
-                </article>""".formatted(HtmlUtils.htmlEscape(text));
+                </article>""".formatted(text != null && !text.isBlank() ? HtmlUtils.htmlEscape(text) : "");
     }
 
     public static String userBubble(String text) {

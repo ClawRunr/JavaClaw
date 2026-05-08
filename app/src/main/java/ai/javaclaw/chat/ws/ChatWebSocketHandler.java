@@ -92,9 +92,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
         try {
             // Call agent (blocking — background tasks may push messages via ChatChannel during this)
-            String response = chatChannel.chat(conversationId, userMessage);
+            ChatChannel.ChatResult result = chatChannel.chat(conversationId, userMessage);
+
             chatChannel.sendHtml(
-                    Htmx.oobAppend("chat-messages", ChatHtml.agentBubble(response)),
+                    Htmx.oobAppend("chat-messages", ChatHtml.agentTurn(result.text(), result.toolSteps())),
                     Htmx.oobReplace("typing-indicator", ""));
         } catch (RuntimeException ex) {
             log.warn("Chat request failed for conversation {}", conversationId, ex);

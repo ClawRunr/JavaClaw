@@ -149,6 +149,113 @@
 .chat-readonly-notice strong {
     color: rgba(180, 195, 235, .7);
 }
+
+/* Thinking row — shown above the agent bubble when tool calls were made */
+.ar-thinking {
+    align-self: flex-start;
+    max-width: 76%;
+    padding-left: calc(30px + .55rem);
+    animation: msg-in .22s cubic-bezier(.22, 1, .36, 1);
+}
+
+.ar-thinking__body {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+}
+
+.ar-thinking__toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: .15rem .4rem;
+    font-size: .75rem;
+    color: rgba(160, 180, 225, .45);
+    text-align: left;
+    transition: color .15s;
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    border-radius: .3rem;
+    list-style: none;
+    user-select: none;
+}
+.ar-thinking__toggle::-webkit-details-marker { display: none; }
+.ar-thinking__toggle::before {
+    content: "\25BA";
+    font-size: .6rem;
+    display: inline-block;
+    transition: transform .2s;
+}
+.ar-thinking__body[open] > .ar-thinking__toggle::before { transform: rotate(90deg); }
+.ar-thinking__toggle:hover { color: rgba(160, 180, 225, .8); }
+.ar-thinking__body[open] > .ar-thinking__toggle { color: rgba(160, 180, 225, .9); }
+
+.ar-thinking__steps {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+}
+
+.ar-thinking__step {
+    font-size: .78rem;
+    border-radius: .45rem;
+    background: hsl(228, 28%, 9%);
+    border: 1px solid rgba(255, 255, 255, .07);
+    overflow: hidden;
+}
+.ar-thinking__step > summary {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .28rem .6rem;
+    cursor: pointer;
+    list-style: none;
+    font-family: monospace;
+    letter-spacing: .01em;
+    color: rgba(160, 180, 225, .75);
+    background: hsl(228, 28%, 9%);
+    user-select: none;
+    transition: color .15s;
+}
+.ar-thinking__step > summary::-webkit-details-marker { display: none; }
+.ar-thinking__step > summary::before {
+    content: "\25BA";
+    font-size: .58rem;
+    display: inline-block;
+    transition: transform .2s;
+    flex-shrink: 0;
+    opacity: .5;
+}
+.ar-thinking__step[open] > summary::before { transform: rotate(90deg); }
+.ar-thinking__step > summary:hover { color: rgba(160, 180, 225, 1); }
+.ar-thinking__step-args {
+    padding: .35rem .75rem;
+    border-top: 1px solid rgba(255, 255, 255, .06);
+    font-family: monospace;
+    font-size: .72rem;
+    color: hsl(230, 15%, 58%);
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+    background: hsl(228, 32%, 7%);
+}
+.ar-thinking__step-result {
+    padding: .35rem .75rem;
+    border-top: 1px solid rgba(255, 255, 255, .06);
+    font-family: monospace;
+    font-size: .72rem;
+    color: hsl(135, 20%, 58%);
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+    background: hsl(135, 20%, 6%);
+}
+
+/* Visually group thinking row with its response bubble */
+.ar-thinking + .ar-msg--agent {
+    margin-top: -0.575rem;
+}
 </style>
 {% endblock %}
 

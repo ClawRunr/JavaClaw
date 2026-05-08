@@ -15,6 +15,9 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Optional;
+
+import static ai.javaclaw.channels.discord.DiscordUtils.normalizeUserId;
 import static java.util.Optional.ofNullable;
 import static java.util.regex.Pattern.quote;
 
@@ -90,11 +93,8 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
 
     private static String normalizeText(JDA jda, Message message, boolean guildMessage) {
         String content = message.getContentRaw();
-        if (content == null) {
-            return null;
-        }
         if (guildMessage) {
-            String mention = ofNullable(jda.getSelfUser()).map(User::getAsMention).orElse("");
+            String mention = jda.getSelfUser().getAsMention();
             content = content.replaceFirst("^\\s*" + quote(mention) + "\\s*", "");
         }
         content = content.trim();
@@ -103,19 +103,5 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
 
     private static String getConversationId(String channelId) {
         return "discord-" + channelId;
-    }
-
-    private static String normalizeUserId(String userId) {
-        if (userId == null) {
-            return null;
-        }
-        String normalized = userId.trim();
-        if (normalized.startsWith("<@") && normalized.endsWith(">")) {
-            normalized = normalized.substring(2, normalized.length() - 1);
-            if (normalized.startsWith("!")) {
-                normalized = normalized.substring(1);
-            }
-        }
-        return normalized.isBlank() ? null : normalized;
     }
 }
