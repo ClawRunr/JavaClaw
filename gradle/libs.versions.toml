@@ -6,7 +6,7 @@ commonmark = "0.28.0"
 
 [libraries]
 bom-spring-boot = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
-bom-spring-ai = { module = "org.springframework.ai:spring-ai-bom", version = "2.0.0-M5" }
+bom-spring-ai = { module = "org.springframework.ai:spring-ai-bom", version = "2.0.0-M6" }
 bom-spring-modulith = { module = "org.springframework.modulith:spring-modulith-bom", version = "2.0.6" }
 
 spring-ai-agent-utils = { module = "org.springaicommunity:spring-ai-agent-utils", version = "0.7.0" }

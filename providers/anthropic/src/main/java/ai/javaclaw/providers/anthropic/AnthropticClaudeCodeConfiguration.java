@@ -50,14 +50,14 @@ public class AnthropticClaudeCodeConfiguration {
     }
 
     private static AnthropicChatOptions getAnthropicChatOptions(AnthropicConnectionProperties connectionProperties, AnthropicChatProperties chatProperties) {
-        AnthropicChatOptions options = chatProperties.getOptions();
-        if (connectionProperties.getApiKey() != null) options.setApiKey(connectionProperties.getApiKey());
-        if (connectionProperties.getBaseUrl() != null) options.setBaseUrl(connectionProperties.getBaseUrl());
-        if (connectionProperties.getTimeout() != null) options.setTimeout(connectionProperties.getTimeout());
-        if (connectionProperties.getMaxRetries() != null) options.setMaxRetries(connectionProperties.getMaxRetries());
-        if (connectionProperties.getProxy() != null) options.setProxy(connectionProperties.getProxy());
-        if (!connectionProperties.getCustomHeaders().isEmpty()) options.setCustomHeaders(connectionProperties.getCustomHeaders());
-        return options;
+        AnthropicChatOptions.Builder options = chatProperties.toOptions().mutate();
+        if (connectionProperties.getApiKey() != null) options.apiKey(connectionProperties.getApiKey());
+        if (connectionProperties.getBaseUrl() != null) options.baseUrl(connectionProperties.getBaseUrl());
+        if (connectionProperties.getTimeout() != null) options.timeout(connectionProperties.getTimeout());
+        if (connectionProperties.getMaxRetries() != null) options.maxRetries(connectionProperties.getMaxRetries());
+        if (connectionProperties.getProxy() != null) options.proxy(connectionProperties.getProxy());
+        if (!connectionProperties.getCustomHeaders().isEmpty()) options.customHeaders(connectionProperties.getCustomHeaders());
+        return options.build();
     }
 
     private static AnthropicClient anthropicClient(AnthropicChatOptions options, AnthropicClaudeCodeBackend backend) {
