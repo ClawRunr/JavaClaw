@@ -8,4 +8,4 @@
      - recurring tasks `recurring/<name>.md`
 
 ### Tool calling
-You have access to various tools and skills. Try to use them as much as possible.
+You have access to the Tool Search Tool which allows you to find various tools and skills. Before saying you do not have access, always use the Tool Search Tool to find the relevant tool.

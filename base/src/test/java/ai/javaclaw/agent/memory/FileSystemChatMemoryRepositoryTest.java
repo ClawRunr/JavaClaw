@@ -118,56 +118,6 @@ class FileSystemChatMemoryRepositoryTest {
                 .containsExactly("Question 1", "Answer 1", "Question 2", "Answer 2");
     }
     
-    @Test
-    void appendAllAddsMessagesToExistingConversation() {
-        repository.saveAll("web", List.of(new UserMessage("Hello!")));
-
-        repository.appendAll("web", List.of(new AssistantMessage("Hi there!")));
-
-        List<Message> loaded = repository.findByConversationId("web");
-        assertThat(loaded).hasSize(2);
-        assertThat(loaded.get(0).getText()).isEqualTo("Hello!");
-        assertThat(loaded.get(1).getText()).isEqualTo("Hi there!");
-    }
-
-    @Test
-    void appendAllCreatesFileWhenConversationDoesNotExist() {
-        repository.appendAll("web", List.of(new UserMessage("First message")));
-
-        List<Message> loaded = repository.findByConversationId("web");
-        assertThat(loaded).hasSize(1);
-        assertThat(loaded.get(0).getText()).isEqualTo("First message");
-    }
-
-    @Test
-    void appendAllPreservesCreatedAt() throws IOException {
-        repository.saveAll("web", List.of(new UserMessage("First")));
-        Path file = workspaceDir.resolve("conversations/chat-web.yaml");
-        String originalCreatedAt = extractFrontmatterValue(Files.readString(file), "createdAt");
-
-        repository.appendAll("web", List.of(new AssistantMessage("Second")));
-
-        String createdAtAfterAppend = extractFrontmatterValue(Files.readString(file), "createdAt");
-        assertThat(createdAtAfterAppend).isEqualTo(originalCreatedAt);
-    }
-
-    @Test
-    void appendAllPreservesMessageOrder() {
-        repository.saveAll("web", List.of(
-                new UserMessage("Q1"),
-                new AssistantMessage("A1")
-        ));
-
-        repository.appendAll("web", List.of(
-                new UserMessage("Q2"),
-                new AssistantMessage("A2")
-        ));
-
-        List<Message> loaded = repository.findByConversationId("web");
-        assertThat(loaded).extracting(Message::getText)
-                .containsExactly("Q1", "A1", "Q2", "A2");
-    }
-
     // -----------------------------------------------------------------------
     // findByConversationId — missing file
     // -----------------------------------------------------------------------

@@ -10,11 +10,11 @@ import ai.javaclaw.tools.TaskTool;
 import org.springaicommunity.agent.tools.FileSystemTools;
 import org.springaicommunity.agent.tools.SkillsTool;
 import org.springaicommunity.agent.tools.SmartWebFetchTool;
-import org.springaicommunity.tool.search.ToolSearchToolCallAdvisor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
-import org.springframework.ai.chat.client.advisor.ToolCallAdvisor;
+import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
+import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
@@ -70,7 +70,7 @@ public class JavaClawConfiguration {
     @DependsOn({"mcpHeaderCustomizer"})
     public ChatClient chatClient(ChatClient.Builder chatClientBuilder,
                                  ChatMemory chatMemory,
-                                 ObjectProvider<ToolSearchToolCallAdvisor> toolSearchToolCallAdvisorProvider,
+                                 ObjectProvider<ToolSearchToolCallingAdvisor> toolSearchToolCallAdvisorProvider,
                                  SyncMcpToolCallbackProvider mcpToolProvider,
                                  TaskManager taskManager,
                                  ConfigurationManager configurationManager,
@@ -85,9 +85,9 @@ public class JavaClawConfiguration {
         String agentPrompt = agentMd.getContentAsString(StandardCharsets.UTF_8) + System.lineSeparator()
                 + workspace.createRelative("INFO.md").getContentAsString(StandardCharsets.UTF_8) + System.lineSeparator();
 
-        ToolCallAdvisor toolCallAdvisor = toolSearchToolCallAdvisorProvider.getIfAvailable();
+        ToolCallingAdvisor toolCallAdvisor = toolSearchToolCallAdvisorProvider.getIfAvailable();
         if (toolCallAdvisor == null) {
-            toolCallAdvisor = ToolCallAdvisor.builder().build();
+            toolCallAdvisor = ToolCallingAdvisor.builder().build();
         }
 
         chatClientBuilder

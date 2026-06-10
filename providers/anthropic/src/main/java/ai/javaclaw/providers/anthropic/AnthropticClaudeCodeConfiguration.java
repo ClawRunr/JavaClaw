@@ -1,18 +1,16 @@
 package ai.javaclaw.providers.anthropic;
 
 import com.anthropic.client.AnthropicClient;
-import com.anthropic.client.AnthropicClientAsync;
-import com.anthropic.client.okhttp.AnthropicOkHttpClient;
-import com.anthropic.client.okhttp.AnthropicOkHttpClientAsync;
+import com.anthropic.client.AnthropicClientImpl;
+import com.anthropic.core.ClientOptions;
 import io.micrometer.observation.ObservationRegistry;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.anthropic.http.okhttp.SpringAiAnthropicHttpClient;
 import org.springframework.ai.chat.observation.ChatModelObservationConvention;
 import org.springframework.ai.model.anthropic.autoconfigure.AnthropicChatProperties;
 import org.springframework.ai.model.anthropic.autoconfigure.AnthropicConnectionProperties;
-import org.springframework.ai.model.tool.DefaultToolExecutionEligibilityPredicate;
 import org.springframework.ai.model.tool.ToolCallingManager;
-import org.springframework.ai.model.tool.ToolExecutionEligibilityPredicate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -28,20 +26,18 @@ public class AnthropticClaudeCodeConfiguration {
     public AnthropicChatModel anthropicChatModel(AnthropicConnectionProperties connectionProperties,
                                                  AnthropicChatProperties chatProperties, ToolCallingManager toolCallingManager,
                                                  ObjectProvider<ObservationRegistry> observationRegistry,
-                                                 ObjectProvider<ChatModelObservationConvention> observationConvention,
-                                                 ObjectProvider<ToolExecutionEligibilityPredicate> anthropicToolExecutionEligibilityPredicate) {
+                                                 ObjectProvider<ChatModelObservationConvention> observationConvention) {
 
         AnthropicChatOptions options = getAnthropicChatOptions(connectionProperties, chatProperties);
 
         var backend = new AnthropicClaudeCodeBackend();
+        var client = anthropicClient(options, backend);
         var chatModel = AnthropicChatModel.builder()
-                .anthropicClient(anthropicClient(options, backend))
-                .anthropicClientAsync(anthropicClientAsync(options, backend))
+                .anthropicClient(client)
+                .anthropicClientAsync(client.async())
                 .options(options)
                 .toolCallingManager(toolCallingManager)
                 .observationRegistry(observationRegistry.getIfUnique(() -> ObservationRegistry.NOOP))
-                .toolExecutionEligibilityPredicate(anthropicToolExecutionEligibilityPredicate
-                        .getIfUnique(DefaultToolExecutionEligibilityPredicate::new))
                 .build();
 
         observationConvention.ifAvailable(chatModel::setObservationConvention);
@@ -61,19 +57,13 @@ public class AnthropticClaudeCodeConfiguration {
     }
 
     private static AnthropicClient anthropicClient(AnthropicChatOptions options, AnthropicClaudeCodeBackend backend) {
-        var clientBuilder = AnthropicOkHttpClient.builder().backend(backend);
-        if (options.getTimeout() != null) clientBuilder.timeout(options.getTimeout());
-        if (options.getMaxRetries() != null) clientBuilder.maxRetries(options.getMaxRetries());
-        if (options.getProxy() != null) clientBuilder.proxy(options.getProxy());
-        return clientBuilder.build();
-    }
+        var httpClientBuilder = SpringAiAnthropicHttpClient.builder().backend(backend);
+        if (options.getTimeout() != null) httpClientBuilder.timeout(options.getTimeout());
+        if (options.getProxy() != null) httpClientBuilder.proxy(options.getProxy());
 
-    private static AnthropicClientAsync anthropicClientAsync(AnthropicChatOptions options, AnthropicClaudeCodeBackend backend) {
-        var asyncClientBuilder = AnthropicOkHttpClientAsync.builder().backend(backend);
-        if (options.getTimeout() != null) asyncClientBuilder.timeout(options.getTimeout());
-        if (options.getMaxRetries() != null) asyncClientBuilder.maxRetries(options.getMaxRetries());
-        if (options.getProxy() != null) asyncClientBuilder.proxy(options.getProxy());
-        return asyncClientBuilder.build();
+        var clientOptionsBuilder = ClientOptions.builder().httpClient(httpClientBuilder.build());
+        if (options.getMaxRetries() != null) clientOptionsBuilder.maxRetries(options.getMaxRetries());
+        return new AnthropicClientImpl(clientOptionsBuilder.build());
     }
 
 }

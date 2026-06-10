@@ -14,10 +14,11 @@ dependencies {
 
     implementation 'org.springframework.ai:spring-ai-client-chat'
     implementation 'org.springframework.ai:spring-ai-starter-mcp-client'
+    implementation 'org.springframework.ai:spring-ai-tool-search-advisor'
+    implementation 'org.springframework.ai:spring-ai-tool-search-tool'
+    implementation(libs.spring.ai.lucene)
 
     implementation(libs.spring.ai.agent.utils)
-    implementation(libs.spring.ai.tool.search)
-    implementation(libs.spring.ai.tool.search.lucene)
 
     runtimeOnly 'com.h2database:h2'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
