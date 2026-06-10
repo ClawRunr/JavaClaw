@@ -1,8 +1,8 @@
 package ai.javaclaw.tools.search;
 
 import org.junit.jupiter.api.Test;
-import org.springaicommunity.tool.search.ToolSearchToolCallAdvisor;
-import org.springaicommunity.tool.search.ToolSearcher;
+import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
+import org.springframework.ai.tool.toolsearch.ToolIndex;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,14 +16,14 @@ class DynamicToolDiscoveryConfigurationTest {
     void whenPropertyIsMissing_defaultsToEnabled() {
         contextRunner
                 .run(context -> {
-                    assertThat(context).hasSingleBean(ToolSearcher.class);
-                    assertThat(context).hasSingleBean(ToolSearchToolCallAdvisor.class);
+                    assertThat(context).hasSingleBean(ToolIndex.class);
+                    assertThat(context).hasSingleBean(ToolSearchToolCallingAdvisor.class);
                     assertThat(context.getBean(DynamicToolDiscoveryProperties.class).enabled()).isTrue();
                 });
     }
 
     @Test
-    void whenEnabled_registersToolSearcherAndAdvisor() {
+    void whenEnabled_registersToolIndexAndAdvisor() {
         contextRunner
                 .withPropertyValues(
                         "javaclaw.tools.dynamic-discovery.enabled=true",
@@ -31,19 +31,19 @@ class DynamicToolDiscoveryConfigurationTest {
                         "javaclaw.tools.dynamic-discovery.lucene-min-score-threshold=0.0"
                 )
                 .run(context -> {
-                    assertThat(context).hasSingleBean(ToolSearcher.class);
-                    assertThat(context).hasSingleBean(ToolSearchToolCallAdvisor.class);
+                    assertThat(context).hasSingleBean(ToolIndex.class);
+                    assertThat(context).hasSingleBean(ToolSearchToolCallingAdvisor.class);
                     assertThat(context.getBean(DynamicToolDiscoveryProperties.class).enabled()).isTrue();
                 });
     }
 
     @Test
-    void whenDisabled_doesNotRegisterToolSearcherOrAdvisor() {
+    void whenDisabled_doesNotRegisterToolIndexOrAdvisor() {
         contextRunner
                 .withPropertyValues("javaclaw.tools.dynamic-discovery.enabled=false")
                 .run(context -> {
-                    assertThat(context).doesNotHaveBean(ToolSearcher.class);
-                    assertThat(context).doesNotHaveBean(ToolSearchToolCallAdvisor.class);
+                    assertThat(context).doesNotHaveBean(ToolIndex.class);
+                    assertThat(context).doesNotHaveBean(ToolSearchToolCallingAdvisor.class);
                 });
     }
 }
