@@ -6,6 +6,7 @@ import org.springaicommunity.agent.tools.SkillsTool;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.core.io.ClassPathResource;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -25,21 +26,27 @@ class SkillsJarSupportTest {
 
     @Test
     void loadsSkillsFromJarResource() throws Exception {
+        // GIVEN
         Path jarPath = tempDir.resolve("skills.jar");
         writeSkillJar(jarPath);
 
-        URL jarUrl = jarPath.toUri().toURL();
+        // WHEN
+        ToolCallback callback = getSkillsToolWithSkillsJar(jarPath, "META-INF/skills");
+
+        // THEM
+        String result = callback.call("{\"command\":\"jar-skill\"}");
+        assertThat(result).contains("Base directory for this skill:");
+        assertThat(result).contains("This skill came from a jar.");
+    }
+
+    private static ToolCallback getSkillsToolWithSkillsJar(Path jarPath, String path) throws IOException {
         ClassLoader originalCl = Thread.currentThread().getContextClassLoader();
-        try (URLClassLoader cl = new URLClassLoader(new URL[]{jarUrl}, originalCl)) {
+        try (URLClassLoader cl = new URLClassLoader(new URL[]{jarPath.toUri().toURL()}, originalCl)) {
             Thread.currentThread().setContextClassLoader(cl);
 
-            ToolCallback callback = SkillsTool.builder()
-                    .addSkillsResource(new ClassPathResource("META-INF/skills", cl))
+            return SkillsTool.builder()
+                    .addSkillsResource(new ClassPathResource(path, cl))
                     .build();
-
-            String result = callback.call("{\"command\":\"jar-skill\"}");
-            assertThat(result).contains("Base directory for this skill:");
-            assertThat(result).contains("This skill came from a jar.");
         } finally {
             Thread.currentThread().setContextClassLoader(originalCl);
         }
