@@ -187,6 +187,10 @@ Tests cover task management, Telegram and Discord channel authorization/flow, on
 [Website](https://clawrunr.io/)
 [Release Blog post](https://www.jobrunr.io/en/blog/clawrunr/)
 
+## Agent Templates
+
+Looking for ready-made agent configurations? [CrewClaw](https://crewclaw.com/agents) has 190+ agent templates across 25 categories that work with JavaClaw's skill system. Browse roles like Project Manager, Software Engineer, DevOps, QA, and more.
+
 ## License
 
 This project is open-source. See [LICENSE](license.md) for details.
