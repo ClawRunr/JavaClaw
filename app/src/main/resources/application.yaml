@@ -2,7 +2,7 @@ spring:
   application:
     name: JavaClaw
   config:
-    import: optional:classpath:application.private.yaml
+    import: optional:classpath:application.private.yaml.older
   datasource:
     url: jdbc:h2:file:./workspace/app
   ai:
