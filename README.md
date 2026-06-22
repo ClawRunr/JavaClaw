@@ -8,7 +8,7 @@ JavaClaw is a Java-based personal AI assistant that runs on your own devices. It
 
 - **Multi-Channel Support** — Chat UI (WebSocket), Telegram, Discord, and an extensible plugin-based channel architecture
 - **Task Management** — Create, schedule (one-off, delayed, or recurring via cron), and track tasks as human-readable Markdown files
-- **Extensible Skills** — Drop a `SKILL.md` into `workspace/skills/` and the agent picks it up at runtime
+- **Extensible Skills** — Load skills from `workspace/skills/` and from `skills jar` packages on the classpath
 - **LLM Provider Choice** — Plug in OpenAI, Anthropic, or Ollama (local); switchable during onboarding
 - **MCP Support** — Model Context Protocol client for connecting external tool servers
 - **Shell & File Access** — Agent can read/write files and run bash commands on your machine
@@ -130,6 +130,44 @@ agent:
 
 Skills extend the agent's capabilities at runtime without code changes. Create a directory under `workspace/skills/<skill-name>/` containing a `SKILL.md` file and the agent will load it automatically via `SkillsTool`.
 
+### Skills As Jars (SkillsJars)
+
+You can also package skills into a jar (or use a prebuilt one) and put it on the runtime classpath. JavaClaw can load skills from `classpath:/META-INF/skills`.
+
+1. Add a dependency that contains the skills (example):
+
+```gradle
+dependencies {
+  runtimeOnly("com.skillsjars:some-skill-pack:VERSION")
+}
+```
+
+2. Configure the classpath scan path:
+
+```yaml
+agent:
+  skills:
+    paths: classpath:/META-INF/skills
+```
+
+3. Ensure the jar contains this layout:
+
+```text
+META-INF/skills/<skill-name>/SKILL.md
+```
+
+`SKILL.md` must include YAML frontmatter with a `name` (this is what you invoke):
+
+```md
+---
+name: <skill-name>
+description: <optional>
+---
+<instructions...>
+```
+
+See the SkillsJars docs for packaging and published skill packs: https://www.skillsjars.com/
+
 ## Dashboard
 
 JobRunr's job dashboard is available at [http://localhost:8081](http://localhost:8081) for monitoring background task execution.
@@ -142,6 +180,7 @@ Key properties in `application.yaml`:
 |---|---|
 | `agent.workspace` | Path to the workspace root (default: `file:./workspace/`) |
 | `agent.onboarding.completed` | Set to `true` after onboarding is done |
+| `agent.skills.paths` | Classpath resource roots to scan for skills (e.g. `classpath:/META-INF/skills`) |
 | `spring.ai.model.chat` | Active LLM provider/model |
 | `javaclaw.tools.dynamic-discovery.enabled` | Enable dynamic tool discovery (Tool Search Tool pattern) instead of exposing all tools up front |
 | `jobrunr.dashboard.port` | JobRunr dashboard port (default: `8081`) |

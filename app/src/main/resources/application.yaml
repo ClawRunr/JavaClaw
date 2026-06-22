@@ -25,6 +25,8 @@ agent:
   onboarding:
     completed: false
   workspace: file:./workspace/
+  skills:
+    paths: classpath:/META-INF/skills
 jobrunr:
   background-job-server:
     enabled: true
