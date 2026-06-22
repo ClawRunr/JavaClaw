@@ -1,0 +1,29 @@
+[versions]
+spring-boot = "4.0.6"
+spring-ai = "2.0.0"
+telegrambots = "9.5.0"
+commonmark = "0.28.0"
+
+[libraries]
+bom-spring-boot = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
+bom-spring-ai = { module = "org.springframework.ai:spring-ai-bom", version.ref = "spring-ai" }
+bom-spring-modulith = { module = "org.springframework.modulith:spring-modulith-bom", version = "2.0.6" }
+spring-ai-agent-utils = { module = "org.springaicommunity:spring-ai-agent-utils", version = "0.9.0" }
+spring-ai-lucene = { module = "org.apache.lucene:lucene-core", version = "9.12.3" }
+
+netty-resolver-dns-native-macos = { module = "io.netty:netty-resolver-dns-native-macos", version = "4.2.12.Final" }
+jobrunr-spring-starter = { module = "org.jobrunr:jobrunr-spring-boot-4-starter", version = "8.6.1" }
+pebble-spring-starter = { module = "io.pebbletemplates:pebble-spring-boot-starter", version = "4.1.1" }
+java-discord-api = { module = "net.dv8tion:JDA", version = "6.4.1" }
+playwright = { module = "com.microsoft.playwright:playwright", version = "1.52.0" }
+telegrambots-client = { module = "org.telegram:telegrambots-client", version.ref = "telegrambots" }
+telegrambots-springboot-longpolling-starter = { module = "org.telegram:telegrambots-springboot-longpolling-starter", version.ref = "telegrambots" }
+commonmark-java = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
+commonmark-ext-gfm-strikethrough = { module = "org.commonmark:commonmark-ext-gfm-strikethrough", version.ref = "commonmark" }
+
+[bundles]
+
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
+jib = { id = "com.google.cloud.tools.jib", version = "3.5.3" }

@@ -1,6 +1,5 @@
 plugins {
-    id 'org.springframework.boot' version '4.0.3' apply false
-    id 'io.spring.dependency-management' version '1.1.7' apply false
+    alias(libs.plugins.spring.boot) apply false
 }
 
 description = 'JavaClaw'
@@ -22,22 +21,15 @@ allprojects {
 
 // Explicitly configure only real projects
 configure(subprojects.findAll { it.buildFile.exists() }) {
-    apply plugin: 'io.spring.dependency-management'
+    plugins.withType(JavaPlugin).configureEach {
+        dependencies {
+            implementation(platform(libs.bom.spring.boot))
+            implementation(platform(libs.bom.spring.ai))
+            implementation(platform(libs.bom.spring.modulith))
 
-    ext {
-        springAiVersion = '2.0.0-SNAPSHOT'
-        springModulithVersion = '2.0.3'
-    }
-
-    dependencyManagement {
-        imports {
-            mavenBom "org.springframework.boot:spring-boot-dependencies:4.0.3"
-            mavenBom "org.springframework.ai:spring-ai-bom:2.0.0-SNAPSHOT"
-            mavenBom "org.springframework.modulith:spring-modulith-bom:2.0.3"
+            testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
         }
-    }
 
-    plugins.withType(JavaPlugin) {
         java {
             toolchain {
                 languageVersion = JavaLanguageVersion.of(25)

@@ -182,8 +182,35 @@ Key properties in `application.yaml`:
 | `agent.onboarding.completed` | Set to `true` after onboarding is done |
 | `agent.skills.paths` | Classpath resource roots to scan for skills (e.g. `classpath:/META-INF/skills`) |
 | `spring.ai.model.chat` | Active LLM provider/model |
+| `javaclaw.tools.dynamic-discovery.enabled` | Enable dynamic tool discovery (Tool Search Tool pattern) instead of exposing all tools up front |
 | `jobrunr.dashboard.port` | JobRunr dashboard port (default: `8081`) |
 | `jobrunr.background-job-server.worker-count` | Concurrent job workers (default: `1`) |
+
+### Dynamic Tool Discovery
+
+When enabled, JavaClaw uses Spring AI's "Tool Search Tool" pattern ("tool search") so the model discovers relevant tools at runtime instead of receiving every tool definition up front.
+
+Use it when:
+- You have many tools (plugins, MCP servers, skills) and prompts are getting large.
+- The model picks the wrong tool because the tool list is too big or too similar.
+
+```yaml
+javaclaw:
+  tools:
+    dynamic-discovery:
+      enabled: true
+      # Optional tuning:
+      max-results: 8
+      lucene-min-score-threshold: 0.25
+```
+
+Flag behavior:
+- `enabled=true` (default): uses the Tool Search advisor (dynamic discovery, Lucene keyword search).
+- `enabled=false`: eager tool exposure (legacy behavior).
+
+Notes:
+- Tool search quality depends on `@Tool(description = "...")`. Keep descriptions specific and disambiguating.
+- Tuning: raise `lucene-min-score-threshold` to be stricter; lower it if tools are not found. Adjust `max-results` to control how many tools get surfaced.
 
 ## Running Tests
 

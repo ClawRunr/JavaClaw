@@ -5,9 +5,8 @@ plugins {
 dependencies {
     implementation project(':base')
     implementation 'org.springframework.boot:spring-boot-starter'
-    implementation 'org.springaicommunity:spring-ai-agent-utils:0.6.0-SNAPSHOT'
+    implementation(libs.spring.ai.agent.utils)
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-restclient-test'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

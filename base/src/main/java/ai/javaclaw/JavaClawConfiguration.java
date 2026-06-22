@@ -13,7 +13,8 @@ import org.springaicommunity.agent.tools.SmartWebFetchTool;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
-import org.springframework.ai.chat.client.advisor.ToolCallAdvisor;
+import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
+import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
@@ -73,6 +74,7 @@ public class JavaClawConfiguration {
     @DependsOn({"mcpHeaderCustomizer"})
     public ChatClient chatClient(ChatClient.Builder chatClientBuilder,
                                  ChatMemory chatMemory,
+                                 ObjectProvider<ToolSearchToolCallingAdvisor> toolSearchToolCallAdvisorProvider,
                                  SyncMcpToolCallbackProvider mcpToolProvider,
                                  TaskManager taskManager,
                                  ConfigurationManager configurationManager,
@@ -86,6 +88,11 @@ public class JavaClawConfiguration {
         }
         String agentPrompt = agentMd.getContentAsString(StandardCharsets.UTF_8) + System.lineSeparator()
                 + workspace.createRelative("INFO.md").getContentAsString(StandardCharsets.UTF_8) + System.lineSeparator();
+
+        ToolCallingAdvisor toolCallAdvisor = toolSearchToolCallAdvisorProvider.getIfAvailable();
+        if (toolCallAdvisor == null) {
+            toolCallAdvisor = ToolCallingAdvisor.builder().build();
+        }
 
         chatClientBuilder
                 .defaultAdvisors(new SimpleLoggerAdvisor())
@@ -107,7 +114,7 @@ public class JavaClawConfiguration {
                         // Smart web fetch tool
                         SmartWebFetchTool.builder(chatClientBuilder.clone().build()).build())
                 .defaultAdvisors(
-                        ToolCallAdvisor.builder().build(),
+                        toolCallAdvisor,
                         MessageChatMemoryAdvisor.builder(chatMemory).build()
                 );
 

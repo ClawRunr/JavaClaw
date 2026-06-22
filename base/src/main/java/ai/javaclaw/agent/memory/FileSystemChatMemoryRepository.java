@@ -2,7 +2,7 @@ package ai.javaclaw.agent.memory;
 
 import ai.javaclaw.files.YamlDocument;
 import ai.javaclaw.files.YamlParser;
-import org.springframework.ai.chat.memory.AppendableChatMemoryRepository;
+import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -39,7 +39,7 @@ import java.util.stream.Stream;
  * </pre>
  */
 @Component
-public class FileSystemChatMemoryRepository implements AppendableChatMemoryRepository {
+public class FileSystemChatMemoryRepository implements ChatMemoryRepository {
 
     private final Path conversationsDir;
 
@@ -71,13 +71,6 @@ public class FileSystemChatMemoryRepository implements AppendableChatMemoryRepos
         } catch (IOException e) {
             throw new RuntimeException("Failed to read conversation: " + conversationId, e);
         }
-    }
-
-    @Override
-    public void appendAll(String conversationId, List<Message> messages) {
-        List<Message> existing = findByConversationId(conversationId);
-        List<Message> combined = Stream.concat(existing.stream(), messages.stream()).toList();
-        saveAll(conversationId, combined);
     }
 
     @Override
