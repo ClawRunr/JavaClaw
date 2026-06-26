@@ -97,8 +97,8 @@ public class JavaClawConfiguration {
         chatClientBuilder
                 .defaultAdvisors(new SimpleLoggerAdvisor())
                 .defaultSystem(p -> p.text(agentPrompt).param(AgentEnvironment.ENVIRONMENT_INFO_KEY, AgentEnvironment.info()))
-                .defaultToolCallbacks(mcpToolProvider.getToolCallbacks())
-                .defaultToolCallbacks(SkillsTool.builder()
+                .defaultTools((Object[]) mcpToolProvider.getToolCallbacks())
+                .defaultTools(SkillsTool.builder()
                         .addSkillsDirectory(skillsDir(workspace).toString())
                         .addSkillsResources(skillPaths)
                         .build()

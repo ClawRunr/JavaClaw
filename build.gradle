@@ -30,6 +30,12 @@ configure(subprojects.findAll { it.buildFile.exists() }) {
             testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
         }
 
+        plugins.withId('org.springframework.boot') {
+            dependencies {
+                developmentOnly(platform(libs.bom.spring.boot))
+            }
+        }
+
         java {
             toolchain {
                 languageVersion = JavaLanguageVersion.of(25)

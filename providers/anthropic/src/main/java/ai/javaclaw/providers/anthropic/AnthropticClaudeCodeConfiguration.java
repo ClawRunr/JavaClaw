@@ -10,7 +10,6 @@ import org.springframework.ai.anthropic.http.okhttp.SpringAiAnthropicHttpClient;
 import org.springframework.ai.chat.observation.ChatModelObservationConvention;
 import org.springframework.ai.model.anthropic.autoconfigure.AnthropicChatProperties;
 import org.springframework.ai.model.anthropic.autoconfigure.AnthropicConnectionProperties;
-import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -24,7 +23,7 @@ public class AnthropticClaudeCodeConfiguration {
 
     @Bean
     public AnthropicChatModel anthropicChatModel(AnthropicConnectionProperties connectionProperties,
-                                                 AnthropicChatProperties chatProperties, ToolCallingManager toolCallingManager,
+                                                 AnthropicChatProperties chatProperties,
                                                  ObjectProvider<ObservationRegistry> observationRegistry,
                                                  ObjectProvider<ChatModelObservationConvention> observationConvention) {
 
@@ -36,7 +35,6 @@ public class AnthropticClaudeCodeConfiguration {
                 .anthropicClient(client)
                 .anthropicClientAsync(client.async())
                 .options(options)
-                .toolCallingManager(toolCallingManager)
                 .observationRegistry(observationRegistry.getIfUnique(() -> ObservationRegistry.NOOP))
                 .build();
 
