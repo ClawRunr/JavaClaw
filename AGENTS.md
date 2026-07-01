@@ -43,7 +43,7 @@ root
 
 `app` depends on `base` + all `providers/` + all `plugins/`. `ChatChannel` lives inside `app/`.
 
-Each **provider** implements `AgentOnboardingProvider` (in `base`) and is auto-discovered by Spring. Each **plugin** is an optional Spring Boot auto-configuration module that contributes tools or channels.
+Each **provider** implements `AgentOnboardingProvider` (in `base`) and self-registers via Spring Boot auto-configuration (`META-INF/spring/…AutoConfiguration.imports`) — same drop-in mechanism as plugins, independent of the app's component scan. Each **plugin** is an optional Spring Boot auto-configuration module that contributes tools or channels.
 
 ---
 
@@ -107,7 +107,7 @@ User/Agent → TaskManager.create()
 | `MCP Tools` | `SyncMcpToolCallbackProvider` |
 | `BraveWebSearchTool` | 15 results (only if Brave API key configured) |
 
-**Supported LLM Providers** — each lives in its own `providers/<name>/` module and implements `AgentOnboardingProvider`:
+**Supported LLM Providers** — each lives in its own `providers/<name>/` module and contributes its `AgentOnboardingProvider` through an `@AutoConfiguration` class registered in the module's `AutoConfiguration.imports`. The active model is selected centrally by `spring.ai.model.chat` (Spring AI), not per-provider; the default `unknown` disables all of them until onboarding sets it:
 
 | Provider | Module | Default Model | API Key |
 |---|---|---|---|
