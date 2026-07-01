@@ -11,11 +11,11 @@ import org.springframework.ai.chat.observation.ChatModelObservationConvention;
 import org.springframework.ai.model.anthropic.autoconfigure.AnthropicChatProperties;
 import org.springframework.ai.model.anthropic.autoconfigure.AnthropicConnectionProperties;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
-@Configuration
+@AutoConfiguration
 @ConditionalOnProperty(name = "spring.ai.anthropic.api-key", havingValue = AnthropticClaudeCodeConfiguration.CLAUDE_CODE_OATH_TOKEN_PLACEHOLDER)
 public class AnthropticClaudeCodeConfiguration {
 
