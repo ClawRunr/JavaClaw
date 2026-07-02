@@ -1,20 +1,9 @@
 package ai.javaclaw;
 
-import ai.javaclaw.configuration.ConfigurationManager;
+import ai.javaclaw.llm.DelegatingChatClient;
 import ai.javaclaw.tasks.TaskManager;
-import ai.javaclaw.tools.AgentEnvironment;
-import ai.javaclaw.tools.AutoDiscoveredTool;
-import ai.javaclaw.tools.CheckListTool;
-import ai.javaclaw.tools.McpTool;
-import ai.javaclaw.tools.TaskTool;
-import org.springaicommunity.agent.tools.FileSystemTools;
-import org.springaicommunity.agent.tools.SkillsTool;
-import org.springaicommunity.agent.tools.SmartWebFetchTool;
+import ai.javaclaw.tools.JavaClawTaskTool;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
-import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
-import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
@@ -22,36 +11,27 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import org.springframework.ai.model.SpringAIModelProperties;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.DependsOn;
-import org.springframework.core.io.Resource;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
 
 @Configuration
 public class JavaClawConfiguration {
 
     public static final String AGENT_MD = "AGENT.private.md";
 
-    @Value("${agent.skills.paths}")
-    List<Resource> skillPaths;
-
+    private static final String NO_MODEL_MESSAGE =
+            "No AI model has been configured. If you did configure a model recently, restart JavaClaw "
+                    + "manually for the changes to take effect.";
 
     @Bean
     @ConditionalOnProperty(name = SpringAIModelProperties.CHAT_MODEL, havingValue = "unknown", matchIfMissing = true)
     public ChatModel chatModel() {
-        return prompt -> new ChatResponse(List.of(new Generation(new AssistantMessage("No AI model has been configured. If you did configure a model recently, restart JavaClaw manually for the changes to take effect."))));
+        return _ -> new ChatResponse(List.of(new Generation(new AssistantMessage(NO_MODEL_MESSAGE))));
     }
 
     @Bean
@@ -60,71 +40,25 @@ public class JavaClawConfiguration {
     }
 
     @Bean
-    public TaskTool taskTool(TaskManager taskManager) {
-        return TaskTool.builder().taskManager(taskManager).build();
+    public JavaClawTaskTool taskTool(TaskManager taskManager) {
+        return JavaClawTaskTool.builder().taskManager(taskManager).build();
     }
 
     @Bean
     public ChatClient.Builder chatClientBuilder(ObjectProvider<ChatModel> chatModelProvider) {
-        ChatModel chatModel = chatModelProvider.getIfUnique(() -> prompt -> new ChatResponse(List.of(new Generation(new AssistantMessage("No AI model has been configured. If you did configure a model recently, restart JavaClaw manually for the changes to take effect.")))));
+        ChatModel chatModel = chatModelProvider.getIfUnique(() ->
+                prompt -> new ChatResponse(List.of(new Generation(new AssistantMessage(NO_MODEL_MESSAGE)))));
         return ChatClient.builder(chatModel);
     }
 
+    /**
+     * The main agent {@link ChatClient}. Delegates to {@link MainChatClientProvider}, which builds it
+     * from the {@code default} provider in {@code agent.llm.providers} and rebuilds it on a
+     * configuration refresh — so the single injected reference always reflects the current default
+     * provider without restarting the application.
+     */
     @Bean
-    @DependsOn({"mcpHeaderCustomizer"})
-    public ChatClient chatClient(ChatClient.Builder chatClientBuilder,
-                                 ChatMemory chatMemory,
-                                 ObjectProvider<ToolSearchToolCallingAdvisor> toolSearchToolCallAdvisorProvider,
-                                 SyncMcpToolCallbackProvider mcpToolProvider,
-                                 TaskManager taskManager,
-                                 ConfigurationManager configurationManager,
-                                 @Value("${agent.workspace:Unknown}") Resource workspace,
-                                 Set<AutoDiscoveredTool<?>> autoDiscoveredTools
-    ) throws IOException {
-
-        Resource agentMd = workspace.createRelative(AGENT_MD);
-        if (!agentMd.exists()) {
-            agentMd = workspace.createRelative("AGENT.md");
-        }
-        String agentPrompt = agentMd.getContentAsString(StandardCharsets.UTF_8) + System.lineSeparator()
-                + workspace.createRelative("INFO.md").getContentAsString(StandardCharsets.UTF_8) + System.lineSeparator();
-
-        ToolCallingAdvisor toolCallAdvisor = toolSearchToolCallAdvisorProvider.getIfAvailable();
-        if (toolCallAdvisor == null) {
-            toolCallAdvisor = ToolCallingAdvisor.builder().build();
-        }
-
-        chatClientBuilder
-                .defaultAdvisors(new SimpleLoggerAdvisor())
-                .defaultSystem(p -> p.text(agentPrompt).param(AgentEnvironment.ENVIRONMENT_INFO_KEY, AgentEnvironment.info()))
-                .defaultTools((Object[]) mcpToolProvider.getToolCallbacks())
-                .defaultTools(SkillsTool.builder()
-                        .addSkillsDirectory(skillsDir(workspace).toString())
-                        .addSkillsResources(skillPaths)
-                        .build()
-                )
-                .defaultTools(
-                        TaskTool.builder().taskManager(taskManager).build(),
-                        CheckListTool.builder().build(),
-                        McpTool.builder().configurationManager(configurationManager).build(),
-                        //Bash execution tool
-                        //ShellTools.builder().build(),// built-in shell tools
-                        // Read, Write and Edit files tool
-                        FileSystemTools.builder().build(),// built-in file system tools
-                        // Smart web fetch tool
-                        SmartWebFetchTool.builder(chatClientBuilder.clone().build()).build())
-                .defaultAdvisors(
-                        toolCallAdvisor,
-                        MessageChatMemoryAdvisor.builder(chatMemory).build()
-                );
-
-        autoDiscoveredTools.forEach(autoDiscoveredTool -> chatClientBuilder.defaultTools(autoDiscoveredTool.tool()));
-        return chatClientBuilder.build();
-    }
-
-    private static Path skillsDir(Resource workspace) throws IOException {
-        Path skillsDir = workspace.getFilePath().resolve("skills");
-        Files.createDirectories(skillsDir);
-        return skillsDir;
+    public ChatClient chatClient(MainChatClientProvider mainChatClientProvider) {
+        return new DelegatingChatClient(mainChatClientProvider::current);
     }
 }

@@ -15,14 +15,14 @@ import static java.util.Optional.ofNullable;
  * Creates and manages high-level tasks for AI assistants.
  * Each task is persisted as a Markdown file in the workspace directory.
  */
-public class TaskTool {
+public class JavaClawTaskTool {
 
-    private static final Logger logger = LoggerFactory.getLogger(TaskTool.class);
+    private static final Logger logger = LoggerFactory.getLogger(JavaClawTaskTool.class);
     private final TaskManager taskManager;
     private final TaskEventHandler taskEventHandler;
 
 
-    public TaskTool(TaskManager taskManager, TaskEventHandler taskEventHandler) {
+    public JavaClawTaskTool(TaskManager taskManager, TaskEventHandler taskEventHandler) {
         this.taskManager = taskManager;
         this.taskEventHandler = taskEventHandler;
     }
@@ -143,18 +143,18 @@ public class TaskTool {
         private TaskEventHandler taskEventHandler;
 
 
-        public TaskTool.Builder taskManager(TaskManager taskManager) {
+        public JavaClawTaskTool.Builder taskManager(TaskManager taskManager) {
             this.taskManager = taskManager;
             return this;
         }
 
-        public TaskTool.Builder agentTaskEventHandler(TaskEventHandler taskEventHandler) {
+        public JavaClawTaskTool.Builder agentTaskEventHandler(TaskEventHandler taskEventHandler) {
             this.taskEventHandler = taskEventHandler;
             return this;
         }
 
-        public TaskTool build() {
-            return new TaskTool(this.taskManager, this.taskEventHandler);
+        public JavaClawTaskTool build() {
+            return new JavaClawTaskTool(this.taskManager, this.taskEventHandler);
         }
 
     }

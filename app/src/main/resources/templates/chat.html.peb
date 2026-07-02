@@ -168,7 +168,12 @@
                 <div class="select is-small is-dark" id="channel-selector"></div>
             </div>
             <div class="navbar-item">
-                <a href="/onboarding" class="button is-small is-dark">
+                <a href="/settings/agents" class="button is-small is-dark" hx-boost="false">
+                    <span>Agents</span>
+                </a>
+            </div>
+            <div class="navbar-item">
+                <a href="/onboarding" class="button is-small is-dark" hx-boost="false">
                     <span>Settings</span>
                 </a>
             </div>
