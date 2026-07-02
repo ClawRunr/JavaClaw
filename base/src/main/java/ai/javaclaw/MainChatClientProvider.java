@@ -4,7 +4,7 @@ import ai.javaclaw.configuration.ConfigurationManager;
 import ai.javaclaw.configuration.ConfigurationRefreshedEvent;
 import ai.javaclaw.llm.ChatClientRegistry;
 import ai.javaclaw.llm.LlmProviderProperties;
-import ai.javaclaw.llm.SubagentReferenceScanner;
+import ai.javaclaw.llm.SubagentStore;
 import ai.javaclaw.tasks.TaskManager;
 import ai.javaclaw.tools.AgentEnvironment;
 import ai.javaclaw.tools.AutoDiscoveredTool;
@@ -62,8 +62,7 @@ public class MainChatClientProvider {
     private final SyncMcpToolCallbackProvider mcpToolProvider;
     private final TaskManager taskManager;
     private final ConfigurationManager configurationManager;
-    private final SubagentReferenceScanner subagentScanner;
-    private final LlmProviderProperties providerProperties;
+    private final SubagentStore subagentStore;
     private final Set<AutoDiscoveredTool<?>> autoDiscoveredTools;
     private final Resource workspace;
     private final List<Resource> skillPaths;
@@ -76,8 +75,7 @@ public class MainChatClientProvider {
                                   SyncMcpToolCallbackProvider mcpToolProvider,
                                   TaskManager taskManager,
                                   ConfigurationManager configurationManager,
-                                  SubagentReferenceScanner subagentScanner,
-                                  LlmProviderProperties providerProperties,
+                                  SubagentStore subagentStore,
                                   Set<AutoDiscoveredTool<?>> autoDiscoveredTools,
                                   @Value("${agent.workspace:Unknown}") Resource workspace,
                                   @Value("${agent.skills.paths}") List<Resource> skillPaths) {
@@ -87,8 +85,7 @@ public class MainChatClientProvider {
         this.mcpToolProvider = mcpToolProvider;
         this.taskManager = taskManager;
         this.configurationManager = configurationManager;
-        this.subagentScanner = subagentScanner;
-        this.providerProperties = providerProperties;
+        this.subagentStore = subagentStore;
         this.autoDiscoveredTools = autoDiscoveredTools;
         this.workspace = workspace;
         this.skillPaths = skillPaths;
@@ -151,20 +148,17 @@ public class MainChatClientProvider {
      * {@code workspace/agents/}.
      */
     private ToolCallback buildSubagentTaskTool() {
-        Path agentsDir = subagentScanner.agentsDirectory();
+        Path agentsDir = subagentStore.agentsDirectory();
         if (agentsDir == null) {
             return null;
         }
         try {
             Files.createDirectories(agentsDir);
 
+            // Agents reference their own provider entry by name, so builders are keyed by provider name.
             Map<String, ChatClient.Builder> builders = new LinkedHashMap<>();
             for (String name : registry.availableNames()) {
                 builders.put(name, registry.builderFor(name));
-                LlmProviderProperties.ProviderConfig config = providerProperties.getProviders().get(name);
-                if (config != null && config.getProvider() != null && !config.getProvider().isBlank()) {
-                    builders.putIfAbsent(config.getProvider().trim().toLowerCase(), registry.builderFor(name));
-                }
             }
             if (builders.isEmpty()) {
                 return null;

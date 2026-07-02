@@ -2,6 +2,10 @@ package ai.javaclaw.llm;
 
 import ai.javaclaw.files.YamlDocument;
 import ai.javaclaw.files.YamlParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -16,30 +20,33 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
- * Reads and writes subagent definition files under {@code workspace/agents/}. Each subagent is one
- * Markdown file with {@code name}, {@code description} and {@code model} frontmatter and a free-form
- * body (the subagent's instructions).
+ * Single point of access for the agent definition files under {@code workspace/agents/}. Each agent
+ * is one Markdown file with {@code name}, {@code description} and {@code model} frontmatter and a
+ * free-form body (the agent's instructions).
  */
 @Component
 public class SubagentStore {
 
-    private final SubagentReferenceScanner scanner;
+    private static final Logger log = LoggerFactory.getLogger(SubagentStore.class);
+    private static final String AGENTS_SUBDIRECTORY = "agents";
 
-    public SubagentStore(SubagentReferenceScanner scanner) {
-        this.scanner = scanner;
+    private final Resource workspace;
+
+    public SubagentStore(@Value("${agent.workspace:file:./workspace/}") Resource workspace) {
+        this.workspace = workspace;
     }
 
     /**
-     * @param name        the subagent id (also its file name without {@code .md})
-     * @param model       the provider name this subagent runs on
-     * @param description short summary of what the subagent does
-     * @param content     the subagent's instructions (Markdown body)
+     * @param name        the agent id (also its file name without {@code .md})
+     * @param model       the routing value ({@code "<provider>"} or {@code "<provider>:<modelId>"})
+     * @param description short summary of what the agent does
+     * @param content     the agent's instructions (Markdown body)
      */
     public record Subagent(String name, String model, String description, String content) {
     }
 
     public List<Subagent> list() {
-        Path dir = scanner.agentsDirectory();
+        Path dir = agentsDirectory();
         if (dir == null || !Files.isDirectory(dir)) {
             return List.of();
         }
@@ -49,7 +56,7 @@ public class SubagentStore {
                     .sorted()
                     .forEach(p -> read(p).ifPresent(result::add));
         } catch (IOException e) {
-            throw new RuntimeException("Failed to list subagents", e);
+            throw new RuntimeException("Failed to list agents", e);
         }
         return result;
     }
@@ -68,9 +75,9 @@ public class SubagentStore {
     }
 
     public void save(Subagent subagent) throws IOException {
-        Path dir = scanner.agentsDirectory();
+        Path dir = agentsDirectory();
         if (dir == null) {
-            throw new IOException("Subagents directory is not available");
+            throw new IOException("Agents directory is not available");
         }
         Files.createDirectories(dir);
 
@@ -95,6 +102,16 @@ public class SubagentStore {
         return Files.deleteIfExists(file);
     }
 
+    /** The {@code workspace/agents} directory path, or {@code null} if it cannot be resolved. */
+    public Path agentsDirectory() {
+        try {
+            return workspace.getFile().toPath().resolve(AGENTS_SUBDIRECTORY);
+        } catch (IOException | RuntimeException e) {
+            log.debug("Workspace resource is not file-based; agent storage disabled");
+            return null;
+        }
+    }
+
     private Optional<Subagent> read(Path file) {
         try {
             String raw = Files.readString(file, StandardCharsets.UTF_8);
@@ -106,12 +123,13 @@ public class SubagentStore {
             String description = doc.frontmatter().getOrDefault("description", "");
             return Optional.of(new Subagent(name, model, description, doc.body()));
         } catch (IOException e) {
+            log.warn("Failed to read agent file {}: {}", file, e.getMessage());
             return Optional.empty();
         }
     }
 
     private Path fileFor(String name) {
-        Path dir = scanner.agentsDirectory();
+        Path dir = agentsDirectory();
         return dir == null ? null : dir.resolve(name + ".md");
     }
 }
