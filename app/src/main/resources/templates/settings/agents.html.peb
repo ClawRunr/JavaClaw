@@ -91,10 +91,9 @@
         <div class="field">
             <label class="label">Model</label>
             <div class="control">
-                <input class="input" type="text" id="f-model" list="model-options" placeholder="Model id" autocomplete="off">
-                <datalist id="model-options"></datalist>
+                <input class="input" type="text" id="f-model" placeholder="Model id" autocomplete="off">
             </div>
-            <p class="help">Models available in your configuration (you can also type one).</p>
+            <p class="help">Defaults to the provider's model; type another to override.</p>
         </div>
 
         <div class="field">
@@ -146,11 +145,9 @@
 <script>
 (function () {
     const API = "/api/agents";
-    const PROVIDERS_API = "/api/providers";
 
     let editing = null;          // name being edited, or null when adding
     let providerOptions = [];    // [{id, label, defaultModel}] — supported LLM providers
-    let configModels = [];       // model ids present in the configured providers
 
     const $ = (id) => document.getElementById(id);
     const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
@@ -158,12 +155,6 @@
     async function loadProviderOptions() {
         try { providerOptions = await (await fetch(API + "/options/providers")).json(); }
         catch (e) { providerOptions = []; }
-    }
-    async function loadConfigModels() {
-        try {
-            const list = await (await fetch(PROVIDERS_API)).json();
-            configModels = [...new Set(list.map(p => p.model).filter(Boolean))];
-        } catch (e) { configModels = []; }
     }
     const defaultModelFor = (id) => { const p = providerOptions.find(x => x.id === id); return p ? (p.defaultModel || "") : ""; };
 
@@ -202,10 +193,6 @@
         if (!selected && providerOptions.length) select.value = providerOptions[0].id;
     }
 
-    function fillModelDatalist() {
-        $("model-options").innerHTML = configModels.map(m => `<option value="${esc(m)}"></option>`).join("");
-    }
-
     function openDrawer() {
         $("drawer-backdrop").classList.add("is-open");
         $("agent-drawer").classList.add("is-open");
@@ -227,7 +214,6 @@
         $("apikey-help").textContent = "";
         $("form-error").textContent = "";
         fillProviderSelect(null);
-        fillModelDatalist();
         $("f-model").value = defaultModelFor($("f-provider").value);
         openDrawer();
     }
@@ -247,7 +233,6 @@
         $("apikey-help").textContent = a.apiKeyMasked ? "Current: " + a.apiKeyMasked + " — leave blank to keep" : "";
         $("form-error").textContent = "";
         fillProviderSelect(a.provider || null);
-        fillModelDatalist();
         $("f-model").value = a.model || defaultModelFor($("f-provider").value);
         openDrawer();
     }
@@ -309,7 +294,7 @@
     $("delete-modal").querySelector(".modal-background").addEventListener("click", closeDeleteModal);
     $("delete-confirm").addEventListener("click", doDelete);
 
-    Promise.all([loadProviderOptions(), loadConfigModels()]).then(loadAgents);
+    loadProviderOptions().then(loadAgents);
 })();
 </script>
 {% endblock %}
