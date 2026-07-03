@@ -44,16 +44,6 @@ public class JavaClawApplication {
 
         @EventListener
         public void on(ConfigurationChangedEvent configurationChangedEvent) {
-            // Model-provider changes are applied at runtime via ConfigurationRebinder +
-            // ChatClientRegistry (hot reload), so they must NOT trigger a full restart.
-            boolean providerChangeOnly = !configurationChangedEvent.changedKeys().isEmpty()
-                    && configurationChangedEvent.changedKeys().stream()
-                    .allMatch(key -> key.equals("agent.llm.providers") || key.startsWith("agent.llm.providers."));
-            if (providerChangeOnly) {
-                log.info("Configuration change limited to model providers; applying without restart.");
-                return;
-            }
-
             ApplicationArguments args = applicationContext.getBean(ApplicationArguments.class);
 
             Thread thread = new Thread(() -> {
