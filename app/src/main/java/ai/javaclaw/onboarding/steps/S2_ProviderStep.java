@@ -41,7 +41,7 @@ public class S2_ProviderStep implements OnboardingProvider {
     @Override
     public void prepareModel(Map<String, Object> session, Map<String, Object> model) {
         model.put("providers", agentOnboardingProviders.getAll());
-        model.put("selectedProvider", session.getOrDefault(SESSION_PROVIDER, env.getProperty("spring.ai.model.chat", "")));
+        model.put("selectedProvider", session.getOrDefault(SESSION_PROVIDER, env.getProperty("agent.llm.providers.default.provider", "")));
     }
 
     @Override

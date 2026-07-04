@@ -33,7 +33,7 @@ public class S3_CredentialsStep implements OnboardingProvider {
 
     @Override
     public void prepareModel(Map<String, Object> session, Map<String, Object> model) {
-        String providerId = (String) session.getOrDefault(S2_ProviderStep.SESSION_PROVIDER, env.getProperty("spring.ai.model.chat", ""));
+        String providerId = (String) session.getOrDefault(S2_ProviderStep.SESSION_PROVIDER, env.getProperty("agent.llm.providers.default.provider", ""));
         AgentOnboardingProvider provider = agentOnboardingProviders.findById(providerId).orElse(null);
         if (provider == null) return;
 
@@ -52,7 +52,7 @@ public class S3_CredentialsStep implements OnboardingProvider {
 
     @Override
     public String processStep(Map<String, String> formParams, Map<String, Object> session) {
-        String providerId = (String) session.getOrDefault(S2_ProviderStep.SESSION_PROVIDER, env.getProperty("spring.ai.model.chat", ""));
+        String providerId = (String) session.getOrDefault(S2_ProviderStep.SESSION_PROVIDER, env.getProperty("agent.llm.providers.default.provider", ""));
         AgentOnboardingProvider provider = agentOnboardingProviders.findById(providerId).orElse(null);
         if (provider == null) {
             return "Provider selection is missing. Please go back and select a provider.";
@@ -83,7 +83,7 @@ public class S3_CredentialsStep implements OnboardingProvider {
     }
 
     AgentOnboardingProvider getAgentProvider(Map<String, Object> session) {
-        String providerId = (String) session.getOrDefault(S2_ProviderStep.SESSION_PROVIDER, env.getProperty("spring.ai.model.chat", ""));
+        String providerId = (String) session.getOrDefault(S2_ProviderStep.SESSION_PROVIDER, env.getProperty("agent.llm.providers.default.provider", ""));
         return agentOnboardingProviders.getById(providerId);
     }
 }
