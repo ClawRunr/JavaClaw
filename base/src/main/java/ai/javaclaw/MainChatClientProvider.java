@@ -116,7 +116,7 @@ public class MainChatClientProvider {
             }
 
             builder.defaultAdvisors(new SimpleLoggerAdvisor())
-                    //.defaultSystem(p -> p.text(agentPrompt).param(AgentEnvironment.ENVIRONMENT_INFO_KEY, AgentEnvironment.info()))
+                    .defaultSystem(p -> p.text(agentPrompt).param(AgentEnvironment.ENVIRONMENT_INFO_KEY, AgentEnvironment.info()))
                     .defaultTools((Object[]) mcpToolProvider.getToolCallbacks())
                     .defaultTools(SkillsTool.builder()
                             .addSkillsDirectory(skillsDir().toString())
