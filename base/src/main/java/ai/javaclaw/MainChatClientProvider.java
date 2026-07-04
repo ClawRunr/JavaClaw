@@ -1,7 +1,6 @@
 package ai.javaclaw;
 
 import ai.javaclaw.configuration.ConfigurationManager;
-import ai.javaclaw.configuration.ConfigurationRefreshedEvent;
 import ai.javaclaw.llm.ChatClientRegistry;
 import ai.javaclaw.llm.LlmProviderProperties;
 import ai.javaclaw.llm.SubagentStore;
@@ -31,7 +30,6 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.DependsOn;
-import org.springframework.context.event.EventListener;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
@@ -45,9 +43,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Builds and holds the main agent {@link ChatClient} (default provider + all tools, advisors and
- * subagent routing). Rebuilt when the provider configuration is hot-reloaded so changes to the
- * {@code default} provider and the set of subagent providers take effect without restarting.
+ * Builds the main agent {@link ChatClient} (default provider + all tools, advisors and subagent
+ * routing). Built once per context; configuration changes take effect via a full restart.
  */
 @Component
 @DependsOn({"mcpHeaderCustomizer"})
@@ -67,7 +64,7 @@ public class MainChatClientProvider {
     private final Resource workspace;
     private final List<Resource> skillPaths;
 
-    private volatile ChatClient delegate;
+    private final ChatClient chatClient;
 
     public MainChatClientProvider(ChatClientRegistry registry,
                                   ChatMemory chatMemory,
@@ -89,20 +86,12 @@ public class MainChatClientProvider {
         this.autoDiscoveredTools = autoDiscoveredTools;
         this.workspace = workspace;
         this.skillPaths = skillPaths;
-        this.delegate = build();
+        this.chatClient = build();
     }
 
-    /** The current main {@link ChatClient}. Accessed via {@link ai.javaclaw.llm.DelegatingChatClient}. */
+    /** The main {@link ChatClient}, built at construction. */
     public ChatClient current() {
-        return delegate;
-    }
-
-    @EventListener
-    public void onConfigurationRefreshed(ConfigurationRefreshedEvent event) {
-        if (event.changedKeys().isEmpty() || event.hasChangeUnder("agent.llm.providers")) {
-            log.info("Rebuilding main chat client after configuration refresh");
-            this.delegate = build();
-        }
+        return chatClient;
     }
 
     private ChatClient build() {

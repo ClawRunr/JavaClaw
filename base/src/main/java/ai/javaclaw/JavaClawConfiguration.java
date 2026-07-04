@@ -1,6 +1,5 @@
 package ai.javaclaw;
 
-import ai.javaclaw.llm.DelegatingChatClient;
 import ai.javaclaw.tasks.TaskManager;
 import ai.javaclaw.tools.JavaClawTaskTool;
 import org.springframework.ai.chat.client.ChatClient;
@@ -52,13 +51,12 @@ public class JavaClawConfiguration {
     }
 
     /**
-     * The main agent {@link ChatClient}. Delegates to {@link MainChatClientProvider}, which builds it
-     * from the {@code default} provider in {@code agent.llm.providers} and rebuilds it on a
-     * configuration refresh — so the single injected reference always reflects the current default
-     * provider without restarting the application.
+     * The main agent {@link ChatClient}, built from the {@code default} provider in
+     * {@code agent.llm.providers}. Configuration changes trigger a full application restart, so this
+     * is built once per context.
      */
     @Bean
     public ChatClient chatClient(MainChatClientProvider mainChatClientProvider) {
-        return new DelegatingChatClient(mainChatClientProvider::current);
+        return mainChatClientProvider.current();
     }
 }

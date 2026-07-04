@@ -1,6 +1,5 @@
 package ai.javaclaw.llm;
 
-import ai.javaclaw.configuration.ConfigurationRefreshedEvent;
 import ai.javaclaw.llm.LlmProviderProperties.ProviderConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,7 +8,6 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -20,7 +18,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Default {@link ChatClientRegistry}. Builds one {@link ChatModel} per configured provider via the
- * {@link ChatModelFactory} SPI and rebuilds them when the provider configuration is hot-reloaded.
+ * {@link ChatModelFactory} SPI. Built once per context; configuration changes take effect via a
+ * full application restart.
  */
 @Component
 public class DefaultChatClientRegistry implements ChatClientRegistry {
@@ -44,14 +43,6 @@ public class DefaultChatClientRegistry implements ChatClientRegistry {
         this.factories = factories;
         this.properties = properties;
         rebuild();
-    }
-
-    @EventListener
-    public void onConfigurationRefreshed(ConfigurationRefreshedEvent event) {
-        if (event.changedKeys().isEmpty() || event.hasChangeUnder("agent.llm.providers")) {
-            log.info("Rebuilding chat clients after configuration refresh");
-            rebuild();
-        }
     }
 
     public final synchronized void rebuild() {
