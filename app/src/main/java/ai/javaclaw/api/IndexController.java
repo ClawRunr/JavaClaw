@@ -22,4 +22,9 @@ public class IndexController {
         }
         return "redirect:/onboarding/";
     }
+
+    @GetMapping("/settings/agents")
+    public String agents() {
+        return "settings/agents";
+    }
 }
