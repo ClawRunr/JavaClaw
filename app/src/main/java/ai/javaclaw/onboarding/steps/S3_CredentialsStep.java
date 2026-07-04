@@ -1,5 +1,6 @@
 package ai.javaclaw.onboarding.steps;
 
+import ai.javaclaw.llm.LlmProviderProperties;
 import ai.javaclaw.onboarding.AgentOnboardingProvider;
 import ai.javaclaw.onboarding.AgentOnboardingProvider.SystemWideToken;
 import ai.javaclaw.onboarding.AgentOnboardingProviders;
@@ -37,13 +38,18 @@ public class S3_CredentialsStep implements OnboardingProvider {
         AgentOnboardingProvider provider = agentOnboardingProviders.findById(providerId).orElse(null);
         if (provider == null) return;
 
+        // Onboarding configures the single "default" provider under agent.llm.providers.default.
+        String base = "agent.llm.providers." + LlmProviderProperties.DEFAULT_PROVIDER_NAME;
+        String modelKey = base + ".model";
+        String apiKeyKey = base + ".api-key";
+
         String currentModel = (String) session.get(S2_ProviderStep.SESSION_MODEL);
-        String existingModel = env.getProperty(provider.createPropertyKey("chat.options.model"), "");
-        String existingApiKey = env.getProperty(provider.createPropertyKey("api-key"), "");
+        String existingModel = env.getProperty(modelKey, "");
+        String existingApiKey = env.getProperty(apiKeyKey, "");
         model.put("selectedProvider", provider.getId());
         model.put("providerLabel", provider.getLabel());
-        model.put("providerApiPropertyKey", provider.createPropertyKey("api-key"));
-        model.put("chatModelPropertyKey", provider.createPropertyKey("chat.options.model"));
+        model.put("providerApiPropertyKey", apiKeyKey);
+        model.put("chatModelPropertyKey", modelKey);
         model.put("requiresApiKey", provider.requiresApiKey());
         model.put("apiKey", session.getOrDefault(S2_ProviderStep.SESSION_API_KEY, existingApiKey));
         model.put("model", currentModel != null && !currentModel.isBlank() ? currentModel : (!existingModel.isBlank() ? existingModel : provider.defaultModel()));
