@@ -21,6 +21,7 @@ import org.commonmark.node.Node;
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static java.util.Optional.ofNullable;
@@ -28,6 +29,8 @@ import static java.util.Optional.ofNullable;
 public class TelegramChannel implements Channel, SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TelegramChannel.class);
+
+    private static final int MAX_MESSAGE_LENGTH = 4000;
 
     private static final Parser MARKDOWN_PARSER = Parser.builder().build();
     private static final HtmlRenderer HTML_RENDERER = HtmlRenderer.builder()
@@ -96,6 +99,12 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
     }
 
     public void sendMessage(long chatId, Integer messageThreadId, String message) {
+        for (String chunk : splitMessage(message, MAX_MESSAGE_LENGTH)) {
+            sendSingleMessage(chatId, messageThreadId, chunk);
+        }
+    }
+
+    private void sendSingleMessage(long chatId, Integer messageThreadId, String message) {
         String formattedHtmlMessage = convertMarkdownToTelegramHtml(message);
 
         SendMessage htmlMessage = SendMessage.builder()
@@ -121,6 +130,36 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
             } catch (TelegramApiException fallbackEx) {
                 throw new RuntimeException("Failed to send both HTML and fallback messages", fallbackEx);
             }
+        }
+    }
+
+    private List<String> splitMessage(String message, int maxLength) {
+        if (message == null || message.length() <= maxLength) return List.of(message == null ? "" : message);
+
+        List<String> chunks = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+
+        for (String line : message.split("\n", -1)) {
+            while (line.length() > maxLength) {
+                flush(chunks, current);
+                chunks.add(line.substring(0, maxLength));
+                line = line.substring(maxLength);
+            }
+            if (!current.isEmpty() && current.length() + 1 + line.length() > maxLength) {
+                flush(chunks, current);
+            }
+            if (!current.isEmpty()) current.append('\n');
+            current.append(line);
+        }
+        flush(chunks, current);
+
+        return chunks;
+    }
+
+    private void flush(List<String> chunks, StringBuilder current) {
+        if (!current.isEmpty()) {
+            chunks.add(current.toString());
+            current.setLength(0);
         }
     }
 
