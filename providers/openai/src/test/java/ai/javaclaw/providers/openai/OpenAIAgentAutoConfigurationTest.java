@@ -8,8 +8,6 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,17 +32,13 @@ class OpenAIAgentAutoConfigurationTest {
     }
 
     static List<String> importedAutoConfigurations() throws IOException {
-        List<String> classNames = new ArrayList<>();
-        Enumeration<URL> resources = Thread.currentThread().getContextClassLoader()
-                .getResources("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports");
-        while (resources.hasMoreElements()) {
-            try (var in = resources.nextElement().openStream()) {
-                new String(in.readAllBytes(), StandardCharsets.UTF_8).lines()
-                        .map(String::trim)
-                        .filter(line -> !line.isEmpty())
-                        .forEach(classNames::add);
-            }
+        URL resource = OpenAIAgentAutoConfigurationTest.class.getClassLoader()
+                .getResource("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports");
+        try (var in = resource.openStream()) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8).lines()
+                    .map(String::trim)
+                    .filter(line -> !line.isEmpty())
+                    .toList();
         }
-        return classNames;
     }
 }
