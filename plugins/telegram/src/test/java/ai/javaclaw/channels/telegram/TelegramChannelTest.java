@@ -244,8 +244,9 @@ class TelegramChannelTest {
     @Test
     void splitsResponsesLongerThanTelegramLimitIntoMultipleMessages() throws TelegramApiException {
         TelegramChannel channel = channel("allowed_user");
-        String paragraph = "word ".repeat(900); // ~4500 chars, exceeds the 4000-char chunk limit
-        String longResponse = paragraph + "\n\n" + paragraph;
+        String line = "word ".repeat(20);
+        String paragraph = (line + "\n").repeat(45); // ~4500 chars, exceeds the 4096-char Telegram limit
+        String longResponse = paragraph + "\n" + paragraph;
         when(agent.respondTo(anyString(), anyString())).thenReturn(longResponse);
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
@@ -257,7 +258,7 @@ class TelegramChannelTest {
         assertTrue(sentMessages.size() > 1, "expected the response to be split into multiple messages");
         for (SendMessage msg : sentMessages) {
             assertEquals("42", msg.getChatId());
-            assertTrue(msg.getText().length() <= 4000, "chunk exceeds Telegram's message size limit");
+            assertTrue(msg.getText().length() <= 4096, "chunk exceeds Telegram's message size limit");
         }
 
         String reconstructed = sentMessages.stream()
@@ -278,6 +279,53 @@ class TelegramChannelTest {
 
         verify(telegramClient, times(1)).execute(argThat((SendMessage msg) ->
                 "42".equals(msg.getChatId())));
+    }
+
+    @Test
+    void doesNotSplitEmojiSurrogatePairAcrossChunks() throws TelegramApiException {
+        TelegramChannel channel = channel("allowed_user");
+        String longResponse = "a".repeat(4095) + "😀" + "a".repeat(500);
+        when(agent.respondTo(anyString(), anyString())).thenReturn(longResponse);
+
+        channel.consume(updateFrom("allowed_user", "hello", 42L, null));
+
+        ArgumentCaptor<SendMessage> captor = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient, atLeastOnce()).execute(captor.capture());
+
+        List<SendMessage> sentMessages = captor.getAllValues();
+        assertTrue(sentMessages.size() > 1, "expected the response to be split into multiple messages");
+        for (SendMessage msg : sentMessages) {
+            assertNoBrokenSurrogates(msg.getText());
+        }
+
+        String reconstructed = sentMessages.stream().map(SendMessage::getText).collect(Collectors.joining());
+        assertEquals(longResponse, reconstructed);
+    }
+
+    @Test
+    void splitChunksRespectRenderedHtmlLengthNotRawMarkdownLength() throws TelegramApiException {
+        TelegramChannel channel = channel("allowed_user");
+        String longResponse = "**bold** ".repeat(600);
+        when(agent.respondTo(anyString(), anyString())).thenReturn(longResponse);
+
+        channel.consume(updateFrom("allowed_user", "hello", 42L, null));
+
+        ArgumentCaptor<SendMessage> captor = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient, atLeastOnce()).execute(captor.capture());
+
+        List<SendMessage> sentMessages = captor.getAllValues();
+        assertTrue(sentMessages.size() > 1, "expected the response to be split into multiple messages");
+        for (SendMessage msg : sentMessages) {
+            assertTrue(msg.getText().length() <= 4096, "rendered chunk exceeds Telegram's message size limit");
+        }
+    }
+
+    private void assertNoBrokenSurrogates(String text) {
+        if (text.isEmpty()) return;
+        assertTrue(!Character.isHighSurrogate(text.charAt(text.length() - 1)),
+                "chunk ends with an unpaired high surrogate: " + text);
+        assertTrue(!Character.isLowSurrogate(text.charAt(0)),
+                "chunk starts with an unpaired low surrogate: " + text);
     }
 
     // -----------------------------------------------------------------------

@@ -30,7 +30,7 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TelegramChannel.class);
 
-    private static final int MAX_MESSAGE_LENGTH = 4000;
+    private static final int MAX_MESSAGE_LENGTH = 4096;
 
     private static final Parser MARKDOWN_PARSER = Parser.builder().build();
     private static final HtmlRenderer HTML_RENDERER = HtmlRenderer.builder()
@@ -134,26 +134,58 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
     }
 
     private List<String> splitMessage(String message, int maxLength) {
-        if (message == null || message.length() <= maxLength) return List.of(message == null ? "" : message);
+        if (message == null) return List.of("");
+        if (renderedLength(message) <= maxLength) return List.of(message);
 
         List<String> chunks = new ArrayList<>();
         StringBuilder current = new StringBuilder();
 
         for (String line : message.split("\n", -1)) {
-            while (line.length() > maxLength) {
+            while (renderedLength(line) > maxLength) {
                 flush(chunks, current);
-                chunks.add(line.substring(0, maxLength));
-                line = line.substring(maxLength);
+                var splitAt = findSafeSplitIndex(line, maxLength);
+                chunks.add(line.substring(0, splitAt));
+                line = line.substring(splitAt);
             }
-            if (!current.isEmpty() && current.length() + 1 + line.length() > maxLength) {
+
+            String candidate = current.isEmpty() ? line : current + "\n" + line;
+            if (!current.isEmpty() && renderedLength(candidate) > maxLength) {
                 flush(chunks, current);
+                candidate = line;
             }
-            if (!current.isEmpty()) current.append('\n');
-            current.append(line);
+            current.setLength(0);
+            current.append(candidate);
         }
         flush(chunks, current);
 
         return chunks;
+    }
+
+    /**
+     * Finds the largest prefix of {@code line} whose rendered HTML form fits within
+     * {@code maxLength}, backing off by one code unit if the cut would split a surrogate pair.
+     */
+    private int findSafeSplitIndex(String line, int maxLength) {
+        var lowestCandidate = 0;
+        var highestCandidate = Math.min(maxLength, line.length());
+        while (lowestCandidate < highestCandidate) {
+            var candidateIndex = (lowestCandidate + highestCandidate + 1) / 2;
+            if (renderedLength(line.substring(0, candidateIndex)) <= maxLength) {
+                lowestCandidate = candidateIndex;
+            } else {
+                highestCandidate = candidateIndex - 1;
+            }
+        }
+        // Force at least one character even if none fits, so the caller always makes progress.
+        var splitIndex = Math.max(lowestCandidate, 1);
+        if (splitIndex > 1 && Character.isHighSurrogate(line.charAt(splitIndex - 1))) {
+            splitIndex--;
+        }
+        return splitIndex;
+    }
+
+    private int renderedLength(String text) {
+        return convertMarkdownToTelegramHtml(text).length();
     }
 
     private void flush(List<String> chunks, StringBuilder current) {
