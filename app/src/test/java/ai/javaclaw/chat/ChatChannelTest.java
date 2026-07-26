@@ -1,6 +1,7 @@
 package ai.javaclaw.chat;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.ResponseListener;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,9 +13,11 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -34,7 +37,7 @@ class ChatChannelTest {
 
     @BeforeEach
     void setUp() {
-        chatChannel = new ChatChannel(agent, new ChannelRegistry(), chatMemoryRepository);
+        chatChannel = new ChatChannel(agent, new ChannelRegistry(), chatMemoryRepository, new ObjectMapper());
     }
 
     // -----------------------------------------------------------------------
@@ -131,21 +134,21 @@ class ChatChannelTest {
 
     @Test
     void chatDelegatesToAgentWithConversationId() {
-        when(agent.respondTo("web", "hello")).thenReturn("hi");
+        when(agent.respondTo(eq("web"), eq("hello"), any(ResponseListener.class))).thenReturn("hi");
 
         String response = chatChannel.chat("web", "hello");
 
         assertThat(response).isEqualTo("hi");
-        verify(agent).respondTo(eq("web"), eq("hello"));
+        verify(agent).respondTo(eq("web"), eq("hello"), any(ResponseListener.class));
     }
 
     @Test
     void chatUsesSuppliedConversationId() {
-        when(agent.respondTo(eq("telegram-42"), any())).thenReturn("reply");
+        when(agent.respondTo(eq("telegram-42"), any(), any(ResponseListener.class))).thenReturn("reply");
 
         chatChannel.chat("telegram-42", "hello");
 
-        verify(agent).respondTo(eq("telegram-42"), eq("hello"));
+        verify(agent).respondTo(eq("telegram-42"), eq("hello"), any(ResponseListener.class));
     }
 
     // -----------------------------------------------------------------------
@@ -213,5 +216,107 @@ class ChatChannelTest {
         chatChannel.sendMessage("Background result");
 
         verify(session).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    void flushPendingMessagesDeliversMessagesBufferedWhileSendFailed() throws IOException {
+        WebSocketSession failingSession = mock(WebSocketSession.class);
+        when(failingSession.isOpen()).thenReturn(true);
+        org.mockito.Mockito.doThrow(new IOException("connection gone")).when(failingSession).sendMessage(any());
+        chatChannel.setWsSession(failingSession);
+        chatChannel.sendMessage("Background result");
+
+        WebSocketSession session = openSession();
+        chatChannel.flushPendingMessages();
+
+        verify(session).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    void flushPendingMessagesDoesNothingWhenBufferIsEmpty() throws IOException {
+        WebSocketSession session = mock(WebSocketSession.class);
+        chatChannel.setWsSession(session);
+
+        chatChannel.flushPendingMessages();
+
+        verify(session, never()).sendMessage(any());
+    }
+
+    // -----------------------------------------------------------------------
+    // streaming frames
+    // -----------------------------------------------------------------------
+
+    @Test
+    void chatStreamsTokensAsChunkFramesFollowedByDoneFrame() throws IOException {
+        WebSocketSession session = openSession();
+        agentStreams(listener -> {
+            listener.onToken("Hello ");
+            listener.onToken("world");
+            listener.onComplete();
+        });
+
+        chatChannel.chat("web", "hello");
+
+        List<Map<String, Object>> frames = capturedFrames(session, 3);
+        assertThat(frames.get(0))
+                .containsEntry("type", "chunk")
+                .containsEntry("data", "Hello ")
+                .containsEntry("conversationId", "web");
+        assertThat(frames.get(1))
+                .containsEntry("type", "chunk")
+                .containsEntry("data", "world");
+        assertThat(frames.get(2))
+                .containsEntry("type", "done")
+                .containsEntry("conversationId", "web")
+                .doesNotContainKey("data");
+    }
+
+    @Test
+    void chatStreamsErrorFrameWhenResponseFails() throws IOException {
+        WebSocketSession session = openSession();
+        agentStreams(listener -> listener.onError("boom"));
+
+        chatChannel.chat("web", "hello");
+
+        List<Map<String, Object>> frames = capturedFrames(session, 1);
+        assertThat(frames.get(0))
+                .containsEntry("type", "error")
+                .containsEntry("data", "boom")
+                .containsEntry("conversationId", "web");
+    }
+
+    @Test
+    void chatDropsStreamFramesWhenNoSessionIsActive() {
+        agentStreams(listener -> {
+            listener.onToken("Hello");
+            listener.onComplete();
+        });
+
+        // should not throw
+        chatChannel.chat("web", "hello");
+    }
+
+    private WebSocketSession openSession() {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        chatChannel.setWsSession(session);
+        return session;
+    }
+
+    private void agentStreams(java.util.function.Consumer<ResponseListener> progress) {
+        when(agent.respondTo(eq("web"), eq("hello"), any(ResponseListener.class))).thenAnswer(invocation -> {
+            progress.accept(invocation.getArgument(2));
+            return "";
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> capturedFrames(WebSocketSession session, int expectedCount) throws IOException {
+        var messageCaptor = org.mockito.ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, org.mockito.Mockito.times(expectedCount)).sendMessage(messageCaptor.capture());
+        ObjectMapper objectMapper = new ObjectMapper();
+        return messageCaptor.getAllValues().stream()
+                .map(message -> (Map<String, Object>) objectMapper.readValue(message.getPayload(), Map.class))
+                .toList();
     }
 }

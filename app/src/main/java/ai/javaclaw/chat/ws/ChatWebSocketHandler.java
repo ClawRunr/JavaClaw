@@ -45,6 +45,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 Htmx.oobInnerHtml("channel-selector", conversationSelector),
                 Htmx.oobInnerHtml("chat-messages", bubbles),
                 Htmx.oobInnerHtml("chat-input-area", inputArea));
+        chatChannel.flushPendingMessages();
     }
 
     @Override
@@ -91,11 +92,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 Htmx.oobReplace("typing-indicator", ChatHtml.typingDots()));
 
         try {
-            // Call agent (blocking — background tasks may push messages via ChatChannel during this)
-            String response = chatChannel.chat(conversationId, userMessage);
-            chatChannel.sendHtml(
-                    Htmx.oobAppend("chat-messages", ChatHtml.agentBubble(response)),
-                    Htmx.oobReplace("typing-indicator", ""));
+            // Call agent (blocking — the response is streamed to the client as JSON frames
+            // by ChatChannel while this call runs; background tasks may push messages too)
+            chatChannel.chat(conversationId, userMessage);
+            chatChannel.sendHtml(Htmx.oobReplace("typing-indicator", ""));
         } catch (RuntimeException ex) {
             log.warn("Chat request failed for conversation {}", conversationId, ex);
             chatChannel.sendHtml(
