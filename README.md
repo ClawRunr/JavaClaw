@@ -126,53 +126,6 @@ agent:
       allowed-user: <your-discord-user-id>
 ```
 
-### WhatsApp
-
-WhatsApp connectivity uses [wacli](https://github.com/openclaw/wacli), a small Go CLI that pairs as a
-WhatsApp Web linked device. There is no Java WhatsApp library — JavaClaw launches `wacli` as a
-subprocess and receives inbound messages through a local webhook.
-
-**1. Install wacli**
-
-```bash
-# macOS
-brew install openclaw/tap/wacli
-
-# Linux
-go install github.com/openclaw/wacli@latest
-```
-
-**2. Pair your phone**
-
-Run the following and scan the QR code with WhatsApp on your phone (Settings → Linked devices → Link a
-device):
-
-```bash
-wacli auth
-```
-
-**3. Configure**
-
-Configure during onboarding or by setting:
-
-```yaml
-agent:
-  channels:
-    whatsapp:
-      enabled: true
-      wacli-path: wacli
-      allowed-chat-jid: "1234567890@s.whatsapp.net"
-      store-path: ""
-```
-
-`allowed-chat-jid` is the JID of the single WhatsApp chat the assistant responds in — a contact's
-number followed by `@s.whatsapp.net` (e.g. `1234567890@s.whatsapp.net`) or a group (`@g.us`). Only
-messages received in that chat are handled; messages you send yourself are ignored. `wacli-path`
-defaults to `wacli` on your `PATH`, and `store-path` is optional.
-
-> **Disclaimer:** wacli uses the unofficial WhatsApp Web protocol — use at your own risk.
-
-
 ## Skills
 
 Skills extend the agent's capabilities at runtime without code changes. Create a directory under `workspace/skills/<skill-name>/` containing a `SKILL.md` file and the agent will load it automatically via `SkillsTool`.
