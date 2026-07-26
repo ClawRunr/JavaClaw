@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'java-test-fixtures'
     id("com.skillsjars.gradle-plugin") version "0.0.2"
 }
 
