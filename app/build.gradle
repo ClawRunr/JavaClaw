@@ -15,7 +15,6 @@ dependencies {
     implementation project(':plugins:telegram')
     implementation project(':plugins:playwright')
     implementation project(':plugins:brave')
-    implementation project(':plugins:whatsapp')
 
     implementation 'org.springframework.ai:spring-ai-client-chat'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
