@@ -1,9 +1,7 @@
 package ai.javaclaw.providers.openai;
 
 import ai.javaclaw.onboarding.AgentOnboardingProvider;
-import org.springframework.stereotype.Component;
 
-@Component
 public class OpenAIAgentOnboardingProvider implements AgentOnboardingProvider {
 
     @Override

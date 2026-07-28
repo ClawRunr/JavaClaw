@@ -1,9 +1,7 @@
 package ai.javaclaw.providers.google.genai;
 
 import ai.javaclaw.onboarding.AgentOnboardingProvider;
-import org.springframework.stereotype.Component;
 
-@Component
 public class GoogleGenAIAgentOnboardingProvider implements AgentOnboardingProvider {
 
     @Override
