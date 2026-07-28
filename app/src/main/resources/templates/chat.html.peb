@@ -149,6 +149,11 @@
 .chat-readonly-notice strong {
     color: rgba(180, 195, 235, .7);
 }
+
+.ar-msg--error .ar-msg__bubble {
+    border-color: color-mix(in srgb, var(--bulma-danger) 45%, transparent);
+    color: var(--bulma-danger);
+}
 </style>
 {% endblock %}
 
@@ -259,9 +264,71 @@
         if (ta) { ta.value = ''; ta.style.height = ''; }
     });
     document.body.addEventListener('htmx:wsAfterMessage', function () {
+        scrollToBottom();
+    });
+
+    // --- Streaming frames ------------------------------------------------
+    // The server streams the agent response as JSON frames (type: chunk /
+    // done / error). These are intercepted here and never reach htmx; HTML
+    // frames (no JSON type) keep the htmx OOB-swap behavior unchanged.
+    var streamBubbles = {};   // conversationId -> in-progress bubble element
+
+    document.body.addEventListener('htmx:wsBeforeMessage', function (e) {
+        var frame = parseStreamFrame(e.detail.message);
+        if (!frame) return;
+        e.preventDefault();
+        handleStreamFrame(frame);
+        scrollToBottom();
+    });
+
+    function parseStreamFrame(text) {
+        if (!text || text.charAt(0) !== '{') return null;
+        try {
+            var frame = JSON.parse(text);
+            return frame && typeof frame === 'object' && frame.type ? frame : null;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function handleStreamFrame(frame) {
+        var id = frame.conversationId || 'web';
+        if (frame.type === 'chunk') {
+            streamBubble(id).textContent += frame.data;
+        } else if (frame.type === 'done') {
+            clearTypingIndicator();
+            delete streamBubbles[id];
+        } else if (frame.type === 'error') {
+            var bubble = streamBubble(id);
+            bubble.textContent = frame.data;
+            bubble.closest('.ar-msg').classList.add('ar-msg--error');
+            delete streamBubbles[id];
+        }
+    }
+
+    function streamBubble(conversationId) {
+        var bubble = streamBubbles[conversationId];
+        if (!bubble || !bubble.isConnected) {
+            var article = document.createElement('article');
+            article.className = 'ar-msg ar-msg--agent';
+            article.innerHTML = '<div class="ar-msg__avatar">JC</div><div class="ar-msg__bubble"></div>';
+            document.getElementById('chat-messages').appendChild(article);
+            bubble = article.querySelector('.ar-msg__bubble');
+            streamBubbles[conversationId] = bubble;
+            clearTypingIndicator();
+        }
+        return bubble;
+    }
+
+    function clearTypingIndicator() {
+        var typing = document.getElementById('typing-indicator');
+        if (typing) typing.innerHTML = '';
+    }
+
+    function scrollToBottom() {
         var body = document.querySelector('.chat-body');
         if (body) body.scrollTop = body.scrollHeight;
-    });
+    }
 }());
 </script>
 {% endblock %}

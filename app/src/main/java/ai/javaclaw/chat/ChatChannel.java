@@ -1,6 +1,7 @@
 package ai.javaclaw.chat;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.ResponseListener;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
@@ -16,10 +17,13 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -38,13 +42,15 @@ public class ChatChannel implements Channel {
     private final Agent agent;
     private final ChannelRegistry channelRegistry;
     private final ChatMemoryRepository chatMemoryRepository;
+    private final ObjectMapper objectMapper;
     private final ConcurrentLinkedQueue<String> pendingMessages = new ConcurrentLinkedQueue<>();
     private final AtomicReference<WebSocketSession> wsSession = new AtomicReference<>();
 
-    public ChatChannel(Agent agent, ChannelRegistry channelRegistry, ChatMemoryRepository chatMemoryRepository) {
+    public ChatChannel(Agent agent, ChannelRegistry channelRegistry, ChatMemoryRepository chatMemoryRepository, ObjectMapper objectMapper) {
         this.agent = agent;
         this.channelRegistry = channelRegistry;
         this.chatMemoryRepository = chatMemoryRepository;
+        this.objectMapper = objectMapper;
         channelRegistry.registerChannel(this);
         log.info("Started Web Chat channel");
     }
@@ -94,6 +100,18 @@ public class ChatChannel implements Channel {
     }
 
     /**
+     * Delivers messages buffered while no WebSocket session was active.
+     * Each buffered message is attempted once; a failed push re-buffers it.
+     */
+    public void flushPendingMessages() {
+        for (int i = pendingMessages.size(); i > 0; i--) {
+            String message = pendingMessages.poll();
+            if (message == null) break;
+            sendMessage(message);
+        }
+    }
+
+    /**
      * Returns all known conversation IDs, always with "web" first.
      */
     public List<String> conversationIds() {
@@ -124,10 +142,46 @@ public class ChatChannel implements Channel {
 
     /**
      * Handles a chat message from the web UI for the given conversationId.
+     * The response is streamed to the WebSocket session as JSON frames
+     * ({@code chunk}/{@code done}/{@code error}); the full response text is returned.
      */
     public String chat(String conversationId, String message) {
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), message));
-        return agent.respondTo(conversationId, message);
+
+        return agent.respondTo(conversationId, message, ResponseListener.of(
+                token -> sendChunkFrame(conversationId, token),
+                () -> sendDoneFrame(conversationId),
+                error -> sendErrorFrame(conversationId, error)));
+    }
+
+    private void sendChunkFrame(String conversationId, String token) {
+        sendFrame(frame(StreamFrameType.CHUNK, conversationId, token));
+    }
+
+    private void sendDoneFrame(String conversationId) {
+        sendFrame(frame(StreamFrameType.DONE, conversationId, null));
+    }
+
+    private void sendErrorFrame(String conversationId, String error) {
+        sendFrame(frame(StreamFrameType.ERROR, conversationId, error == null ? "Unknown error" : error));
+    }
+
+    private static Map<String, Object> frame(StreamFrameType type, String conversationId, Object payload) {
+        Map<String, Object> frame = new LinkedHashMap<>();
+        frame.put("type", type.type());
+        if (payload != null) frame.put("data", payload);
+        frame.put("conversationId", conversationId);
+        return frame;
+    }
+
+    private void sendFrame(Map<String, Object> frame) {
+        WebSocketSession session = wsSession.get();
+        if (session == null || !session.isOpen()) return;
+        try {
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(frame)));
+        } catch (IOException e) {
+            log.warn("WS push failed, dropping stream frame: {}", e.getMessage());
+        }
     }
 
     private static String buildBackgroundMessageHtml(String text) {

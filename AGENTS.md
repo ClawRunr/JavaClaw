@@ -131,7 +131,7 @@ Incoming message → ChannelMessageReceivedEvent (channel name, message text)
 - **`ChannelRegistry`**: Registers channels, tracks last-active channel so background task replies are routed correctly.
 - **`DiscordChannel`**: JDA `ListenerAdapter`; accepts DMs from the configured user and guild messages only when the bot is mentioned.
 - **`TelegramChannel`**: `SpringLongPollingBot`; filters by `allowedUsername`; stores `chatId` for routing background replies.
-- **`ChatChannel`**: WebSocket-first delivery (`setWsSession()`/`clearWsSession()`); falls back to buffering replies in `ConcurrentLinkedQueue` exposed via `drainPendingMessages()` REST endpoint when no WebSocket session is active.
+- **`ChatChannel`**: WebSocket-first delivery (`setWsSession()`/`clearWsSession()`); falls back to buffering replies in `ConcurrentLinkedQueue` exposed via `drainPendingMessages()` REST endpoint when no WebSocket session is active. Web chat responses stream live: `Agent.respondTo(conversationId, question, ResponseListener)` uses `ChatClient.stream()` and reports each token via the listener callback (`onToken`/`onComplete`/`onError`); `ChatChannel` supplies a listener that pushes JSON frames (`chunk`, `done`, `error` — see `StreamFrameType`) to the browser over the WebSocket. `Channel` itself knows nothing about streaming; all other channels use the blocking `respondTo`/`sendMessage()` path.
 
 ---
 
