@@ -5,6 +5,8 @@ import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 
+import java.util.stream.Stream;
+
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
@@ -12,15 +14,15 @@ import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.sli
 class ModuleBoundaryArchTest {
 
     private static final String[] CORE_PACKAGES = {
-            "..agent..", "..tasks..", "..configuration..", "..files.."
+            "ai.javaclaw.agent..", "ai.javaclaw.tasks..", "ai.javaclaw.configuration..", "ai.javaclaw.files.."
     };
 
     private static final String[] PLUGIN_PACKAGES = {
-            "..channels.telegram..", "..channels.discord..", "..tools.brave..", "..tools.playwright.."
+            "ai.javaclaw.channels.*..", "ai.javaclaw.tools.*.."
     };
 
     private static final String[] PROVIDER_PACKAGES = {
-            "..providers.openai..", "..providers.anthropic..", "..providers.ollama..", "..providers.google.."
+            "ai.javaclaw.providers.."
     };
 
     @ArchTest
@@ -48,12 +50,7 @@ class ModuleBoundaryArchTest {
     @ArchTest
     static final ArchRule coreDoesNotDependOnPluginsOrProviders =
             noClasses().that().resideInAnyPackage(CORE_PACKAGES)
-                    .should().dependOnClassesThat().resideInAnyPackage(concat(PLUGIN_PACKAGES, PROVIDER_PACKAGES));
-
-    private static String[] concat(String[] first, String[] second) {
-        String[] result = new String[first.length + second.length];
-        System.arraycopy(first, 0, result, 0, first.length);
-        System.arraycopy(second, 0, result, first.length, second.length);
-        return result;
-    }
+                    .should().dependOnClassesThat().resideInAnyPackage(
+                            Stream.concat(Stream.of(PLUGIN_PACKAGES), Stream.of(PROVIDER_PACKAGES))
+                                    .toArray(String[]::new));
 }
