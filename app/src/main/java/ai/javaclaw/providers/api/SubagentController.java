@@ -155,7 +155,7 @@ public class SubagentController {
         try {
             // 1) Instructions + description -> workspace/agents/<name>.md. The subagent routes to its
             //    own provider entry, so its routing model is the agent name.
-            store.save(new Subagent(name, name, form.description(), form.content()));
+            store.save(new Subagent(name, form.model(), form.description(), form.content()));
 
             // 2) Structured config -> application.yaml under agent.llm.providers.<name>. This fires a
             //    configuration change that rebuilds the chat client registry + subagent routing.
