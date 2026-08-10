@@ -15,6 +15,14 @@ public interface AgentOnboardingProvider {
 
     String defaultModel();
 
+    default String chatModelId() {
+        return getId().replace(".", "-");
+    }
+
+    default Map<String, Object> additionalProperties() {
+        return Map.of();
+    }
+
     default Optional<SystemWideToken> systemWideToken() {
         return Optional.empty();
     }

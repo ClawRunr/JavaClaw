@@ -32,6 +32,7 @@ root
 ├── providers/
 │   ├── anthropic/      ← Anthropic (Claude) provider + Claude Code OAuth support
 │   ├── openai/         ← OpenAI (GPT) provider
+│   ├── atlas/          ← Atlas Cloud OpenAI-compatible provider
 │   ├── ollama/         ← Ollama local provider (no API key required)
 │   └── google/         ← Google Gen AI (Gemini) provider
 └── plugins/
@@ -113,6 +114,7 @@ User/Agent → TaskManager.create()
 |---|---|---|---|
 | `anthropic` | `providers/anthropic` | `claude-sonnet-4-6` | Required (or Claude Code OAuth) |
 | `openai` | `providers/openai` | `gpt-5.4` | Required |
+| `atlas` | `providers/atlas` | `qwen/qwen3.8-max` | Required |
 | `ollama` | `providers/ollama` | `qwen3.5:27b` | Not required (local) |
 | `google.genai` | `providers/google` | `gemini-3-flash-preview` | Required |
 

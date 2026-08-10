@@ -9,7 +9,7 @@ JavaClaw is a Java-based personal AI assistant that runs on your own devices. It
 - **Multi-Channel Support** — Chat UI (WebSocket), Telegram, Discord, and an extensible plugin-based channel architecture
 - **Task Management** — Create, schedule (one-off, delayed, or recurring via cron), and track tasks as human-readable Markdown files
 - **Extensible Skills** — Load skills from `workspace/skills/` and from `skills jar` packages on the classpath
-- **LLM Provider Choice** — Plug in OpenAI, Anthropic, or Ollama (local); switchable during onboarding
+- **LLM Provider Choice** — Plug in OpenAI, Atlas Cloud, Anthropic, or Ollama (local); switchable during onboarding
 - **MCP Support** — Model Context Protocol client for connecting external tool servers
 - **Shell & File Access** — Agent can read/write files and run bash commands on your machine
 - **Smart Web Tools** — Brave web search and intelligent web scraping
@@ -51,7 +51,7 @@ JavaClaw/
 
 - Java 25
 - Gradle (or use the included `./gradlew` wrapper)
-- An LLM API key (OpenAI / Anthropic) **or** a running [Ollama](https://ollama.com) instance
+- An LLM API key (OpenAI / Atlas Cloud / Anthropic) **or** a running [Ollama](https://ollama.com) instance
 
 ### Run
 
@@ -70,7 +70,7 @@ Then open [http://localhost:8080/onboarding](http://localhost:8080/onboarding) t
 ### Onboarding
 
 1. **Welcome** — Introduction screen
-2. **Provider** — Choose Ollama, OpenAI, or Anthropic
+2. **Provider** — Choose Ollama, OpenAI, Atlas Cloud, or Anthropic
 3. **Credentials** — Enter your API key and model name
 4. **Agent Prompt** — Customize `workspace/AGENT.md` with your personal info (name, email, role, etc.)
 5. **MCP Servers** — Optionally configure Model Context Protocol servers

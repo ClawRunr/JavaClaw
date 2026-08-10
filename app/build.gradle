@@ -10,6 +10,7 @@ dependencies {
     implementation project(':providers:google')
     implementation project(':providers:ollama')
     implementation project(':providers:openai')
+    implementation project(':providers:atlas')
 
     implementation project(':plugins:discord')
     implementation project(':plugins:telegram')
