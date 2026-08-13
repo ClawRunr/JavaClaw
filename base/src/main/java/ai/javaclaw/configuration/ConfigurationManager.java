@@ -23,7 +23,7 @@ public class ConfigurationManager {
 
     public ConfigurationManager(Environment environment, ApplicationEventPublisher eventPublisher) {
         this.eventPublisher = eventPublisher;
-        this.configPath = resolveConfigPath(environment.getProperty("spring.allConfig.location"));
+        this.configPath = resolveConfigPath(environment.getProperty("spring.config.location"));
     }
 
     public void updateProperty(String key, Object value) throws IOException {
