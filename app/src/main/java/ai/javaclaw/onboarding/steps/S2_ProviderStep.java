@@ -70,7 +70,8 @@ public class S2_ProviderStep implements OnboardingProvider {
         Map<String, Object> props = new LinkedHashMap<>();
         agentOnboardingProvider.saveProperty(props, "chat.options.model", model);
         agentOnboardingProvider.saveProperty(props, "api-key", apiKey);
-        props.put("spring.ai.model.chat", agentOnboardingProvider.getId().replace(".", "-"));
+        props.putAll(agentOnboardingProvider.additionalProperties());
+        props.put("spring.ai.model.chat", agentOnboardingProvider.chatModelId());
         configurationManager.updateProperties(props);
     }
 }

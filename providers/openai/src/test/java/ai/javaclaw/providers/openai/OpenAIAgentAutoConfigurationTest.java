@@ -20,6 +20,8 @@ class OpenAIAgentAutoConfigurationTest {
         contextRunner.run(context -> {
             assertThat(context).hasSingleBean(AgentOnboardingProvider.class);
             assertThat(context.getBean(AgentOnboardingProvider.class).getId()).isEqualTo("openai");
+            assertThat(context.getBean(AgentOnboardingProvider.class).additionalProperties())
+                    .containsEntry("spring.ai.openai.base-url", "https://api.openai.com");
         });
     }
 

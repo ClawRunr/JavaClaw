@@ -2,6 +2,8 @@ package ai.javaclaw.providers.openai;
 
 import ai.javaclaw.onboarding.AgentOnboardingProvider;
 
+import java.util.Map;
+
 public class OpenAIAgentOnboardingProvider implements AgentOnboardingProvider {
 
     @Override
@@ -27,5 +29,10 @@ public class OpenAIAgentOnboardingProvider implements AgentOnboardingProvider {
     @Override
     public String defaultModel() {
         return "gpt-5.4";
+    }
+
+    @Override
+    public Map<String, Object> additionalProperties() {
+        return Map.of("spring.ai.openai.base-url", "https://api.openai.com");
     }
 }
