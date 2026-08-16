@@ -1,6 +1,7 @@
 package ai.javaclaw.onboarding.steps;
 
 import ai.javaclaw.configuration.ConfigurationManager;
+import ai.javaclaw.llm.LlmProviderProperties;
 import ai.javaclaw.onboarding.AgentOnboardingProvider;
 import ai.javaclaw.onboarding.AgentOnboardingProviders;
 import ai.javaclaw.onboarding.OnboardingProvider;
@@ -40,7 +41,7 @@ public class S2_ProviderStep implements OnboardingProvider {
     @Override
     public void prepareModel(Map<String, Object> session, Map<String, Object> model) {
         model.put("providers", agentOnboardingProviders.getAll());
-        model.put("selectedProvider", session.getOrDefault(SESSION_PROVIDER, env.getProperty("spring.ai.model.chat", "")));
+        model.put("selectedProvider", session.getOrDefault(SESSION_PROVIDER, env.getProperty("agent.llm.providers.default.provider", "")));
     }
 
     @Override
@@ -63,14 +64,24 @@ public class S2_ProviderStep implements OnboardingProvider {
     @Override
     public void saveConfiguration(Map<String, Object> session, ConfigurationManager configurationManager) throws IOException {
         String providerId = (String) session.get(SESSION_PROVIDER);
+        if (providerId == null || providerId.isBlank()) {
+            return;
+        }
         String model = (String) session.get(SESSION_MODEL);
         String apiKey = (String) session.getOrDefault(SESSION_API_KEY, "");
 
         AgentOnboardingProvider agentOnboardingProvider = agentOnboardingProviders.getById(providerId);
+
+        // The single provider configured during onboarding becomes the "default" named provider.
+        String base = "agent.llm.providers." + LlmProviderProperties.DEFAULT_PROVIDER_NAME;
         Map<String, Object> props = new LinkedHashMap<>();
-        agentOnboardingProvider.saveProperty(props, "chat.options.model", model);
-        agentOnboardingProvider.saveProperty(props, "api-key", apiKey);
-        props.put("spring.ai.model.chat", agentOnboardingProvider.getId().replace(".", "-"));
+        props.put(base + ".provider", agentOnboardingProvider.getId());
+        if (model != null && !model.isBlank()) {
+            props.put(base + ".model", model);
+        }
+        if (apiKey != null && !apiKey.isBlank()) {
+            props.put(base + ".api-key", apiKey);
+        }
         configurationManager.updateProperties(props);
     }
 }

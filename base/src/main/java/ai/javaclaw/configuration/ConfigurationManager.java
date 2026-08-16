@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class ConfigurationManager {
@@ -31,7 +32,7 @@ public class ConfigurationManager {
 
         setNestedValue(config, key.split("\\."), value);
 
-        writeApplicationYaml(config);
+        writeApplicationYaml(config, Set.of(key));
     }
 
     public void updateProperties(Map<String, Object> keyValues) throws IOException {
@@ -39,7 +40,19 @@ public class ConfigurationManager {
 
         keyValues.forEach((k, v) -> setNestedValue(config, k.split("\\."), v));
 
-        writeApplicationYaml(config);
+        writeApplicationYaml(config, keyValues.keySet());
+    }
+
+    /**
+     * Removes a nested key (and writes the file). Used when deleting configuration sub-trees,
+     * e.g. {@code agent.llm.providers.local}.
+     */
+    public void removeProperty(String key) throws IOException {
+        Map<String, Object> config = readApplicationYaml();
+
+        removeNestedValue(config, key.split("\\."));
+
+        writeApplicationYaml(config, Set.of(key));
     }
 
     public Map<String, Object> readApplicationYaml() throws IOException {
@@ -55,7 +68,7 @@ public class ConfigurationManager {
         return config == null ? new LinkedHashMap<>() : config;
     }
 
-    private void writeApplicationYaml(Map<String, Object> config) throws IOException {
+    private void writeApplicationYaml(Map<String, Object> config, Set<String> changedKeys) throws IOException {
         DumperOptions options = new DumperOptions();
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         options.setPrettyFlow(true);
@@ -67,7 +80,11 @@ public class ConfigurationManager {
             writer.dump(config, fw);
         }
 
-        eventPublisher.publishEvent(new ConfigurationChangedEvent(config));
+        eventPublisher.publishEvent(new ConfigurationChangedEvent(config, changedKeys));
+    }
+
+    public Path getConfigPath() {
+        return configPath;
     }
 
     private Path resolveConfigPath(String location) {
@@ -91,5 +108,17 @@ public class ConfigurationManager {
             map = (Map<String, Object>) map.computeIfAbsent(keys[i], k -> new LinkedHashMap<>());
         }
         map.put(keys[keys.length - 1], value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void removeNestedValue(Map<String, Object> map, String[] keys) {
+        for (int i = 0; i < keys.length - 1; i++) {
+            Object next = map.get(keys[i]);
+            if (!(next instanceof Map<?, ?> nested)) {
+                return; // path does not exist; nothing to remove
+            }
+            map = (Map<String, Object>) nested;
+        }
+        map.remove(keys[keys.length - 1]);
     }
 }

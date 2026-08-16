@@ -1,0 +1,300 @@
+{% extends "../base" %}
+{% block title %} · Agents{% endblock %}
+
+{% block head %}
+<style>
+    body { background-color: #f6f8fc; }
+    .settings-main { max-width: 880px; margin: 0 auto; padding: 2.5rem 1.25rem; }
+    .agent-card { display: flex; align-items: center; gap: 1rem; }
+    .agent-meta { flex: 1 1 auto; min-width: 0; }
+    .agent-name { font-weight: 700; font-size: 1.05rem; }
+    .agent-sub { color: #5b6b7b; font-size: .9rem; }
+
+    .drawer-backdrop {
+        position: fixed; inset: 0; background: rgba(10,15,25,.35);
+        opacity: 0; visibility: hidden; transition: opacity .2s ease; z-index: 40;
+    }
+    .drawer-backdrop.is-open { opacity: 1; visibility: visible; }
+    .drawer {
+        position: fixed; top: 0; right: 0; height: 100%; width: 520px; max-width: 94vw;
+        background: #fff; box-shadow: -8px 0 24px rgba(10,15,25,.18);
+        transform: translateX(100%); transition: transform .22s ease; z-index: 41;
+        display: flex; flex-direction: column;
+    }
+    .drawer.is-open { transform: translateX(0); }
+    .drawer-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid #eceff4; }
+    .drawer-body { padding: 1.5rem; overflow-y: auto; flex: 1 1 auto; }
+    .drawer-footer { padding: 1rem 1.5rem; border-top: 1px solid #eceff4; }
+    textarea.agent-content { min-height: 16rem; font-family: "SFMono-Regular", "Menlo", monospace; }
+</style>
+{% endblock %}
+
+{% block content %}
+<nav class="navbar has-background-dark" role="navigation" aria-label="main navigation">
+    <div class="navbar-brand">
+        <span class="navbar-item">
+            <div class="brand-lockup">
+                <p class="brand-word"><span class="brand-agent">Java</span><span class="brand-runr">Claw</span></p>
+            </div>
+        </span>
+    </div>
+    <div class="navbar-end">
+        <div class="navbar-item">
+            <a href="/chat" class="button is-small is-dark" hx-boost="false">Back to chat</a>
+        </div>
+    </div>
+</nav>
+
+<div class="settings-main">
+    <div class="level mb-5">
+        <div class="level-left">
+            <div>
+                <h1 class="title is-3 mb-1">Agents</h1>
+                <p class="subtitle is-6 has-text-grey">Agents the main assistant can delegate to. Each runs on a provider and model.</p>
+            </div>
+        </div>
+        <div class="level-right">
+            <button class="button is-primary" id="add-agent-btn"><span>Add Agent</span></button>
+        </div>
+    </div>
+
+    <div id="agents-empty" class="notification is-light" style="display:none;">
+        No agents yet. Click <strong>Add Agent</strong> to create one.
+    </div>
+
+    <div id="agents-list"></div>
+</div>
+
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<aside class="drawer" id="agent-drawer" aria-hidden="true">
+    <div class="drawer-header">
+        <h2 class="title is-4 mb-0" id="drawer-title">Add Agent</h2>
+    </div>
+    <div class="drawer-body">
+        <div class="field">
+            <label class="label">Name</label>
+            <div class="control">
+                <input class="input" type="text" id="f-name" placeholder="e.g. summariser" autocomplete="off">
+            </div>
+            <p class="help" id="name-help">Lowercase letters, numbers and hyphens only.</p>
+        </div>
+
+        <div class="field">
+            <label class="label">Provider</label>
+            <div class="control">
+                <div class="select is-fullwidth">
+                    <select id="f-provider"></select>
+                </div>
+            </div>
+        </div>
+
+        <div class="field">
+            <label class="label">Model</label>
+            <div class="control">
+                <input class="input" type="text" id="f-model" placeholder="Model id" autocomplete="off">
+            </div>
+            <p class="help">Defaults to the provider's model; type another to override.</p>
+        </div>
+
+        <div class="field">
+            <label class="label">API Key</label>
+            <div class="control">
+                <input class="input" type="password" id="f-apikey" placeholder="API key" autocomplete="off">
+            </div>
+            <p class="help" id="apikey-help"></p>
+        </div>
+
+        <div class="field">
+            <label class="label">Description</label>
+            <div class="control">
+                <input class="input" type="text" id="f-description" placeholder="What does this agent do?" autocomplete="off">
+            </div>
+        </div>
+
+        <div class="field">
+            <label class="label">Instructions</label>
+            <div class="control">
+                <textarea class="textarea agent-content" id="f-content" placeholder="System prompt / instructions for this agent..."></textarea>
+            </div>
+        </div>
+
+        <div id="form-error" class="has-text-danger"></div>
+    </div>
+    <div class="drawer-footer">
+        <div class="buttons is-right mb-0">
+            <button class="button" id="drawer-cancel">Cancel</button>
+            <button class="button is-primary" id="save-btn">Save</button>
+        </div>
+    </div>
+</aside>
+
+<div class="modal" id="delete-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+        <header class="modal-card-head"><p class="modal-card-title">Delete agent</p></header>
+        <section class="modal-card-body" id="delete-body"></section>
+        <footer class="modal-card-foot is-justify-content-flex-end">
+            <button class="button" id="delete-cancel">Cancel</button>
+            <button class="button is-danger" id="delete-confirm">Delete</button>
+        </footer>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const API = "/api/agents";
+
+    let editing = null;          // name being edited, or null when adding
+    let providerOptions = [];    // [{id, label, defaultModel}] — supported LLM providers
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
+
+    async function loadProviderOptions() {
+        try { providerOptions = await (await fetch(API + "/options/providers")).json(); }
+        catch (e) { providerOptions = []; }
+    }
+    const defaultModelFor = (id) => { const p = providerOptions.find(x => x.id === id); return p ? (p.defaultModel || "") : ""; };
+
+    async function loadAgents() {
+        const res = await fetch(API);
+        const agents = await res.json();
+        const list = $("agents-list");
+        list.innerHTML = "";
+        $("agents-empty").style.display = agents.length ? "none" : "block";
+
+        agents.forEach(a => {
+            const card = document.createElement("div");
+            card.className = "box agent-card";
+            card.innerHTML = `
+                <div class="agent-meta">
+                    <div class="agent-name">${esc(a.name)}</div>
+                    <div class="agent-sub">${esc(a.providerLabel || a.provider || '—')} · ${esc(a.model || '—')}${a.description ? ' · ' + esc(a.description) : ''}</div>
+                </div>
+                <div class="buttons mb-0">
+                    <button class="button is-small" data-edit="${esc(a.name)}">Edit</button>
+                    <button class="button is-small is-danger is-light" data-delete="${esc(a.name)}">Delete</button>
+                </div>`;
+            list.appendChild(card);
+        });
+
+        list.querySelectorAll("[data-edit]").forEach(b =>
+            b.addEventListener("click", () => openEdit(b.getAttribute("data-edit"))));
+        list.querySelectorAll("[data-delete]").forEach(b =>
+            b.addEventListener("click", () => confirmDelete(b.getAttribute("data-delete"))));
+    }
+
+    function fillProviderSelect(selected) {
+        const select = $("f-provider");
+        select.innerHTML = providerOptions.map(p =>
+            `<option value="${esc(p.id)}"${p.id === selected ? ' selected' : ''}>${esc(p.label)}</option>`).join("");
+        if (!selected && providerOptions.length) select.value = providerOptions[0].id;
+    }
+
+    function openDrawer() {
+        $("drawer-backdrop").classList.add("is-open");
+        $("agent-drawer").classList.add("is-open");
+    }
+    function closeDrawer() {
+        $("drawer-backdrop").classList.remove("is-open");
+        $("agent-drawer").classList.remove("is-open");
+    }
+
+    function openAdd() {
+        editing = null;
+        $("drawer-title").textContent = "Add Agent";
+        $("f-name").readOnly = false;
+        $("f-name").value = "";
+        $("name-help").style.display = "block";
+        $("f-description").value = "";
+        $("f-content").value = "";
+        $("f-apikey").value = "";
+        $("apikey-help").textContent = "";
+        $("form-error").textContent = "";
+        fillProviderSelect(null);
+        $("f-model").value = defaultModelFor($("f-provider").value);
+        openDrawer();
+    }
+
+    async function openEdit(name) {
+        const res = await fetch(`${API}/${encodeURIComponent(name)}`);
+        if (!res.ok) return;
+        const a = await res.json();
+        editing = name;
+        $("drawer-title").textContent = "Edit " + name;
+        $("f-name").value = a.name;
+        $("f-name").readOnly = true;
+        $("name-help").style.display = "none";
+        $("f-description").value = a.description || "";
+        $("f-content").value = a.content || "";
+        $("f-apikey").value = "";
+        $("apikey-help").textContent = a.apiKeyMasked ? "Current: " + a.apiKeyMasked + " — leave blank to keep" : "";
+        $("form-error").textContent = "";
+        fillProviderSelect(a.provider || null);
+        $("f-model").value = a.model || defaultModelFor($("f-provider").value);
+        openDrawer();
+    }
+
+    async function save() {
+        const btn = $("save-btn");
+        btn.classList.add("is-loading");
+        try {
+            const url = editing ? `${API}/${encodeURIComponent(editing)}` : API;
+            const payload = {
+                name: editing || $("f-name").value.trim(),
+                provider: $("f-provider").value,
+                model: $("f-model").value.trim(),
+                apiKey: $("f-apikey").value.trim(),
+                description: $("f-description").value.trim(),
+                content: $("f-content").value
+            };
+            const res = await fetch(url, {
+                method: editing ? "PUT" : "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                $("form-error").textContent = err.message || ("HTTP " + res.status);
+                return;
+            }
+            closeDrawer();
+            await loadAgents();
+        } finally {
+            btn.classList.remove("is-loading");
+        }
+    }
+
+    let deleteName = null;
+    function confirmDelete(name) {
+        deleteName = name;
+        $("delete-body").innerHTML = `<p>Delete <strong>${esc(name)}</strong>?</p>`;
+        $("delete-modal").classList.add("is-active");
+    }
+    function closeDeleteModal() {
+        $("delete-modal").classList.remove("is-active");
+        deleteName = null;
+    }
+    async function doDelete() {
+        if (!deleteName) return closeDeleteModal();
+        const res = await fetch(`${API}/${encodeURIComponent(deleteName)}`, { method: "DELETE" });
+        closeDeleteModal();
+        if (res.ok) await loadAgents();
+    }
+
+    // When the provider changes, suggest that provider's default model.
+    $("f-provider").addEventListener("change", () => { $("f-model").value = defaultModelFor($("f-provider").value); });
+    $("add-agent-btn").addEventListener("click", openAdd);
+    $("drawer-cancel").addEventListener("click", closeDrawer);
+    $("drawer-backdrop").addEventListener("click", closeDrawer);
+    $("save-btn").addEventListener("click", save);
+    $("delete-cancel").addEventListener("click", closeDeleteModal);
+    $("delete-modal").querySelector(".modal-background").addEventListener("click", closeDeleteModal);
+    $("delete-confirm").addEventListener("click", doDelete);
+
+    loadProviderOptions().then(loadAgents);
+})();
+</script>
+{% endblock %}
