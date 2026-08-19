@@ -10,6 +10,7 @@ dependencies {
     implementation(libs.jobrunr.spring.starter)
     implementation 'org.apache.commons:commons-lang3'
     implementation 'com.fasterxml.jackson.core:jackson-core'
+    implementation 'tools.jackson.core:jackson-databind'
 
     // No idea?
     runtimeOnly(libs.netty.resolver.dns.native.macos)
@@ -21,6 +22,7 @@ dependencies {
     implementation(libs.spring.ai.lucene)
 
     implementation(libs.spring.ai.agent.utils)
+    api(libs.spring.ai.session)
 
     runtimeOnly 'com.h2database:h2'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
