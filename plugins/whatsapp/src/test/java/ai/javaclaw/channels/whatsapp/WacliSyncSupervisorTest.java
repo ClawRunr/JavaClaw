@@ -28,7 +28,7 @@ class WacliSyncSupervisorTest {
     }
 
     private WacliSyncSupervisor newSupervisor(ProcessLauncher launcher, WacliSyncSupervisor.Sleeper sleeper) {
-        return newSupervisor(launcher, sleeper, System::nanoTime);
+        return newSupervisor(launcher, sleeper);
     }
 
     private WacliSyncSupervisor newSupervisor(ProcessLauncher launcher, WacliSyncSupervisor.Sleeper sleeper,
@@ -45,7 +45,7 @@ class WacliSyncSupervisorTest {
         when(process.getErrorStream()).thenReturn(new ByteArrayInputStream(new byte[0]));
         when(launcher.launch(any())).thenReturn(process);
 
-        WacliSyncSupervisor supervisor = newSupervisor(launcher, millis -> { });
+        WacliSyncSupervisor supervisor = newSupervisor(launcher, millis -> {});
 
         supervisor.runSyncLoop();
 
@@ -106,7 +106,7 @@ class WacliSyncSupervisorTest {
             return process;
         });
 
-        WacliSyncSupervisor supervisor = newSupervisor(launcher, millis -> { });
+        WacliSyncSupervisor supervisor = newSupervisor(launcher, millis -> {});
         ref[0] = supervisor;
 
         supervisor.runSyncLoop();
@@ -124,7 +124,7 @@ class WacliSyncSupervisorTest {
         ProcessLauncher launcher = mock(ProcessLauncher.class);
         when(launcher.launch(any())).thenReturn(process);
 
-        WacliSyncSupervisor supervisor = newSupervisor(launcher, millis -> { });
+        WacliSyncSupervisor supervisor = newSupervisor(launcher, millis -> {});
 
         supervisor.runSyncLoop();
 
@@ -141,7 +141,7 @@ class WacliSyncSupervisorTest {
         ProcessLauncher launcher = mock(ProcessLauncher.class);
         when(launcher.launch(any())).thenReturn(versionProcess);
 
-        WacliSyncSupervisor supervisor = newSupervisor(launcher, millis -> { });
+        WacliSyncSupervisor supervisor = newSupervisor(launcher, millis -> {});
 
         boolean started = supervisor.start();
 

@@ -39,6 +39,7 @@ class WacliSyncSupervisor {
         void sleep(long millis) throws InterruptedException;
     }
 
+    // TODO: use Clock
     @FunctionalInterface
     interface Ticker {
         long nanoTime();
@@ -56,8 +57,7 @@ class WacliSyncSupervisor {
     private volatile String lastStderrLine;
     private volatile Thread monitorThread;
 
-    WacliSyncSupervisor(WacliProperties properties, int webhookPort,
-                        ProcessLauncher processLauncher, Sleeper sleeper, Ticker ticker) {
+    WacliSyncSupervisor(WacliProperties properties, int webhookPort, ProcessLauncher processLauncher, Sleeper sleeper, Ticker ticker) {
         this.properties = properties;
         this.webhookPort = webhookPort;
         this.processLauncher = processLauncher;
@@ -79,6 +79,7 @@ class WacliSyncSupervisor {
             return false;
         }
         running = true;
+
         monitorThread = new Thread(this::runSyncLoop, "wacli-sync-monitor");
         monitorThread.setDaemon(true);
         monitorThread.start();

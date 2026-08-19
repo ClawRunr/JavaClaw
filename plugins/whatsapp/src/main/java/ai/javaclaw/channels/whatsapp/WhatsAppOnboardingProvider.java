@@ -1,5 +1,7 @@
 package ai.javaclaw.channels.whatsapp;
 
+import ai.javaclaw.cli.CliRunner;
+import ai.javaclaw.cli.CliRunner.CliResult;
 import ai.javaclaw.configuration.ConfigurationManager;
 import ai.javaclaw.onboarding.OnboardingProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,7 +14,6 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 @Component
@@ -24,15 +25,15 @@ public class WhatsAppOnboardingProvider implements OnboardingProvider {
     private static final String ENABLED_PROPERTY = "agent.channels.whatsapp.enabled";
     private static final String ALLOWED_JID_PROPERTY = "agent.channels.whatsapp.allowed-chat-jid";
 
-    private static final Pattern JID_PATTERN =
-            Pattern.compile("^[0-9A-Za-z._-]+@(s\\.whatsapp\\.net|g\\.us|lid|newsletter|broadcast)$");
+    private static final Pattern JID_PATTERN = Pattern.compile("^[0-9A-Za-z._-]+@(s\\.whatsapp\\.net|g\\.us|lid|newsletter|broadcast)$");
 
     private final Environment env;
     private final WacliCli wacliCli;
 
     @Autowired
-    public WhatsAppOnboardingProvider(Environment env) {
-        this(env, new DefaultWacliCli(env.getProperty("agent.channels.whatsapp.wacli-path", "wacli")));
+    public WhatsAppOnboardingProvider(Environment env, CliRunner cliRunner) {
+        this(env, new DefaultWacliCli(cliRunner, env.getProperty("agent.channels.whatsapp.wacli-path", "wacli")));
+
     }
 
     WhatsAppOnboardingProvider(Environment env, WacliCli wacliCli) {
@@ -114,9 +115,11 @@ public class WhatsAppOnboardingProvider implements OnboardingProvider {
 
     static class DefaultWacliCli implements WacliCli {
 
+        private final CliRunner cliRunner;
         private final String wacliPath;
 
-        DefaultWacliCli(String wacliPath) {
+        DefaultWacliCli(CliRunner cliRunner, String wacliPath) {
+            this.cliRunner = cliRunner;
             this.wacliPath = wacliPath;
         }
 
@@ -132,15 +135,8 @@ public class WhatsAppOnboardingProvider implements OnboardingProvider {
 
         private boolean runQuietly(List<String> command) {
             try {
-                Process process = new ProcessBuilder(command)
-                        .redirectErrorStream(true)
-                        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                        .start();
-                if (!process.waitFor(10, TimeUnit.SECONDS)) {
-                    process.destroyForcibly();
-                    return false;
-                }
-                return process.exitValue() == 0;
+                CliResult result = cliRunner.run(command);
+                return result.exitCode() == 0;
             } catch (IOException e) {
                 return false;
             } catch (InterruptedException e) {
