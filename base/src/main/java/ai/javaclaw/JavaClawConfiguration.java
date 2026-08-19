@@ -11,19 +11,22 @@ import org.springaicommunity.agent.tools.FileSystemTools;
 import org.springaicommunity.agent.tools.SkillsTool;
 import org.springaicommunity.agent.tools.SmartWebFetchTool;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
-import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.memory.ChatMemoryRepository;
-import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import org.springframework.ai.model.SpringAIModelProperties;
+import org.springframework.ai.session.DefaultSessionService;
+import org.springframework.ai.session.SessionRepository;
+import org.springframework.ai.session.SessionService;
+import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
+import org.springframework.ai.session.compaction.TokenCountTrigger;
+import org.springframework.ai.session.compaction.TurnWindowCompactionStrategy;
+import org.springframework.ai.tokenizer.JTokkitTokenCountEstimator;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -44,6 +47,15 @@ public class JavaClawConfiguration {
 
     public static final String AGENT_MD = "AGENT.private.md";
 
+    /** Single-tenant install: every session belongs to this user. */
+    public static final String AGENT_USER_ID = "javaclaw";
+
+    /**
+     * Estimated token count of a session's history at which older turns are
+     * compacted out of the context window sent to the model.
+     */
+    private static final int COMPACTION_TOKEN_THRESHOLD = 50_000;
+
     @Value("${agent.skills.paths}")
     List<Resource> skillPaths;
 
@@ -51,12 +63,14 @@ public class JavaClawConfiguration {
     @Bean
     @ConditionalOnProperty(name = SpringAIModelProperties.CHAT_MODEL, havingValue = "unknown", matchIfMissing = true)
     public ChatModel chatModel() {
-        return prompt -> new ChatResponse(List.of(new Generation(new AssistantMessage("No AI model has been configured. If you did configure a model recently, restart JavaClaw manually for the changes to take effect."))));
+        return _ -> new ChatResponse(List.of(new Generation(new AssistantMessage("No AI model has been configured. If you did configure a model recently, restart JavaClaw manually for the changes to take effect."))));
     }
 
     @Bean
-    public ChatMemory chatMemory(ChatMemoryRepository chatMemoryRepository) {
-        return MessageWindowChatMemory.builder().chatMemoryRepository(chatMemoryRepository).build();
+    public SessionService sessionService(SessionRepository sessionRepository) {
+        return DefaultSessionService.builder()
+                .sessionRepository(sessionRepository)
+                .build();
     }
 
     @Bean
@@ -73,7 +87,7 @@ public class JavaClawConfiguration {
     @Bean
     @DependsOn({"mcpHeaderCustomizer"})
     public ChatClient chatClient(ChatClient.Builder chatClientBuilder,
-                                 ChatMemory chatMemory,
+                                 SessionService sessionService,
                                  ObjectProvider<ToolSearchToolCallingAdvisor> toolSearchToolCallAdvisorProvider,
                                  SyncMcpToolCallbackProvider mcpToolProvider,
                                  TaskManager taskManager,
@@ -115,7 +129,14 @@ public class JavaClawConfiguration {
                         SmartWebFetchTool.builder(chatClientBuilder.clone().build()).build())
                 .defaultAdvisors(
                         toolCallAdvisor,
-                        MessageChatMemoryAdvisor.builder(chatMemory).build()
+                        SessionMemoryAdvisor.builder(sessionService)
+                                .defaultUserId(AGENT_USER_ID)
+                                .compactionTrigger(TokenCountTrigger.builder()
+                                        .threshold(COMPACTION_TOKEN_THRESHOLD)
+                                        .tokenCountEstimator(new JTokkitTokenCountEstimator())
+                                        .build())
+                                .compactionStrategy(TurnWindowCompactionStrategy.builder().build())
+                                .build()
                 );
 
         autoDiscoveredTools.forEach(autoDiscoveredTool -> chatClientBuilder.defaultTools(autoDiscoveredTool.tool()));
