@@ -1,5 +1,6 @@
 package ai.javaclaw.chat;
 
+import ai.javaclaw.JavaClawConfiguration;
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.ResponseListener;
 import ai.javaclaw.channels.Channel;
@@ -7,10 +8,11 @@ import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.session.Session;
+import org.springframework.ai.session.SessionService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -41,15 +43,15 @@ public class ChatChannel implements Channel {
 
     private final Agent agent;
     private final ChannelRegistry channelRegistry;
-    private final ChatMemoryRepository chatMemoryRepository;
+    private final SessionService sessionService;
     private final ObjectMapper objectMapper;
     private final ConcurrentLinkedQueue<String> pendingMessages = new ConcurrentLinkedQueue<>();
     private final AtomicReference<WebSocketSession> wsSession = new AtomicReference<>();
 
-    public ChatChannel(Agent agent, ChannelRegistry channelRegistry, ChatMemoryRepository chatMemoryRepository, ObjectMapper objectMapper) {
+    public ChatChannel(Agent agent, ChannelRegistry channelRegistry, SessionService sessionService, ObjectMapper objectMapper) {
         this.agent = agent;
         this.channelRegistry = channelRegistry;
-        this.chatMemoryRepository = chatMemoryRepository;
+        this.sessionService = sessionService;
         this.objectMapper = objectMapper;
         channelRegistry.registerChannel(this);
         log.info("Started Web Chat channel");
@@ -117,7 +119,8 @@ public class ChatChannel implements Channel {
     public List<String> conversationIds() {
         List<String> result = new ArrayList<>();
         result.add("web");
-        chatMemoryRepository.findConversationIds().stream()
+        sessionService.findByUserId(JavaClawConfiguration.AGENT_USER_ID).stream()
+                .map(Session::id)
                 .filter(id -> !id.equals("web"))
                 .forEach(result::add);
         return result;
@@ -128,7 +131,7 @@ public class ChatChannel implements Channel {
      * Returns a single welcome bubble if no history exists yet.
      */
     public List<String> loadHistoryAsHtml(String conversationId) {
-        List<Message> history = chatMemoryRepository.findByConversationId(conversationId);
+        List<Message> history = sessionService.getMessages(conversationId);
         if (history.isEmpty()) {
             return List.of(ChatHtml.agentBubble("Hi! I'm your JavaClaw assistant. How can I help you today?"));
         }

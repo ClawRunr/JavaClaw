@@ -3,7 +3,7 @@ package ai.javaclaw.agent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -21,7 +21,7 @@ public class DefaultAgent implements Agent {
     public String respondTo(String conversationId, String question) {
         return chatClient
                 .prompt(question)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
+                .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, conversationId))
                 .call()
                 .content();
     }
@@ -32,7 +32,7 @@ public class DefaultAgent implements Agent {
         try {
             chatClient
                     .prompt(question)
-                    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
+                    .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, conversationId))
                     .stream()
                     .content()
                     .doOnNext(token -> {
@@ -59,7 +59,7 @@ public class DefaultAgent implements Agent {
     public <T> T prompt(String conversationId, String input, Class<T> result) {
         return chatClient
                 .prompt(input)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
+                .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, conversationId))
                 .call()
                 .entity(result);
     }
