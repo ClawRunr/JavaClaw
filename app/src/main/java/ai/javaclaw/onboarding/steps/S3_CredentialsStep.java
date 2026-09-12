@@ -42,16 +42,20 @@ public class S3_CredentialsStep implements OnboardingProvider {
         String base = "agent.llm.providers." + LlmProviderProperties.DEFAULT_PROVIDER_NAME;
         String modelKey = base + ".model";
         String apiKeyKey = base + ".api-key";
+        String baseUrlKey = base + ".base-url";
 
         String currentModel = (String) session.get(S2_ProviderStep.SESSION_MODEL);
         String existingModel = env.getProperty(modelKey, "");
         String existingApiKey = env.getProperty(apiKeyKey, "");
+        String existingBaseUrl = env.getProperty(baseUrlKey, "");
         model.put("selectedProvider", provider.getId());
         model.put("providerLabel", provider.getLabel());
         model.put("providerApiPropertyKey", apiKeyKey);
         model.put("chatModelPropertyKey", modelKey);
+        model.put("baseUrlPropertyKey", baseUrlKey);
         model.put("requiresApiKey", provider.requiresApiKey());
         model.put("apiKey", session.getOrDefault(S2_ProviderStep.SESSION_API_KEY, existingApiKey));
+        model.put("baseUrl", session.getOrDefault(S2_ProviderStep.SESSION_BASE_URL, existingBaseUrl));
         model.put("model", currentModel != null && !currentModel.isBlank() ? currentModel : (!existingModel.isBlank() ? existingModel : provider.defaultModel()));
         provider.systemWideToken().ifPresent(t -> model.put("systemWideTokenName", t.name()));
     }
@@ -66,6 +70,7 @@ public class S3_CredentialsStep implements OnboardingProvider {
 
         String model = formParams.getOrDefault("model", "").trim();
         String apiKey = formParams.getOrDefault("apiKey", "").trim();
+        String baseUrl = formParams.getOrDefault("baseUrl", "").trim();
 
         if (model.isBlank()) {
             return "Enter a model to continue.";
@@ -85,11 +90,8 @@ public class S3_CredentialsStep implements OnboardingProvider {
 
         session.put(S2_ProviderStep.SESSION_MODEL, model);
         session.put(S2_ProviderStep.SESSION_API_KEY, apiKey);
+        session.put(S2_ProviderStep.SESSION_BASE_URL, baseUrl);
         return null;
     }
 
-    AgentOnboardingProvider getAgentProvider(Map<String, Object> session) {
-        String providerId = (String) session.getOrDefault(S2_ProviderStep.SESSION_PROVIDER, env.getProperty("agent.llm.providers.default.provider", ""));
-        return agentOnboardingProviders.getById(providerId);
-    }
 }
