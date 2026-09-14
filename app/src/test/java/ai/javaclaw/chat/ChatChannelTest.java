@@ -272,6 +272,30 @@ class ChatChannelTest {
     }
 
     @Test
+    void chatStreamsToolCallAndResultFrames() throws IOException {
+        WebSocketSession session = openSession();
+        agentStreams(listener -> {
+            listener.onToolCall("call-1", "readFile", "{\"path\":\"pom.xml\"}");
+            listener.onToolResult("call-1", "readFile", "file contents");
+            listener.onComplete();
+        });
+
+        chatChannel.chat("web", "hello");
+
+        List<Map<String, Object>> frames = capturedFrames(session, 3);
+        assertThat(frames.get(0))
+                .containsEntry("type", "toolCall")
+                .containsEntry("conversationId", "web")
+                .containsEntry("data", Map.of("id", "call-1", "name", "readFile",
+                        "input", "{\"path\":\"pom.xml\"}"));
+        assertThat(frames.get(1))
+                .containsEntry("type", "toolResult")
+                .containsEntry("data", Map.of("id", "call-1", "name", "readFile",
+                        "output", "file contents"));
+        assertThat(frames.get(2)).containsEntry("type", "done");
+    }
+
+    @Test
     void chatStreamsErrorFrameWhenResponseFails() throws IOException {
         WebSocketSession session = openSession();
         agentStreams(listener -> listener.onError("boom"));

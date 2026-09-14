@@ -148,10 +148,42 @@ public class ChatChannel implements Channel {
     public String chat(String conversationId, String message) {
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), message));
 
-        return agent.respondTo(conversationId, message, ResponseListener.of(
-                token -> sendChunkFrame(conversationId, token),
-                () -> sendDoneFrame(conversationId),
-                error -> sendErrorFrame(conversationId, error)));
+        return agent.respondTo(conversationId, message, new ResponseListener() {
+
+            @Override
+            public void onToken(String token) {
+                sendChunkFrame(conversationId, token);
+            }
+
+            @Override
+            public void onToolCall(String id, String name, String input) {
+                sendToolFrame(StreamFrameType.TOOL_CALL, conversationId, id, name, "input", input);
+            }
+
+            @Override
+            public void onToolResult(String id, String name, String output) {
+                sendToolFrame(StreamFrameType.TOOL_RESULT, conversationId, id, name, "output", output);
+            }
+
+            @Override
+            public void onComplete() {
+                sendDoneFrame(conversationId);
+            }
+
+            @Override
+            public void onError(String error) {
+                sendErrorFrame(conversationId, error);
+            }
+        });
+    }
+
+    private void sendToolFrame(StreamFrameType type, String conversationId,
+                               String id, String name, String payloadKey, String payload) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("id", id);
+        data.put("name", name);
+        data.put(payloadKey, payload == null ? "" : payload);
+        sendFrame(frame(type, conversationId, data));
     }
 
     private void sendChunkFrame(String conversationId, String token) {

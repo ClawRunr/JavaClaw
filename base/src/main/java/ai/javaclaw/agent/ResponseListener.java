@@ -26,7 +26,22 @@ public interface ResponseListener {
     void onError(String message);
 
     /**
+     * Called when the model asks for a tool, before it runs. {@code input} is the raw JSON
+     * arguments. Default is a no-op, for listeners that only care about text.
+     */
+    default void onToolCall(String id, String name, String input) {
+    }
+
+    /**
+     * Called when a tool the model asked for has returned. {@code id} matches the
+     * {@link #onToolCall} that started it. Default is a no-op.
+     */
+    default void onToolResult(String id, String name, String output) {
+    }
+
+    /**
      * Creates a listener from three lambdas, avoiding an anonymous class at the call site.
+     * Tool callbacks stay no-ops; implement the interface directly to observe those.
      */
     static ResponseListener of(Consumer<String> onToken, Runnable onComplete, Consumer<String> onError) {
         return new ResponseListener() {

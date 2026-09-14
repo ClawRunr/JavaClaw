@@ -21,7 +21,8 @@ public class DefaultAgent implements Agent {
     public String respondTo(String conversationId, String question) {
         return chatClient
                 .prompt(question)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
+                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId)
+                        .advisors(new ToolCallObservingAdvisor(conversationId)))
                 .call()
                 .content();
     }
@@ -32,7 +33,8 @@ public class DefaultAgent implements Agent {
         try {
             chatClient
                     .prompt(question)
-                    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
+                    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId)
+                        .advisors(new ToolCallObservingAdvisor(conversationId, listener)))
                     .stream()
                     .content()
                     .doOnNext(token -> {
@@ -59,7 +61,8 @@ public class DefaultAgent implements Agent {
     public <T> T prompt(String conversationId, String input, Class<T> result) {
         return chatClient
                 .prompt(input)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
+                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId)
+                        .advisors(new ToolCallObservingAdvisor(conversationId)))
                 .call()
                 .entity(result);
     }
