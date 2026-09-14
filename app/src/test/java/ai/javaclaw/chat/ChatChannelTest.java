@@ -1,7 +1,7 @@
 package ai.javaclaw.chat;
 
 import ai.javaclaw.agent.Agent;
-import ai.javaclaw.agent.ResponseListener;
+import ai.javaclaw.agent.AgentEvent;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -134,21 +134,16 @@ class ChatChannelTest {
 
     @Test
     void chatDelegatesToAgentWithConversationId() {
-        when(agent.respondTo(eq("web"), eq("hello"), any(ResponseListener.class))).thenReturn("hi");
+        chatChannel.chat("web", "hello");
 
-        String response = chatChannel.chat("web", "hello");
-
-        assertThat(response).isEqualTo("hi");
-        verify(agent).respondTo(eq("web"), eq("hello"), any(ResponseListener.class));
+        verify(agent).respondTo(eq("web"), eq("hello"), anyConsumer());
     }
 
     @Test
     void chatUsesSuppliedConversationId() {
-        when(agent.respondTo(eq("telegram-42"), any(), any(ResponseListener.class))).thenReturn("reply");
-
         chatChannel.chat("telegram-42", "hello");
 
-        verify(agent).respondTo(eq("telegram-42"), eq("hello"), any(ResponseListener.class));
+        verify(agent).respondTo(eq("telegram-42"), eq("hello"), anyConsumer());
     }
 
     // -----------------------------------------------------------------------
@@ -249,10 +244,10 @@ class ChatChannelTest {
     @Test
     void chatStreamsTokensAsChunkFramesFollowedByDoneFrame() throws IOException {
         WebSocketSession session = openSession();
-        agentStreams(listener -> {
-            listener.onToken("Hello ");
-            listener.onToken("world");
-            listener.onComplete();
+        agentStreams(events -> {
+            events.accept(new AgentEvent.Token("Hello "));
+            events.accept(new AgentEvent.Token("world"));
+            events.accept(new AgentEvent.Done());
         });
 
         chatChannel.chat("web", "hello");
@@ -274,10 +269,10 @@ class ChatChannelTest {
     @Test
     void chatStreamsToolCallAndResultFrames() throws IOException {
         WebSocketSession session = openSession();
-        agentStreams(listener -> {
-            listener.onToolCall("call-1", "readFile", "{\"path\":\"pom.xml\"}");
-            listener.onToolResult("call-1", "readFile", "file contents");
-            listener.onComplete();
+        agentStreams(events -> {
+            events.accept(new AgentEvent.ToolCall("call-1", "readFile", "{\"path\":\"pom.xml\"}"));
+            events.accept(new AgentEvent.ToolResult("call-1", "readFile", "file contents"));
+            events.accept(new AgentEvent.Done());
         });
 
         chatChannel.chat("web", "hello");
@@ -298,7 +293,7 @@ class ChatChannelTest {
     @Test
     void chatStreamsErrorFrameWhenResponseFails() throws IOException {
         WebSocketSession session = openSession();
-        agentStreams(listener -> listener.onError("boom"));
+        agentStreams(events -> events.accept(new AgentEvent.Failed("boom")));
 
         chatChannel.chat("web", "hello");
 
@@ -311,13 +306,18 @@ class ChatChannelTest {
 
     @Test
     void chatDropsStreamFramesWhenNoSessionIsActive() {
-        agentStreams(listener -> {
-            listener.onToken("Hello");
-            listener.onComplete();
+        agentStreams(events -> {
+            events.accept(new AgentEvent.Token("Hello"));
+            events.accept(new AgentEvent.Done());
         });
 
         // should not throw
         chatChannel.chat("web", "hello");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.function.Consumer<AgentEvent> anyConsumer() {
+        return any(java.util.function.Consumer.class);
     }
 
     private WebSocketSession openSession() {
@@ -327,11 +327,11 @@ class ChatChannelTest {
         return session;
     }
 
-    private void agentStreams(java.util.function.Consumer<ResponseListener> progress) {
-        when(agent.respondTo(eq("web"), eq("hello"), any(ResponseListener.class))).thenAnswer(invocation -> {
+    private void agentStreams(java.util.function.Consumer<java.util.function.Consumer<AgentEvent>> progress) {
+        org.mockito.Mockito.doAnswer(invocation -> {
             progress.accept(invocation.getArgument(2));
-            return "";
-        });
+            return null;
+        }).when(agent).respondTo(eq("web"), eq("hello"), anyConsumer());
     }
 
     @SuppressWarnings("unchecked")

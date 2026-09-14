@@ -1,7 +1,9 @@
 package ai.javaclaw.chat.ws;
 
 import ai.javaclaw.agent.Agent;
-import ai.javaclaw.agent.ResponseListener;
+import ai.javaclaw.agent.AgentEvent;
+
+import java.util.function.Consumer;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.chat.ChatChannel;
 import org.junit.jupiter.api.Test;
@@ -122,11 +124,10 @@ class ChatStreamingIntegrationTest {
                 }
 
                 @Override
-                public String respondTo(String conversationId, String question, ResponseListener listener) {
-                    listener.onToken("Hello ");
-                    listener.onToken("world");
-                    listener.onComplete();
-                    return "Hello world";
+                public void respondTo(String conversationId, String question, Consumer<AgentEvent> events) {
+                    events.accept(new AgentEvent.Token("Hello "));
+                    events.accept(new AgentEvent.Token("world"));
+                    events.accept(new AgentEvent.Done());
                 }
 
                 @Override

@@ -1,7 +1,7 @@
 package ai.javaclaw.chat;
 
 import ai.javaclaw.agent.Agent;
-import ai.javaclaw.agent.ResponseListener;
+import ai.javaclaw.agent.AgentEvent;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
@@ -143,59 +143,29 @@ public class ChatChannel implements Channel {
     /**
      * Handles a chat message from the web UI for the given conversationId.
      * The response is streamed to the WebSocket session as JSON frames
-     * ({@code chunk}/{@code done}/{@code error}); the full response text is returned.
+     * ({@code chunk}/{@code toolCall}/{@code toolResult}/{@code done}/{@code error}).
      */
-    public String chat(String conversationId, String message) {
+    public void chat(String conversationId, String message) {
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), message));
 
-        return agent.respondTo(conversationId, message, new ResponseListener() {
-
-            @Override
-            public void onToken(String token) {
-                sendChunkFrame(conversationId, token);
-            }
-
-            @Override
-            public void onToolCall(String id, String name, String input) {
-                sendToolFrame(StreamFrameType.TOOL_CALL, conversationId, id, name, "input", input);
-            }
-
-            @Override
-            public void onToolResult(String id, String name, String output) {
-                sendToolFrame(StreamFrameType.TOOL_RESULT, conversationId, id, name, "output", output);
-            }
-
-            @Override
-            public void onComplete() {
-                sendDoneFrame(conversationId);
-            }
-
-            @Override
-            public void onError(String error) {
-                sendErrorFrame(conversationId, error);
-            }
-        });
+        agent.respondTo(conversationId, message, event -> sendFrame(switch (event) {
+            case AgentEvent.Token t -> frame(StreamFrameType.CHUNK, conversationId, t.text());
+            case AgentEvent.ToolCall c -> frame(StreamFrameType.TOOL_CALL, conversationId,
+                    toolData(c.id(), c.name(), "input", c.input()));
+            case AgentEvent.ToolResult r -> frame(StreamFrameType.TOOL_RESULT, conversationId,
+                    toolData(r.id(), r.name(), "output", r.output()));
+            case AgentEvent.Done ignored -> frame(StreamFrameType.DONE, conversationId, null);
+            case AgentEvent.Failed f -> frame(StreamFrameType.ERROR, conversationId,
+                    f.message() == null ? "Unknown error" : f.message());
+        }));
     }
 
-    private void sendToolFrame(StreamFrameType type, String conversationId,
-                               String id, String name, String payloadKey, String payload) {
+    private static Map<String, Object> toolData(String id, String name, String payloadKey, String payload) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("id", id);
         data.put("name", name);
         data.put(payloadKey, payload == null ? "" : payload);
-        sendFrame(frame(type, conversationId, data));
-    }
-
-    private void sendChunkFrame(String conversationId, String token) {
-        sendFrame(frame(StreamFrameType.CHUNK, conversationId, token));
-    }
-
-    private void sendDoneFrame(String conversationId) {
-        sendFrame(frame(StreamFrameType.DONE, conversationId, null));
-    }
-
-    private void sendErrorFrame(String conversationId, String error) {
-        sendFrame(frame(StreamFrameType.ERROR, conversationId, error == null ? "Unknown error" : error));
+        return data;
     }
 
     private static Map<String, Object> frame(StreamFrameType type, String conversationId, Object payload) {

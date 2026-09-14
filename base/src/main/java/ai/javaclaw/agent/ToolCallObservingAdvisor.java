@@ -15,10 +15,11 @@ import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Reports every tool the model calls, to the log and to an optional {@link ResponseListener}.
+ * Reports every tool the model calls, to the log and to an optional {@link AgentEvent} consumer.
  * <p>
  * {@link ToolCallingAdvisor} runs the tool loop and does not pass the assistant chunks that carry
  * tool calls on to the outbound stream, so nothing downstream — the agent included — can see them.
@@ -34,24 +35,19 @@ public class ToolCallObservingAdvisor implements CallAdvisor, StreamAdvisor {
     public static final int ORDER = ToolCallingAdvisor.DEFAULT_ORDER + 100;
 
     private static final Logger log = LoggerFactory.getLogger(ToolCallObservingAdvisor.class);
-    private static final ResponseListener LOG_ONLY = ResponseListener.of(_ -> {}, () -> {}, _ -> {});
 
     private final String conversationId;
-    private final ResponseListener listener;
+    private final Consumer<AgentEvent> events;
     /**
      * Calls seen but not yet answered. Doubles as de-duplication: arguments stream in as partial
      * JSON across many chunks, so the same call is seen repeatedly.
      */
     private final Set<String> pending = ConcurrentHashMap.newKeySet();
 
-    public ToolCallObservingAdvisor(String conversationId) {
-        this(conversationId, LOG_ONLY);
-    }
-
-    /** @param listener also notified of each call and result, so a UI can render them. */
-    public ToolCallObservingAdvisor(String conversationId, ResponseListener listener) {
+    /** @param events receives each call and result, so a UI can render them; may be a no-op. */
+    public ToolCallObservingAdvisor(String conversationId, Consumer<AgentEvent> events) {
         this.conversationId = conversationId;
-        this.listener = listener;
+        this.events = events;
     }
 
     @Override
@@ -83,7 +79,7 @@ public class ToolCallObservingAdvisor implements CallAdvisor, StreamAdvisor {
                     // Arguments carry whatever the user typed and can be large — keep them off INFO.
                     log.debug("Conversation {} tool {} arguments: {}",
                             conversationId, call.name(), call.arguments());
-                    listener.onToolCall(call.id(), call.name(), call.arguments());
+                    events.accept(new AgentEvent.ToolCall(call.id(), call.name(), call.arguments()));
                 });
     }
 
@@ -96,7 +92,7 @@ public class ToolCallObservingAdvisor implements CallAdvisor, StreamAdvisor {
                 .filter(result -> pending.remove(result.id()))
                 .forEach(result -> {
                     log.info("Conversation {} finished tool {}", conversationId, result.name());
-                    listener.onToolResult(result.id(), result.name(), result.responseData());
+                    events.accept(new AgentEvent.ToolResult(result.id(), result.name(), result.responseData()));
                 });
     }
 

@@ -38,7 +38,7 @@ class ToolCallObservingAdvisorTest {
 
     @BeforeEach
     void setUp() {
-        advisor = new ToolCallObservingAdvisor("web");
+        advisor = new ToolCallObservingAdvisor("web", event -> {});
         logs = captureLogsOf(ToolCallObservingAdvisor.class);
     }
 
@@ -86,30 +86,8 @@ class ToolCallObservingAdvisorTest {
 
     @Test
     void reportsToolNameInputAndOutputToTheListener() {
-        List<String> seen = new ArrayList<>();
-        ToolCallObservingAdvisor observed = new ToolCallObservingAdvisor("web", new ResponseListener() {
-            @Override
-            public void onToken(String token) {
-            }
-
-            @Override
-            public void onToolCall(String id, String name, String input) {
-                seen.add("call " + id + " " + name + " " + input);
-            }
-
-            @Override
-            public void onToolResult(String id, String name, String output) {
-                seen.add("result " + id + " " + name + " " + output);
-            }
-
-            @Override
-            public void onComplete() {
-            }
-
-            @Override
-            public void onError(String message) {
-            }
-        });
+        List<AgentEvent> seen = new ArrayList<>();
+        ToolCallObservingAdvisor observed = new ToolCallObservingAdvisor("web", seen::add);
 
         when(chain.nextStream(any())).thenReturn(Flux.just(responseWith(toolCall("call-1", "readFile"))));
         observed.adviseStream(request(new UserMessage("hi")), chain).blockLast();
@@ -121,8 +99,8 @@ class ToolCallObservingAdvisorTest {
         observed.adviseStream(request(new UserMessage("hi"), toolResponse), chain).blockLast();
 
         assertThat(seen).containsExactly(
-                "call call-1 readFile {\"path\":\"pom.xml\"}",
-                "result call-1 readFile file contents");
+                new AgentEvent.ToolCall("call-1", "readFile", "{\"path\":\"pom.xml\"}"),
+                new AgentEvent.ToolResult("call-1", "readFile", "file contents"));
     }
 
     @Test
