@@ -22,10 +22,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ChatChannelTest {
@@ -217,7 +214,7 @@ class ChatChannelTest {
     void flushPendingMessagesDeliversMessagesBufferedWhileSendFailed() throws IOException {
         WebSocketSession failingSession = mock(WebSocketSession.class);
         when(failingSession.isOpen()).thenReturn(true);
-        org.mockito.Mockito.doThrow(new IOException("connection gone")).when(failingSession).sendMessage(any());
+        doThrow(new IOException("connection gone")).when(failingSession).sendMessage(any());
         chatChannel.setWsSession(failingSession);
         chatChannel.sendMessage("Background result");
 
@@ -328,7 +325,7 @@ class ChatChannelTest {
     }
 
     private void agentStreams(java.util.function.Consumer<java.util.function.Consumer<AgentEvent>> progress) {
-        org.mockito.Mockito.doAnswer(invocation -> {
+        doAnswer(invocation -> {
             progress.accept(invocation.getArgument(2));
             return null;
         }).when(agent).respondTo(eq("web"), eq("hello"), anyConsumer());

@@ -12,11 +12,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class ChatWebSocketHandlerTest {
 
@@ -26,7 +22,7 @@ class ChatWebSocketHandlerTest {
         WebSocketSession session = mock(WebSocketSession.class);
         ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
 
-        org.mockito.Mockito.doThrow(new RuntimeException("""
+        doThrow(new RuntimeException("""
                 HTTP 401 - {
                     "error": {
                         "message": "Incorrect API key provided: Test.",
@@ -66,7 +62,7 @@ class ChatWebSocketHandlerTest {
         WebSocketSession session = mock(WebSocketSession.class);
         ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
 
-        org.mockito.Mockito.doThrow(new RuntimeException("boom")).when(chatChannel).chat(anyString(), anyString());
+        doThrow(new RuntimeException("boom")).when(chatChannel).chat(anyString(), anyString());
 
         handler.handleTextMessage(session, new TextMessage(new ObjectMapper().writeValueAsString(Map.of(
                 "type", "userMessage",
