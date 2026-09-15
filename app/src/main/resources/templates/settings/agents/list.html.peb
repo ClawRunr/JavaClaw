@@ -11,8 +11,7 @@
         <button class="button is-small"
                 hx-get="/settings/agents/{{ a.name }}/edit"
                 hx-target="#agent-drawer"
-                hx-swap="innerHTML"
-                hx-on:htmx:after-swap="openDrawer()">Edit</button>
+                hx-swap="innerHTML">Edit</button>
         <button class="button is-small is-danger is-light"
                 hx-delete="/settings/agents/{{ a.name }}"
                 hx-target="#agents-list"

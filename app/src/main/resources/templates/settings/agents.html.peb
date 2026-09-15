@@ -57,8 +57,7 @@
             <button class="button is-primary"
                     hx-get="/settings/agents/new"
                     hx-target="#agent-drawer"
-                    hx-swap="innerHTML"
-                    hx-on:htmx:after-swap="openDrawer()">Add Agent</button>
+                    hx-swap="innerHTML">Add Agent</button>
         </div>
     </div>
 
@@ -70,7 +69,8 @@
 </div>
 
 <div class="drawer-backdrop" id="drawer-backdrop"></div>
-<aside class="drawer" id="agent-drawer" aria-hidden="true"></aside>
+<aside class="drawer" id="agent-drawer" aria-hidden="true"
+       hx-on:htmx:after-swap="openDrawer()"></aside>
 {% endblock %}
 
 {% block scripts %}
