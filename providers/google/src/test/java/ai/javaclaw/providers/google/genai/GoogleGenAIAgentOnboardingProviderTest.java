@@ -35,8 +35,7 @@ class GoogleGenAIAgentOnboardingProviderTest {
                         MediaType.APPLICATION_JSON));
 
         assertThat(provider.availableModels(null, "AIza-test"))
-                .hasValueSatisfying(models -> assertThat(models)
-                        .containsExactly("gemini-1.5-flash"));
+                .containsExactly("gemini-1.5-flash");
     }
 
     @Test
@@ -47,7 +46,7 @@ class GoogleGenAIAgentOnboardingProviderTest {
                         MediaType.APPLICATION_JSON));
 
         assertThat(provider.availableModels("https://gemini.proxy.example.com", "AIza-test"))
-                .hasValueSatisfying(models -> assertThat(models).containsExactly("gemini-1.5-flash"));
+                .containsExactly("gemini-1.5-flash");
     }
 
     @Test

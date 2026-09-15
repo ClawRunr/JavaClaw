@@ -4,7 +4,6 @@ import ai.javaclaw.onboarding.AgentOnboardingProvider;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
-import java.util.Optional;
 
 public class OllamaAgentOnboardingProvider implements AgentOnboardingProvider {
 
@@ -39,22 +38,22 @@ public class OllamaAgentOnboardingProvider implements AgentOnboardingProvider {
     }
 
     @Override
-    public Optional<List<String>> availableModels(String baseUrl, String apiKey) {
+    public List<String> availableModels(String baseUrl, String apiKey) {
         try {
             OllamaTagsResponse response = restClient.get()
                     .uri(effectiveBase(baseUrl) + "/api/tags")
                     .retrieve()
                     .body(OllamaTagsResponse.class);
             if (response == null || response.models() == null) {
-                return Optional.empty();
+                return List.of();
             }
             List<String> names = response.models().stream()
                     .map(OllamaModel::name)
                     .filter(n -> n != null && !n.isBlank())
                     .toList();
-            return names.isEmpty() ? Optional.empty() : Optional.of(names);
+            return names;
         } catch (Exception e) {
-            return Optional.empty();
+            return List.of();
         }
     }
 

@@ -117,7 +117,7 @@ class OnboardingControllerTest {
     @Test
     void modelsEndpointReturnsSuggestionButtons() throws Exception {
         AgentOnboardingProvider provider = org.mockito.Mockito.mock(AgentOnboardingProvider.class);
-        when(provider.availableModels(any(), any())).thenReturn(Optional.of(List.of("gpt-4o", "gpt-4o-mini")));
+        when(provider.availableModels(any(), any())).thenReturn(List.of("gpt-4o", "gpt-4o-mini"));
         when(agentOnboardingProviders.findById("openai")).thenReturn(Optional.of(provider));
 
         mockMvc.perform(post("/onboarding/credentials/models")
@@ -134,7 +134,7 @@ class OnboardingControllerTest {
     @Test
     void modelsEndpointFiltersByTypedQuery() throws Exception {
         AgentOnboardingProvider provider = org.mockito.Mockito.mock(AgentOnboardingProvider.class);
-        when(provider.availableModels(any(), any())).thenReturn(Optional.of(List.of("gpt-4o", "gpt-4o-mini")));
+        when(provider.availableModels(any(), any())).thenReturn(List.of("gpt-4o", "gpt-4o-mini"));
         when(agentOnboardingProviders.findById("openai")).thenReturn(Optional.of(provider));
 
         mockMvc.perform(post("/onboarding/credentials/models")

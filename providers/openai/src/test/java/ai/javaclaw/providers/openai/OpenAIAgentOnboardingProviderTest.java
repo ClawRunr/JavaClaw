@@ -36,8 +36,7 @@ class OpenAIAgentOnboardingProviderTest {
                         MediaType.APPLICATION_JSON));
 
         assertThat(provider.availableModels(null, "sk-test"))
-                .hasValueSatisfying(models -> assertThat(models)
-                        .containsExactly("gpt-4o", "gpt-4o-mini"));
+                .containsExactly("gpt-4o", "gpt-4o-mini");
     }
 
     @Test
@@ -49,7 +48,7 @@ class OpenAIAgentOnboardingProviderTest {
                         MediaType.APPLICATION_JSON));
 
         assertThat(provider.availableModels("https://gateway.example.com", "sk-test"))
-                .hasValueSatisfying(models -> assertThat(models).containsExactly("gpt-4o"));
+                .containsExactly("gpt-4o");
     }
 
     @Test

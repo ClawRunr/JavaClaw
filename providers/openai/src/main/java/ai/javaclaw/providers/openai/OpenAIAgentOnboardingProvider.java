@@ -4,7 +4,6 @@ import ai.javaclaw.onboarding.AgentOnboardingProvider;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
-import java.util.Optional;
 
 public class OpenAIAgentOnboardingProvider implements AgentOnboardingProvider {
 
@@ -39,9 +38,9 @@ public class OpenAIAgentOnboardingProvider implements AgentOnboardingProvider {
     }
 
     @Override
-    public Optional<List<String>> availableModels(String baseUrl, String apiKey) {
+    public List<String> availableModels(String baseUrl, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
-            return Optional.empty();
+            return List.of();
         }
         try {
             OpenAiModelsResponse response = restClient.get()
@@ -50,15 +49,15 @@ public class OpenAIAgentOnboardingProvider implements AgentOnboardingProvider {
                     .retrieve()
                     .body(OpenAiModelsResponse.class);
             if (response == null || response.data() == null) {
-                return Optional.empty();
+                return List.of();
             }
             List<String> ids = response.data().stream()
                     .map(OpenAiModel::id)
                     .filter(id -> id != null && !id.isBlank())
                     .toList();
-            return ids.isEmpty() ? Optional.empty() : Optional.of(ids);
+            return ids;
         } catch (Exception e) {
-            return Optional.empty();
+            return List.of();
         }
     }
 

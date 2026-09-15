@@ -19,11 +19,11 @@ public interface AgentOnboardingProvider {
      * {@code baseUrl} is the endpoint configured by the user (e.g. a proxy or self-hosted server);
      * when blank the provider falls back to its own default. {@code apiKey} may be {@code null}
      * for keyless providers (Ollama).
-     * Return {@link Optional#empty()} when listing is unsupported (the model field stays a plain text input).
+     * Return an empty list when listing is unsupported or fails (the model field stays a plain text input).
      * Never throw — callers rely on a graceful empty result.
      */
-    default Optional<List<String>> availableModels(String baseUrl, String apiKey) {
-        return Optional.empty();
+    default List<String> availableModels(String baseUrl, String apiKey) {
+        return List.of();
     }
 
     default Optional<SystemWideToken> systemWideToken() {

@@ -49,9 +49,9 @@ public class AnthropicAgentOnboardingProvider implements AgentOnboardingProvider
     }
 
     @Override
-    public Optional<List<String>> availableModels(String baseUrl, String apiKey) {
+    public List<String> availableModels(String baseUrl, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
-            return Optional.empty();
+            return List.of();
         }
         try {
             AnthropicModelsResponse response = restClient.get()
@@ -61,15 +61,15 @@ public class AnthropicAgentOnboardingProvider implements AgentOnboardingProvider
                     .retrieve()
                     .body(AnthropicModelsResponse.class);
             if (response == null || response.data() == null) {
-                return Optional.empty();
+                return List.of();
             }
             List<String> ids = response.data().stream()
                     .map(AnthropicModel::id)
                     .filter(id -> id != null && !id.isBlank())
                     .toList();
-            return ids.isEmpty() ? Optional.empty() : Optional.of(ids);
+            return ids;
         } catch (Exception e) {
-            return Optional.empty();
+            return List.of();
         }
     }
 

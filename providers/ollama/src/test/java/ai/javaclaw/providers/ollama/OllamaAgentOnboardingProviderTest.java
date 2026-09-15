@@ -34,8 +34,7 @@ class OllamaAgentOnboardingProviderTest {
                         org.springframework.http.MediaType.APPLICATION_JSON));
 
         assertThat(provider.availableModels(null, null))
-                .hasValueSatisfying(models -> assertThat(models)
-                        .containsExactly("llama3.2:latest", "qwen3.5:27b"));
+                .containsExactly("llama3.2:latest", "qwen3.5:27b");
     }
 
     @Test
@@ -46,7 +45,7 @@ class OllamaAgentOnboardingProviderTest {
                         org.springframework.http.MediaType.APPLICATION_JSON));
 
         assertThat(provider.availableModels("http://ollama.local:11434/", null))
-                .hasValueSatisfying(models -> assertThat(models).containsExactly("llama3.2:latest"));
+                .containsExactly("llama3.2:latest");
     }
 
     @Test

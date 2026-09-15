@@ -135,7 +135,7 @@ public class AgentPageController {
         if (provider == null) {
             return "";
         }
-        List<String> models = provider.availableModels(baseUrl, apiKey).orElse(List.of());
+        List<String> models = provider.availableModels(baseUrl, apiKey);
         String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         StringBuilder html = new StringBuilder();
         for (String m : models) {

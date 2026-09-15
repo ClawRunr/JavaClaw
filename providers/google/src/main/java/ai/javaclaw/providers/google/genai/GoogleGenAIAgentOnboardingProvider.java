@@ -6,7 +6,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.util.List;
-import java.util.Optional;
 
 public class GoogleGenAIAgentOnboardingProvider implements AgentOnboardingProvider {
 
@@ -41,9 +40,9 @@ public class GoogleGenAIAgentOnboardingProvider implements AgentOnboardingProvid
     }
 
     @Override
-    public Optional<List<String>> availableModels(String baseUrl, String apiKey) {
+    public List<String> availableModels(String baseUrl, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
-            return Optional.empty();
+            return List.of();
         }
         try {
             URI uri = UriComponentsBuilder.fromUriString(effectiveBase(baseUrl))
@@ -56,7 +55,7 @@ public class GoogleGenAIAgentOnboardingProvider implements AgentOnboardingProvid
                     .retrieve()
                     .body(GoogleModelsResponse.class);
             if (response == null || response.models() == null) {
-                return Optional.empty();
+                return List.of();
             }
             List<String> names = response.models().stream()
                     .filter(m -> m.supportedGenerationMethods() != null
@@ -66,9 +65,9 @@ public class GoogleGenAIAgentOnboardingProvider implements AgentOnboardingProvid
                     .map(n -> n.substring("models/".length()))
                     .filter(n -> !n.isBlank())
                     .toList();
-            return names.isEmpty() ? Optional.empty() : Optional.of(names);
+            return names;
         } catch (Exception e) {
-            return Optional.empty();
+            return List.of();
         }
     }
 

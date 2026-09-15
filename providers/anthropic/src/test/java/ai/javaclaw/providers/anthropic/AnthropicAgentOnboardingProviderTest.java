@@ -37,8 +37,7 @@ class AnthropicAgentOnboardingProviderTest {
                         MediaType.APPLICATION_JSON));
 
         assertThat(provider.availableModels(null, "sk-ant-test"))
-                .hasValueSatisfying(models -> assertThat(models)
-                        .containsExactly("claude-opus-4-1", "claude-sonnet-4-6"));
+                .containsExactly("claude-opus-4-1", "claude-sonnet-4-6");
     }
 
     @Test
@@ -50,7 +49,7 @@ class AnthropicAgentOnboardingProviderTest {
                         MediaType.APPLICATION_JSON));
 
         assertThat(provider.availableModels("https://anthropic.proxy.example.com", "sk-ant-test"))
-                .hasValueSatisfying(models -> assertThat(models).containsExactly("claude-sonnet-4-6"));
+                .containsExactly("claude-sonnet-4-6");
     }
 
     @Test

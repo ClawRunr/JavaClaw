@@ -189,7 +189,7 @@ class AgentPageControllerTest {
 
     @Test
     void modelsEndpointReturnsSuggestionButtons() throws Exception {
-        when(openai.availableModels(any(), any())).thenReturn(Optional.of(List.of("gpt-4o", "gpt-4o-mini")));
+        when(openai.availableModels(any(), any())).thenReturn(List.of("gpt-4o", "gpt-4o-mini"));
 
         mockMvc.perform(post("/settings/agents/models")
                         .param("provider", "openai")
@@ -204,7 +204,7 @@ class AgentPageControllerTest {
 
     @Test
     void modelsEndpointFiltersByTypedQuery() throws Exception {
-        when(openai.availableModels(any(), any())).thenReturn(Optional.of(List.of("gpt-4o", "gpt-4o-mini")));
+        when(openai.availableModels(any(), any())).thenReturn(List.of("gpt-4o", "gpt-4o-mini"));
 
         mockMvc.perform(post("/settings/agents/models")
                         .param("provider", "openai")
