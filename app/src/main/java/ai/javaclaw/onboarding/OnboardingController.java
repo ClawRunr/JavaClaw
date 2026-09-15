@@ -1,8 +1,6 @@
-package ai.javaclaw.onboarding.api;
+package ai.javaclaw.onboarding;
 
 import ai.javaclaw.configuration.ConfigurationManager;
-import ai.javaclaw.onboarding.AgentOnboardingProviders;
-import ai.javaclaw.onboarding.OnboardingProvider;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;

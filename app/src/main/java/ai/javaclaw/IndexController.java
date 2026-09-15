@@ -1,4 +1,4 @@
-package ai.javaclaw.api;
+package ai.javaclaw;
 
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Controller;

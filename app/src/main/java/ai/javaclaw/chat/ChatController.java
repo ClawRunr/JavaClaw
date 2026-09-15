@@ -1,4 +1,4 @@
-package ai.javaclaw.chat.api;
+package ai.javaclaw.chat;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;

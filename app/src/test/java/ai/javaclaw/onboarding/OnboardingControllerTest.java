@@ -1,9 +1,6 @@
-package ai.javaclaw.api;
+package ai.javaclaw.onboarding;
 
 import ai.javaclaw.configuration.ConfigurationManager;
-import ai.javaclaw.onboarding.AgentOnboardingProvider;
-import ai.javaclaw.onboarding.AgentOnboardingProviders;
-import ai.javaclaw.onboarding.api.OnboardingController;
 import ai.javaclaw.onboarding.steps.S1_WelcomeStep;
 import ai.javaclaw.onboarding.steps.S2_ProviderStep;
 import ai.javaclaw.onboarding.steps.S3_CredentialsStep;
@@ -86,7 +83,9 @@ class OnboardingControllerTest {
         assertThat(savedProperties(session)).doesNotContainKey(BASE_URL_KEY);
     }
 
-    /** Walks provider + credentials for OpenAI, submitting {@code baseUrl}, and returns the session. */
+    /**
+     * Walks provider + credentials for OpenAI, submitting {@code baseUrl}, and returns the session.
+     */
     private MockHttpSession openAiSessionThrough(String baseUrl) throws Exception {
         when(agentOnboardingProviders.getById("openai")).thenReturn(OPENAI);
         when(agentOnboardingProviders.findById("openai")).thenReturn(Optional.of(OPENAI));
