@@ -154,6 +154,169 @@
     border-color: color-mix(in srgb, var(--bulma-danger) 45%, transparent);
     color: var(--bulma-danger);
 }
+
+/* A message that ran tools needs more room for JSON than a plain sentence does,
+   and its avatar belongs at the top rather than floating beside the last line. */
+.ar-msg--agent:has(.ar-tool) {
+    max-width: 92%;
+    align-items: flex-start;
+}
+
+/* Tool calls render inside the agent bubble, one shade darker to read as nested. */
+.ar-tool {
+    display: block;
+    margin: .55rem 0;
+    background: hsl(229, 24%, 10%);
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: .85rem;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+    animation: msg-in .22s cubic-bezier(.22, 1, .36, 1);
+    transition: border-color .18s ease, box-shadow .18s ease;
+}
+.ar-tool:hover { border-color: rgba(255, 255, 255, .13); }
+.ar-tool[open] { box-shadow: 0 4px 18px rgba(0, 0, 0, .28); }
+
+.ar-msg__bubble > .ar-tool:first-child { margin-top: 0; }
+.ar-msg__bubble > .ar-tool:last-child  { margin-bottom: 0; }
+
+.ar-tool, .ar-tool * { white-space: normal; }
+
+.ar-tool__head {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    padding: .5rem .7rem;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+.ar-tool__head::-webkit-details-marker { display: none; }
+
+.ar-tool__caret {
+    flex-shrink: 0;
+    width: .42rem; height: .42rem;
+    border-right: 1.5px solid rgba(200, 212, 240, .4);
+    border-bottom: 1.5px solid rgba(200, 212, 240, .4);
+    transform: rotate(-45deg);
+    transition: transform .2s cubic-bezier(.22, 1, .36, 1);
+}
+.ar-tool[open] .ar-tool__caret { transform: rotate(45deg); }
+
+.ar-tool__glyph {
+    flex-shrink: 0;
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: .45rem;
+    background: hsl(160, 30%, 14%);
+    border: 1px solid color-mix(in srgb, var(--bulma-primary) 30%, transparent);
+    color: var(--bulma-primary);
+}
+.ar-tool__glyph svg { width: 12px; height: 12px; }
+
+.ar-tool__name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .78rem;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    color: #c8cee0;
+    white-space: nowrap;
+}
+
+/* Collapsed cards stay informative: the key argument reads inline after the name. */
+.ar-tool__args {
+    min-width: 0;
+    flex: 1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .72rem;
+    color: rgba(200, 212, 240, .42);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ar-tool[open] .ar-tool__args { opacity: 0; }
+
+.ar-tool__meta {
+    margin-left: auto;
+    flex-shrink: 0;
+    display: flex; align-items: center; gap: .45rem;
+}
+.ar-tool__time {
+    font-size: .68rem;
+    font-variant-numeric: tabular-nums;
+    color: rgba(200, 212, 240, .38);
+}
+.ar-tool__dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--bulma-primary);
+    animation: tool-pulse 1.15s ease-in-out infinite;
+}
+@keyframes tool-pulse {
+    0%, 100% { opacity: .3; transform: scale(.75); }
+    50%      { opacity: 1;  transform: scale(1);   }
+}
+.ar-tool--done .ar-tool__dot {
+    animation: none;
+    opacity: 1;
+    background: var(--bulma-success);
+}
+
+.ar-tool__body {
+    padding: .6rem .7rem .7rem;
+    border-top: 1px solid rgba(255, 255, 255, .05);
+}
+.ar-tool__section + .ar-tool__section { margin-top: .6rem; }
+
+.ar-tool__label {
+    display: flex;
+    align-items: center;
+    margin-bottom: .28rem;
+    font-size: .62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: rgba(200, 212, 240, .34);
+}
+
+.ar-tool__pre {
+    margin: 0;
+    padding: .5rem .6rem;
+    max-height: 13rem;
+    overflow: auto;
+    border-radius: .5rem;
+    background: hsl(229, 20%, 7%);
+    border: 1px solid rgba(255, 255, 255, .05);
+    border-left: 2px solid color-mix(in srgb, var(--bulma-primary) 38%, transparent);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .72rem;
+    line-height: 1.6;
+    color: #9fb0cc;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.ar-tool__pre, .ar-tool__pre * { white-space: pre-wrap; }
+.ar-tool__copy {
+    margin-left: auto;
+    padding: .1rem .35rem;
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: .3rem;
+    background: transparent;
+    color: rgba(200, 212, 240, .5);
+    font: inherit;
+    font-size: .6rem;
+    letter-spacing: .04em;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .15s ease, color .15s ease, border-color .15s ease;
+}
+.ar-tool__section:hover .ar-tool__copy { opacity: 1; }
+.ar-tool__copy:hover { color: var(--bulma-primary); border-color: color-mix(in srgb, var(--bulma-primary) 40%, transparent); }
+.ar-tool__copy:focus-visible { opacity: 1; outline: none; }
+
+.ar-tool__pre::-webkit-scrollbar { width: 4px; height: 4px; }
+.ar-tool__pre::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .1); border-radius: 4px; }
+.ar-tool__section--output .ar-tool__pre {
+    border-left-color: color-mix(in srgb, var(--bulma-success) 38%, transparent);
+}
 </style>
 {% endblock %}
 
@@ -299,16 +462,150 @@
     function handleStreamFrame(frame) {
         var id = frame.conversationId || 'web';
         if (frame.type === 'chunk') {
-            streamBubble(id).textContent += frame.data;
+            appendToken(id, frame.data);
+        } else if (frame.type === 'toolCall') {
+            renderToolCall(id, frame.data);
+        } else if (frame.type === 'toolResult') {
+            renderToolResult(frame.data);
         } else if (frame.type === 'done') {
             clearTypingIndicator();
-            delete streamBubbles[id];
+            endStream(id);
         } else if (frame.type === 'error') {
             var bubble = streamBubble(id);
             bubble.textContent = frame.data;
             bubble.closest('.ar-msg').classList.add('ar-msg--error');
-            delete streamBubbles[id];
+            endStream(id);
         }
+    }
+
+    // Tool cards render inside the agent bubble, between runs of text. Each run of
+    // text therefore needs its own span — assigning to the bubble's textContent would
+    // wipe out any card already in it.
+    var toolCards = {};   // tool call id -> { card, startedAt }
+    var streamTexts = {}; // conversationId -> trailing text span of the open bubble
+
+    var TOOL_ICON =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+        'stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.1-2.1z"/>' +
+        '</svg>';
+
+    function renderToolCall(conversationId, data) {
+        clearTypingIndicator();
+        var bubble = streamBubble(conversationId);
+
+        var card = document.createElement('details');
+        card.className = 'ar-tool';
+        card.innerHTML =
+            '<summary class="ar-tool__head">' +
+            '<span class="ar-tool__caret"></span>' +
+            '<span class="ar-tool__glyph">' + TOOL_ICON + '</span>' +
+            '<span class="ar-tool__name"></span>' +
+            '<span class="ar-tool__args"></span>' +
+            '<span class="ar-tool__meta">' +
+            '<span class="ar-tool__time"></span>' +
+            '<span class="ar-tool__dot"></span>' +
+            '</span>' +
+            '</summary>' +
+            '<div class="ar-tool__body">' +
+            section('Input', '') +
+            '</div>';
+        card.querySelector('.ar-tool__name').textContent = data.name || 'tool';
+        card.querySelector('.ar-tool__args').textContent = summarize(data.input);
+        var inputPre = card.querySelector('.ar-tool__pre');
+        inputPre.textContent = pretty(data.input);
+        wireCopy(card.querySelector('.ar-tool__section'));
+        bubble.appendChild(card);
+        // Text arriving after this call starts a new run below the card.
+        delete streamTexts[conversationId];
+        if (data.id) toolCards[data.id] = { card: card, startedAt: Date.now() };
+    }
+
+    function renderToolResult(data) {
+        var entry = data.id ? toolCards[data.id] : null;
+        if (!entry || !entry.card.isConnected) return;
+        var card = entry.card;
+
+        card.classList.add('ar-tool--done');
+        card.querySelector('.ar-tool__time').textContent = elapsed(Date.now() - entry.startedAt);
+
+        var wrapper = document.createElement('div');
+        wrapper.innerHTML = section('Output', ' ar-tool__section--output');
+        var outputSection = wrapper.firstElementChild;
+        outputSection.querySelector('.ar-tool__pre').textContent = pretty(data.output);
+        card.querySelector('.ar-tool__body').appendChild(outputSection);
+        wireCopy(outputSection);
+        delete toolCards[data.id];
+    }
+
+    function section(label, extraClass) {
+        return '<div class="ar-tool__section' + extraClass + '">' +
+            '<div class="ar-tool__label">' + label +
+            '<button type="button" class="ar-tool__copy">Copy</button></div>' +
+            '<pre class="ar-tool__pre"></pre>' +
+            '</div>';
+    }
+
+    function wireCopy(sectionEl) {
+        var button = sectionEl.querySelector('.ar-tool__copy');
+        button.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            navigator.clipboard.writeText(sectionEl.querySelector('.ar-tool__pre').textContent)
+                .then(function () {
+                    button.textContent = 'Copied';
+                    setTimeout(function () { button.textContent = 'Copy'; }, 1200);
+                })
+                .catch(function () { button.textContent = 'Failed'; });
+        });
+    }
+
+    // Collapsed header hint: the first meaningful argument value, else compact JSON.
+    function summarize(input) {
+        if (!input) return '';
+        try {
+            var parsed = JSON.parse(input);
+            if (parsed === null || typeof parsed !== 'object') return String(parsed);
+            var keys = Object.keys(parsed);
+            if (!keys.length) return '';
+            var first = parsed[keys[0]];
+            var text = (typeof first === 'object') ? JSON.stringify(first) : String(first);
+            return keys.length > 1 ? text + ' +' + (keys.length - 1) : text;
+        } catch (err) {
+            return input.length > 60 ? input.slice(0, 60) + '\u2026' : input;
+        }
+    }
+
+    function elapsed(ms) {
+        if (ms < 1000) return ms + 'ms';
+        return (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + 's';
+    }
+
+    // Tool arguments and results are usually JSON; indent them when they parse.
+    function pretty(value) {
+        if (value === null || value === undefined || value === '') return '\u2014';
+        try {
+            return JSON.stringify(JSON.parse(value), null, 2);
+        } catch (err) {
+            return String(value);
+        }
+    }
+
+    // Appends to the trailing text run, starting a new one when a card was just added.
+    function appendToken(conversationId, token) {
+        var bubble = streamBubble(conversationId);
+        var run = streamTexts[conversationId];
+        if (!run || run.parentNode !== bubble) {
+            run = document.createElement('span');
+            bubble.appendChild(run);
+            streamTexts[conversationId] = run;
+        }
+        run.textContent += token;
+    }
+
+    function endStream(conversationId) {
+        delete streamBubbles[conversationId];
+        delete streamTexts[conversationId];
     }
 
     function streamBubble(conversationId) {
