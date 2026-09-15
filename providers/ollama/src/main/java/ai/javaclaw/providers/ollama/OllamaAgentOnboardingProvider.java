@@ -47,11 +47,10 @@ public class OllamaAgentOnboardingProvider implements AgentOnboardingProvider {
             if (response == null || response.models() == null) {
                 return List.of();
             }
-            List<String> names = response.models().stream()
+            return response.models().stream()
                     .map(OllamaModel::name)
                     .filter(n -> n != null && !n.isBlank())
                     .toList();
-            return names;
         } catch (Exception e) {
             return List.of();
         }
@@ -63,5 +62,6 @@ public class OllamaAgentOnboardingProvider implements AgentOnboardingProvider {
     }
 
     record OllamaTagsResponse(List<OllamaModel> models) {}
+
     record OllamaModel(String name, String model) {}
 }
