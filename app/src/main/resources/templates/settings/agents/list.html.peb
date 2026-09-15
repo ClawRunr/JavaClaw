@@ -1,0 +1,23 @@
+{% if agents is empty %}
+<div class="notification is-light">No agents yet. Click <strong>Add Agent</strong> to create one.</div>
+{% else %}
+{% for a in agents %}
+<div class="box agent-card">
+    <div class="agent-meta">
+        <div class="agent-name">{{ a.name }}</div>
+        <div class="agent-sub">{{ a.sub }}</div>
+    </div>
+    <div class="buttons mb-0">
+        <button class="button is-small"
+                hx-get="/settings/agents/{{ a.name }}/edit"
+                hx-target="#agent-drawer"
+                hx-swap="innerHTML">Edit</button>
+        <button class="button is-small is-danger is-light"
+                hx-delete="/settings/agents/{{ a.name }}"
+                hx-target="#agents-list"
+                hx-swap="innerHTML"
+                hx-confirm="Delete agent '{{ a.name }}'?">Delete</button>
+    </div>
+</div>
+{% endfor %}
+{% endif %}

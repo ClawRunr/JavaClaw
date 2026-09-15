@@ -22,14 +22,14 @@ public class OpenAiChatModelFactory implements ChatModelFactory {
     @Override
     public ChatModel create(ProviderConfig config) {
         OpenAiChatOptions.Builder options = OpenAiChatOptions.builder();
-        if (config.getModel() != null && !config.getModel().isBlank()) {
-            options.model(config.getModel());
+        if (config.getBaseUrl() != null && !config.getBaseUrl().isBlank()) {
+            options.baseUrl(config.getBaseUrl().trim());
         }
         if (config.getApiKey() != null && !config.getApiKey().isBlank()) {
             options.apiKey(config.getApiKey());
         }
-        if (config.getBaseUrl() != null && !config.getBaseUrl().isBlank()) {
-            options.baseUrl(config.getBaseUrl().trim());
+        if (config.getModel() != null && !config.getModel().isBlank()) {
+            options.model(config.getModel());
         }
         return OpenAiChatModel.builder().options(options.build()).build();
     }

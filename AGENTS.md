@@ -77,12 +77,14 @@ User/Agent → TaskManager.create()
 - **`TaskNotFoundException`** (`base/.../tasks/TaskNotFoundException.java`): Thrown when a task file cannot be found or read by its ID.
 
 ### Workspace
-- `workspace/AGENT.md`: System instructions + user-specific information (editable during onboarding).
+- `workspace/AGENT.private.md`: System instructions + user-specific information (edited during onboarding step 4; falls back to `AGENT.md`).
+- `workspace/AGENT.md`: Fallback system-instructions file when `AGENT.private.md` is absent.
 - `workspace/AGENT-ORIGINAL.md`: Template / backup of original AGENT.md.
 - `workspace/INFO.md`: Environment context auto-injected into every prompt.
 - `workspace/context/`: Agent memory and context storage (e.g. `jobrunr.md`).
 - `workspace/skills/`: Extensible skill files (`SKILL.md` per skill, loaded dynamically by `SkillsTool`).
 - `workspace/tasks/`: Date-bucketed task files + `recurring/` sub-folder.
+- `workspace/agents/`: Subagent definition files (`<name>.md`) — see "Agents (Subagents)" below.
 
 ---
 
@@ -90,24 +92,24 @@ User/Agent → TaskManager.create()
 
 **`DefaultAgent`** (`base/src/main/java/ai/javaclaw/agent/DefaultAgent.java`) wraps Spring AI's `ChatClient`.
 
-**Prompt construction** (`JavaClawConfiguration.java`):
-- System prompt = `workspace/AGENT.md` + `workspace/INFO.md`
-- **Advisors**: `SimpleLoggerAdvisor`, `ToolCallAdvisor`, `MessageChatMemoryAdvisor` (chat history)
+**Prompt construction** (`MainChatClientProvider.java`):
+- System prompt = `workspace/AGENT.private.md` (falls back to `workspace/AGENT.md`) + `workspace/INFO.md`
+- **Advisors**: `SimpleLoggerAdvisor`, `ToolSearchToolCallingAdvisor` (falls back to plain `ToolCallingAdvisor`), `MessageChatMemoryAdvisor` (chat history)
 
 **Default Tools** always injected:
 | Tool | Purpose |
 |---|---|
-| `TaskTool` | `createTask`, `scheduleTask`, `scheduleRecurringTask` |
+| `JavaClawTaskTool` | `createTask`, `scheduleTask`, `scheduleRecurringTask` |
 | `CheckListTool` | Multi-step structured tracking (one `in_progress` at a time) |
-| `ShellTools` | Bash execution |
 | `FileSystemTools` | Read/write/edit files |
 | `SmartWebFetchTool` | Intelligent web scraping |
 | `SkillsTool` | Loads `SKILL.md` files from `workspace/skills/` |
 | `McpTool` | Runtime MCP server management |
-| `MCP Tools` | `SyncMcpToolCallbackProvider` |
-| `BraveWebSearchTool` | 15 results (only if Brave API key configured) |
+| MCP tools | `SyncMcpToolCallbackProvider` callbacks |
+| subagent `TaskTool` | Dispatch to subagents in `workspace/agents/` |
+| auto-discovered tools | e.g. `BraveWebSearchTool` (only if Brave API key configured) |
 
-**Supported LLM Providers** — each lives in its own `providers/<name>/` module and contributes its `AgentOnboardingProvider` through an `@AutoConfiguration` class registered in the module's `AutoConfiguration.imports`. The active model is selected centrally by `spring.ai.model.chat` (Spring AI), not per-provider; the default `unknown` disables all of them until onboarding sets it:
+**Supported LLM Providers** — each lives in its own `providers/<name>/` module and contributes its `AgentOnboardingProvider` through an `@AutoConfiguration` class registered in the module's `AutoConfiguration.imports`. Each provider in `agent.llm.providers.*` is built through a `ChatModelFactory` SPI implementation and registered in `DefaultChatClientRegistry`; the `default` entry is the main agent's provider:
 
 | Provider | Module | Default Model | API Key |
 |---|---|---|---|
@@ -137,14 +139,33 @@ Incoming message → ChannelMessageReceivedEvent (channel name, message text)
 
 ## Configuration Management
 
-- **`ConfigurationManager`** (`base/src/main/java/ai/javaclaw/configuration/ConfigurationManager.java`): Updates nested YAML key-value paths in `application.yaml` via SnakeYAML. Publishes `ConfigurationChangedEvent` on update.
-- Runtime config file: `app/src/main/resources/application.yaml` (read at startup; mutated by onboarding).
+- **`ConfigurationManager`** (`base/src/main/java/ai/javaclaw/configuration/ConfigurationManager.java`): Updates nested YAML key-value paths in the runtime config file via SnakeYAML. Publishes `ConfigurationChangedEvent` on update, which triggers a full application restart.
+- Runtime config file: `app/src/main/resources/application.private.yaml` (gitignored; imported into `application.yaml` via `spring.config.import`; read at startup and mutated by onboarding and the agents UI). `application.yaml` holds static defaults only.
 - Key config paths:
   - `agent.onboarding.completed` — set to `true` after onboarding
   - `agent.workspace` — path to workspace root (`file:./workspace/`)
-  - `spring.ai.model.chat` — overridden to selected provider/model during onboarding
+  - `agent.llm.providers.<name>.*` — `provider`, `base-url`, `api-key`, `model` per named provider (the `default` entry drives the main agent)
   - `jobrunr.background-job-server.worker-count: 1`
   - `jobrunr.dashboard.port: 8081`
+
+---
+
+## Agents (Subagents)
+
+The main assistant can delegate to subagents. Each subagent is defined by two pieces:
+
+- **Instructions**: a Markdown file `workspace/agents/<name>.md` with `name`, `description`, and `model` frontmatter plus a Markdown body (the subagent's instructions).
+- **Provider config**: a named `agent.llm.providers.<name>` entry in `application.private.yaml` (`provider`, `base-url`, `api-key`, `model`). The subagent's `model:` frontmatter is the routing value — its own provider-entry name.
+
+**`SubagentStore`** (`base/.../llm/SubagentStore.java`) reads/writes the Markdown files. `MainChatClientProvider` wires a subagent-dispatch `TaskTool` backed by a per-provider `ChatClient.Builder` map keyed by provider name.
+
+The management UI (`GET /settings/agents`, template `settings/agents.html.peb`) is driven entirely by htmx fragments instead of a JSON API:
+
+- **`AgentPageController`** (`app/src/main/java/ai/javaclaw/agents/AgentPageController.java`, an `@Controller`) serves HTML fragments:
+  - `GET /settings/agents/fragments/list` → `settings/agents/list.html.peb`
+  - `GET /settings/agents/new` and `GET /settings/agents/{name}/edit` → `settings/agents/drawer.html.peb`
+  - `POST /settings/agents`, `PUT /settings/agents/{name}`, `DELETE /settings/agents/{name}` (form-encoded; validation errors return `422` + `HX-Retarget: #agent-drawer`)
+- The page shell loads the list via `hx-trigger="load"`, opens the drawer via `hx-get` + `hx-on:htmx:after-swap`, saves via `hx-post`/`hx-put`, and deletes via `hx-delete` + `hx-confirm`. The only remaining JavaScript is drawer open/close, provider→default-model cascade, and enabling 422-response swaps.
 
 ---
 
@@ -193,8 +214,8 @@ Templates live under `templates/onboarding/`, with plugin steps contributed from
 
 ## Tests
 
-- `base/src/test/` — `TaskManagerTest`: task creation, file naming, JobRunr integration (in-memory storage + background server).
+- `base/src/test/` — `TaskManagerTest`, `TaskHandlerTest`, `FileSystemTaskRepositoryTest`: task lifecycle + file persistence; `DefaultChatClientRegistryTest` and `SubagentStoreTest`: model registry + subagent storage; `ConfigurationManagerTest`: YAML path updates.
 - `plugins/discord/src/test/` — `DiscordChannelTest`, `DiscordOnboardingProviderTest`: authorized Discord flow + onboarding config handling.
 - `plugins/telegram/src/test/` — `TelegramChannelTest`: unauthorized user rejection, authorized message flow (mocked).
 - `providers/anthropic/src/test/` — `AnthropicClaudeCodeBackendTest`: Claude Code OAuth token extraction.
-- `app/src/test/` — `OnboardingControllerTest`: session-based workflow; `JavaClawApplicationTests`: full Spring context load with Testcontainers.
+- `app/src/test/` — `OnboardingControllerTest`: session-based workflow; `AgentPageControllerTest`: agents page fragment + validation behavior; `JavaClawApplicationTests`: full Spring context load with Testcontainers.
