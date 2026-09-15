@@ -19,12 +19,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -123,6 +125,31 @@ public class AgentPageController {
         return populateList(model);
     }
 
+    @PostMapping(value = "/models", produces = "text/html")
+    @ResponseBody
+    public String agentModels(@RequestParam("provider") String providerId,
+                              @RequestParam(name = "baseUrl", required = false) String baseUrl,
+                              @RequestParam(name = "apiKey", required = false) String apiKey,
+                              @RequestParam(name = "model", required = false) String query) {
+        AgentOnboardingProvider provider = providers.findById(providerId).orElse(null);
+        if (provider == null) {
+            return "";
+        }
+        List<String> models = provider.availableModels(baseUrl, apiKey).orElse(List.of());
+        String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        StringBuilder html = new StringBuilder();
+        for (String m : models) {
+            if (!q.isEmpty() && !m.toLowerCase(Locale.ROOT).contains(q)) {
+                continue;
+            }
+            html
+                    .append("<button type=\"button\" class=\"autocomplete-item\" data-value=\"").append(m).append("\">")
+                    .append(m)
+                    .append("</button>\n");
+        }
+        return html.toString();
+    }
+
     @ExceptionHandler(NotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public void handleNotFound() {
@@ -216,19 +243,22 @@ public class AgentPageController {
     }
 
     private void populateDrawer(Model model, Map<String, String> values, boolean isEdit) {
-        String name = values == null ? "" : values.getOrDefault("name", "");
+        Map<String, String> form = values == null ? Map.of() : values;
+        String name = form.getOrDefault("name", "");
+        String selectedProviderId = form.getOrDefault("provider", "");
         model.addAttribute("isEdit", isEdit);
         model.addAttribute("providers", providerOptions());
         model.addAttribute("drawerTitle", isEdit ? "Edit " + name : "Add Agent");
         model.addAttribute("formAction", isEdit ? "/settings/agents/" + name : "/settings/agents");
         model.addAttribute("agentName", name);
         model.addAttribute("nameReadonly", isEdit);
-        model.addAttribute("selectedProvider", values == null ? "" : values.getOrDefault("provider", ""));
-        model.addAttribute("baseUrl", values == null ? "" : values.getOrDefault("baseUrl", ""));
-        model.addAttribute("model", values == null ? "" : values.getOrDefault("model", ""));
-        model.addAttribute("description", values == null ? "" : values.getOrDefault("description", ""));
-        model.addAttribute("content", values == null ? "" : values.getOrDefault("content", ""));
-        model.addAttribute("apiKeyMasked", values == null ? "" : values.getOrDefault("apiKeyMasked", ""));
+        model.addAttribute("selectedProvider", selectedProviderId);
+        model.addAttribute("baseUrl", form.getOrDefault("baseUrl", ""));
+        model.addAttribute("model", form.getOrDefault("model", ""));
+        model.addAttribute("description", form.getOrDefault("description", ""));
+        model.addAttribute("content", form.getOrDefault("content", ""));
+        model.addAttribute("apiKeyMasked", form.getOrDefault("apiKeyMasked", ""));
+        model.addAttribute("requiresApiKey", providers.findById(selectedProviderId).map(AgentOnboardingProvider::requiresApiKey).orElse(true));
     }
 
     private Map<String, String> toDetail(String name) {
@@ -252,7 +282,7 @@ public class AgentPageController {
             Map<String, String> m = new LinkedHashMap<>();
             m.put("id", p.getId());
             m.put("label", p.getLabel());
-            m.put("defaultModel", p.defaultModel());
+            m.put("requiresApiKey", String.valueOf(p.requiresApiKey()));
             options.add(m);
         }
         return options;

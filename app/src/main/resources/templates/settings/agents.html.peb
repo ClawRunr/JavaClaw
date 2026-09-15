@@ -85,14 +85,6 @@
     }
     document.getElementById('drawer-backdrop').addEventListener('click', closeDrawer);
 
-    // Provider change -> suggest that provider's default model.
-    document.addEventListener('change', (e) => {
-        if (e.target && e.target.id === 'f-provider') {
-            const opt = e.target.selectedOptions && e.target.selectedOptions[0];
-            document.getElementById('f-model').value = opt ? (opt.dataset.defaultModel || '') : '';
-        }
-    });
-
     // Allow 422 validation-error responses to swap their body into the drawer.
     document.body.addEventListener('htmx:beforeSwap', (e) => {
         if (e.detail.xhr && e.detail.xhr.status === 422) e.detail.shouldSwap = true;

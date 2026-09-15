@@ -1,8 +1,22 @@
 package ai.javaclaw.providers.openai;
 
 import ai.javaclaw.onboarding.AgentOnboardingProvider;
+import org.springframework.web.client.RestClient;
+
+import java.util.List;
+import java.util.Optional;
 
 public class OpenAIAgentOnboardingProvider implements AgentOnboardingProvider {
+
+    // OpenAiSetup.OPENAI_URL (https://api.openai.com/v1) is package-private to
+    // org.springframework.ai.openai.setup, so the API root is mirrored here.
+    private static final String DEFAULT_BASE_URL = "https://api.openai.com";
+
+    private final RestClient restClient;
+
+    public OpenAIAgentOnboardingProvider(RestClient.Builder restClientBuilder) {
+        this.restClient = restClientBuilder.build();
+    }
 
     @Override
     public String getId() {
@@ -25,7 +39,34 @@ public class OpenAIAgentOnboardingProvider implements AgentOnboardingProvider {
     }
 
     @Override
-    public String defaultModel() {
-        return "gpt-5.4";
+    public Optional<List<String>> availableModels(String baseUrl, String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            OpenAiModelsResponse response = restClient.get()
+                    .uri(effectiveBase(baseUrl) + "/v1/models")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .retrieve()
+                    .body(OpenAiModelsResponse.class);
+            if (response == null || response.data() == null) {
+                return Optional.empty();
+            }
+            List<String> ids = response.data().stream()
+                    .map(OpenAiModel::id)
+                    .filter(id -> id != null && !id.isBlank())
+                    .toList();
+            return ids.isEmpty() ? Optional.empty() : Optional.of(ids);
+        } catch (Exception e) {
+            return Optional.empty();
+        }
     }
+
+    private static String effectiveBase(String baseUrl) {
+        String base = (baseUrl == null || baseUrl.isBlank()) ? DEFAULT_BASE_URL : baseUrl;
+        return base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
+    }
+
+    record OpenAiModelsResponse(List<OpenAiModel> data) {}
+    record OpenAiModel(String id) {}
 }

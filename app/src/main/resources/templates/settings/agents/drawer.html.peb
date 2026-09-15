@@ -27,9 +27,15 @@
             <label class="label" for="f-provider">Provider</label>
             <div class="control">
                 <div class="select is-fullwidth">
-                    <select id="f-provider" name="provider">
+                    <select id="f-provider" name="provider"
+                            hx-post="/settings/agents/models"
+                            hx-trigger="change"
+                            hx-include="[name='apiKey'], [name='baseUrl']"
+                            hx-target="#agent-model-suggestions"
+                            hx-swap="innerHTML"
+                            hx-indicator=".htmx-indicator">
                         {% for p in providers %}
-                        <option value="{{ p.id }}" data-default-model="{{ p.defaultModel }}"
+                        <option value="{{ p.id }}"
                                 {% if p.id == selectedProvider %}selected{% endif %}>{{ p.label }}</option>
                         {% endfor %}
                     </select>
@@ -50,7 +56,13 @@
             <label class="label" for="f-apikey">API Key</label>
             <div class="control">
                 <input class="input" type="password" id="f-apikey" name="apiKey"
-                       placeholder="API key" autocomplete="off">
+                       placeholder="API key" autocomplete="off"
+                       hx-post="/settings/agents/models"
+                       hx-trigger="blur"
+                       hx-include="[name='provider'], [name='baseUrl']"
+                       hx-target="#agent-model-suggestions"
+                       hx-swap="innerHTML"
+                       hx-indicator=".htmx-indicator">
             </div>
             <p class="help">{% if apiKeyMasked %}Current: {{ apiKeyMasked }} — leave blank to keep{% endif %}</p>
         </div>
@@ -59,9 +71,16 @@
             <label class="label" for="f-model">Model</label>
             <div class="control">
                 <input class="input" type="text" id="f-model" name="model"
-                       value="{{ model }}" placeholder="Model id" autocomplete="off">
+                       value="{{ model }}" placeholder="Model id" autocomplete="off"
+                       hx-post="/settings/agents/models"
+                       hx-trigger="keyup changed delay:200ms, focus{% if not requiresApiKey %}, load{% endif %}"
+                       hx-include="[name='provider'], [name='apiKey'], [name='baseUrl']"
+                       hx-target="#agent-model-suggestions"
+                       hx-swap="innerHTML"
+                       hx-indicator=".htmx-indicator">
+                <div id="agent-model-suggestions" class="autocomplete-menu" data-input="f-model"></div>
             </div>
-            <p class="help">Defaults to the provider's model; type another to override.</p>
+            <p class="help">Choose a model from the suggestions, or type your own.</p>
         </div>
 
         <div class="field">

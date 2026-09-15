@@ -16,6 +16,35 @@
     }
     .brand-word .brand-agent { color: #fff; }
     .brand-word .brand-runr  { color: var(--bulma-primary); }
+    /* htmx autocomplete suggestions menu */
+    .control:has(.autocomplete-menu) { position: relative; }
+    .autocomplete-menu {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 100%;
+        margin-top: .25rem;
+        max-height: 20rem;
+        overflow-y: auto;
+        background: var(--bulma-white);
+        border: 1px solid var(--bulma-border);
+        border-radius: var(--bulma-radius-small);
+        box-shadow: var(--bulma-shadow);
+        z-index: 30;
+    }
+    .autocomplete-menu:empty { display: none; }
+    .autocomplete-item {
+        display: block;
+        width: 100%;
+        padding: .45rem .75rem;
+        border: 0;
+        background: none;
+        text-align: left;
+        cursor: pointer;
+        color: var(--bulma-text);
+        font-size: .95rem;
+    }
+    .autocomplete-item:hover { background: var(--bulma-primary-soft, #eef3fc); }
     </style>
     {% block head %}{% endblock %}
 </head>
@@ -24,6 +53,28 @@
     {% block content %}{% endblock %}
 </div>
 <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha384-/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u/6OCvVKyz1W+idaz" crossorigin="anonymous"></script>
+<script>
+// Fill the model input on pick; close on click-away or Escape. htmx handles fetching/rendering.
+(function () {
+    function closeAll() {
+        document.querySelectorAll('.autocomplete-menu').forEach(function (m) { m.innerHTML = ''; });
+    }
+    document.addEventListener('click', function (e) {
+        var item = e.target.closest('.autocomplete-item');
+        if (item) {
+            var menu = item.closest('.autocomplete-menu');
+            var input = document.getElementById(menu.dataset.input);
+            if (input) input.value = item.dataset.value;
+            menu.innerHTML = '';
+            return;
+        }
+        if (!e.target.closest('.autocomplete-menu')) closeAll();
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeAll();
+    });
+})();
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

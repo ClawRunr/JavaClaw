@@ -44,7 +44,6 @@ public class S3_CredentialsStep implements OnboardingProvider {
         String apiKeyKey = base + ".api-key";
         String modelKey = base + ".model";
 
-        String currentModel = (String) session.get(S2_ProviderStep.SESSION_MODEL);
         String existingBaseUrl = env.getProperty(baseUrlKey, "");
         String existingApiKey = env.getProperty(apiKeyKey, "");
         String existingModel = env.getProperty(modelKey, "");
@@ -56,7 +55,7 @@ public class S3_CredentialsStep implements OnboardingProvider {
         model.put("requiresApiKey", provider.requiresApiKey());
         model.put("baseUrl", session.getOrDefault(S2_ProviderStep.SESSION_BASE_URL, existingBaseUrl));
         model.put("apiKey", session.getOrDefault(S2_ProviderStep.SESSION_API_KEY, existingApiKey));
-        model.put("model", currentModel != null && !currentModel.isBlank() ? currentModel : (!existingModel.isBlank() ? existingModel : provider.defaultModel()));
+        model.put("model", session.getOrDefault(S2_ProviderStep.SESSION_MODEL, existingModel));
         provider.systemWideToken().ifPresent(t -> model.put("systemWideTokenName", t.name()));
     }
 

@@ -15,13 +15,16 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -44,9 +47,6 @@ class OnboardingControllerTest {
 
         @Override
         public boolean requiresApiKey() {return true;}
-
-        @Override
-        public String defaultModel() {return "gpt-5.4";}
     };
 
     @Autowired
@@ -112,6 +112,50 @@ class OnboardingControllerTest {
     private static Map<String, Object> sessionAsMap(MockHttpSession session) {
         return java.util.Collections.list(session.getAttributeNames()).stream()
                 .collect(java.util.stream.Collectors.toMap(n -> n, session::getAttribute));
+    }
+
+    @Test
+    void modelsEndpointReturnsSuggestionButtons() throws Exception {
+        AgentOnboardingProvider provider = org.mockito.Mockito.mock(AgentOnboardingProvider.class);
+        when(provider.availableModels(any(), any())).thenReturn(Optional.of(List.of("gpt-4o", "gpt-4o-mini")));
+        when(agentOnboardingProviders.findById("openai")).thenReturn(Optional.of(provider));
+
+        mockMvc.perform(post("/onboarding/credentials/models")
+                        .param("apiKey", "sk-test")
+                        .sessionAttr("onboarding.provider", "openai"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(
+                        """
+                        <button type="button" class="autocomplete-item" data-value="gpt-4o">gpt-4o</button>
+                        <button type="button" class="autocomplete-item" data-value="gpt-4o-mini">gpt-4o-mini</button>
+                        """));
+    }
+
+    @Test
+    void modelsEndpointFiltersByTypedQuery() throws Exception {
+        AgentOnboardingProvider provider = org.mockito.Mockito.mock(AgentOnboardingProvider.class);
+        when(provider.availableModels(any(), any())).thenReturn(Optional.of(List.of("gpt-4o", "gpt-4o-mini")));
+        when(agentOnboardingProviders.findById("openai")).thenReturn(Optional.of(provider));
+
+        mockMvc.perform(post("/onboarding/credentials/models")
+                        .param("apiKey", "sk-test")
+                        .param("model", "MINI")
+                        .sessionAttr("onboarding.provider", "openai"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(
+                        """
+                        <button type="button" class="autocomplete-item" data-value="gpt-4o-mini">gpt-4o-mini</button>
+                        """));
+    }
+
+    @Test
+    void modelsEndpointReturnsEmptyBodyWhenProviderMissing() throws Exception {
+        when(agentOnboardingProviders.findById("unknown")).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/onboarding/credentials/models")
+                        .sessionAttr("onboarding.provider", "unknown"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(""));
     }
 
 }
