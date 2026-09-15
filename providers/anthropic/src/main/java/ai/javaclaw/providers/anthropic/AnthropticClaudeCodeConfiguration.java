@@ -46,8 +46,8 @@ public class AnthropticClaudeCodeConfiguration {
 
     private static AnthropicChatOptions getAnthropicChatOptions(AnthropicConnectionProperties connectionProperties, AnthropicChatProperties chatProperties) {
         AnthropicChatOptions.Builder options = chatProperties.toOptions().mutate();
-        if (connectionProperties.getApiKey() != null) options.apiKey(connectionProperties.getApiKey());
         if (connectionProperties.getBaseUrl() != null) options.baseUrl(connectionProperties.getBaseUrl());
+        if (connectionProperties.getApiKey() != null) options.apiKey(connectionProperties.getApiKey());
         if (connectionProperties.getTimeout() != null) options.timeout(connectionProperties.getTimeout());
         if (connectionProperties.getMaxRetries() != null) options.maxRetries(connectionProperties.getMaxRetries());
         if (connectionProperties.getProxy() != null) options.proxy(connectionProperties.getProxy());

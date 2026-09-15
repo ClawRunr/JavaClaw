@@ -19,9 +19,9 @@ import java.util.Map;
 public class S2_ProviderStep implements OnboardingProvider {
 
     static final String SESSION_PROVIDER = "onboarding.provider";
-    static final String SESSION_MODEL = "onboarding.model";
-    static final String SESSION_API_KEY = "onboarding.apiKey";
     static final String SESSION_BASE_URL = "onboarding.baseUrl";
+    static final String SESSION_API_KEY = "onboarding.apiKey";
+    static final String SESSION_MODEL = "onboarding.model";
 
     private final AgentOnboardingProviders agentOnboardingProviders;
     private final Environment env;
@@ -56,9 +56,9 @@ public class S2_ProviderStep implements OnboardingProvider {
         // Clear downstream session state when provider changes
         String currentProvider = (String) session.get(SESSION_PROVIDER);
         if (!agentOnboardingProvider.getId().equals(currentProvider)) {
-            session.remove(SESSION_MODEL);
-            session.remove(SESSION_API_KEY);
             session.remove(SESSION_BASE_URL);
+            session.remove(SESSION_API_KEY);
+            session.remove(SESSION_MODEL);
         }
         session.put(SESSION_PROVIDER, agentOnboardingProvider.getId());
         return null;
@@ -70,9 +70,9 @@ public class S2_ProviderStep implements OnboardingProvider {
         if (providerId == null || providerId.isBlank()) {
             return;
         }
-        String model = (String) session.get(SESSION_MODEL);
-        String apiKey = (String) session.getOrDefault(SESSION_API_KEY, "");
         String baseUrl = (String) session.getOrDefault(SESSION_BASE_URL, "");
+        String apiKey = (String) session.getOrDefault(SESSION_API_KEY, "");
+        String model = (String) session.get(SESSION_MODEL);
 
         AgentOnboardingProvider agentOnboardingProvider = agentOnboardingProviders.getById(providerId);
 
@@ -80,14 +80,14 @@ public class S2_ProviderStep implements OnboardingProvider {
         String base = "agent.llm.providers." + LlmProviderProperties.DEFAULT_PROVIDER_NAME;
         Map<String, Object> props = new LinkedHashMap<>();
         props.put(base + ".provider", agentOnboardingProvider.getId());
-        if (StringUtils.hasText(apiKey)) {
-            props.put(base + ".model", model);
+        if (StringUtils.hasText(baseUrl)) {
+            props.put(base + ".base-url", baseUrl);
         }
         if (StringUtils.hasText(apiKey)) {
             props.put(base + ".api-key", apiKey);
         }
-        if (StringUtils.hasText(baseUrl)) {
-            props.put(base + ".base-url", baseUrl);
+        if (StringUtils.hasText(model)) {
+            props.put(base + ".model", model);
         }
         configurationManager.updateProperties(props);
     }

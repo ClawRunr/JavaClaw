@@ -74,7 +74,7 @@ class SubagentControllerTest {
     void listMergesProviderConfigWithMdDescription() throws Exception {
         when(store.list()).thenReturn(List.of(new Subagent("summariser", "summariser", "Summarises", "body")));
         when(providerProperties.getProviders()).thenReturn(Map.of(
-                "summariser", new ProviderConfig("openai", "sk-test", null, "gpt-4o")));
+                "summariser", new ProviderConfig("openai", null, "sk-test", "gpt-4o")));
 
         mockMvc.perform(get("/api/agents"))
                 .andExpect(status().isOk())
@@ -90,14 +90,15 @@ class SubagentControllerTest {
 
         mockMvc.perform(post("/api/agents")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"summariser\",\"provider\":\"openai\",\"model\":\"gpt-4o\",\"apiKey\":\"sk-secret\",\"description\":\"sums\",\"content\":\"do it\"}"))
+                        .content("{\"name\":\"summariser\",\"provider\":\"openai\",\"model\":\"gpt-4o\",\"baseUrl\":\"http://proxy:8000\",\"apiKey\":\"sk-secret\",\"description\":\"sums\",\"content\":\"do it\"}"))
                 .andExpect(status().isCreated());
 
         verify(store).save(any(Subagent.class));
-        // Structured fields (provider/model/api-key) are persisted to agent.llm.providers.summariser.
+        // Structured fields (provider/model/base-url/api-key) are persisted to agent.llm.providers.summariser.
         verify(configurationManager).updateProperties(argThat(m ->
                 "openai".equals(m.get("agent.llm.providers.summariser.provider"))
                         && "gpt-4o".equals(m.get("agent.llm.providers.summariser.model"))
+                        && "http://proxy:8000".equals(m.get("agent.llm.providers.summariser.base-url"))
                         && "sk-secret".equals(m.get("agent.llm.providers.summariser.api-key"))));
     }
 
@@ -116,7 +117,7 @@ class SubagentControllerTest {
     @Test
     void createRejectsNameAlreadyUsedByAProvider() throws Exception {
         when(providerProperties.getProviders()).thenReturn(Map.of(
-                "default", new ProviderConfig("openai", "k", null, "gpt-4o")));
+                "default", new ProviderConfig("openai", null, "k", "gpt-4o")));
 
         mockMvc.perform(post("/api/agents")
                         .contentType(MediaType.APPLICATION_JSON)

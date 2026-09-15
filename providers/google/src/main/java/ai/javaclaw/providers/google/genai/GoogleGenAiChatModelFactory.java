@@ -27,11 +27,11 @@ public class GoogleGenAiChatModelFactory implements ChatModelFactory {
     @Override
     public ChatModel create(ProviderConfig config) {
         Client.Builder clientBuilder = Client.builder();
-        if (config.getApiKey() != null && !config.getApiKey().isBlank()) {
-            clientBuilder.apiKey(config.getApiKey());
-        }
         if (config.getBaseUrl() != null && !config.getBaseUrl().isBlank()) {
             clientBuilder.httpOptions(HttpOptions.builder().baseUrl(config.getBaseUrl().trim()).build());
+        }
+        if (config.getApiKey() != null && !config.getApiKey().isBlank()) {
+            clientBuilder.apiKey(config.getApiKey());
         }
         GoogleGenAiChatOptions.Builder options = GoogleGenAiChatOptions.builder();
         if (config.getModel() != null && !config.getModel().isBlank()) {

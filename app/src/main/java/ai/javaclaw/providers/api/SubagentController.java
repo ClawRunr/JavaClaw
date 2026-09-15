@@ -57,13 +57,13 @@ public class SubagentController {
     public record AgentSummary(String name, String provider, String providerLabel, String model, String description) {
     }
 
-    public record AgentDetail(String name, String provider, String providerLabel, String model, String apiKeyMasked,
-                              String description, String content) {
+    public record AgentDetail(String name, String provider, String providerLabel, String baseUrl, String apiKeyMasked,
+                              String model, String description, String content) {
     }
 
     /** Request body for create/update. */
-    public record AgentForm(String name, String provider, String model, String apiKey, String description,
-                            String content) {
+    public record AgentForm(String name, String provider, String baseUrl, String apiKey, String model,
+                            String description, String content) {
     }
 
     /** A selectable LLM provider for the dropdown. */
@@ -96,10 +96,11 @@ public class SubagentController {
                 .map(s -> {
                     ProviderConfig config = providerProperties.getProviders().get(name);
                     String provider = config != null ? config.getProvider() : null;
-                    String model = config != null ? config.getModel() : null;
+                    String baseUrl = config != null ? config.getBaseUrl() : null;
                     String maskedKey = config != null ? maskApiKey(config.getApiKey()) : "";
-                    return ResponseEntity.ok(new AgentDetail(s.name(), provider, labelFor(provider), model,
-                            maskedKey, s.description(), s.content()));
+                    String model = config != null ? config.getModel() : null;
+                    return ResponseEntity.ok(new AgentDetail(s.name(), provider, labelFor(provider), orEmpty(baseUrl),
+                            maskedKey, model, s.description(), s.content()));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -162,18 +163,23 @@ public class SubagentController {
             String base = PROVIDERS_PREFIX + "." + name;
             Map<String, Object> props = new LinkedHashMap<>();
             props.put(base + ".provider", form.provider());
-            if (notBlank(form.model())) {
-                props.put(base + ".model", form.model().trim());
+            if (notBlank(form.baseUrl())) {
+                props.put(base + ".base-url", form.baseUrl().trim());
             }
             if (notBlank(form.apiKey())) {
                 props.put(base + ".api-key", form.apiKey().trim());
             }
+            if (notBlank(form.model())) {
+                props.put(base + ".model", form.model().trim());
+            }
             configurationManager.updateProperties(props);
 
             ProviderConfig saved = providerProperties.getProviders().get(name);
+            String savedBaseUrl = saved != null && saved.getBaseUrl() != null ? saved.getBaseUrl() : form.baseUrl();
             String maskedKey = saved != null ? maskApiKey(saved.getApiKey()) : maskApiKey(form.apiKey());
             return ResponseEntity.status(status).body(new AgentDetail(name, form.provider(), labelFor(form.provider()),
-                    orEmpty(form.model()), maskedKey, orEmpty(form.description()), orEmpty(form.content())));
+                    orEmpty(savedBaseUrl), maskedKey, orEmpty(form.model()),
+                    orEmpty(form.description()), orEmpty(form.content())));
         } catch (IOException e) {
             return ResponseEntity.internalServerError().body(error("Failed to save agent: " + e.getMessage()));
         }

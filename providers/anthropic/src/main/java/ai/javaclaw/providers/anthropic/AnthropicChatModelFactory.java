@@ -29,14 +29,14 @@ public class AnthropicChatModelFactory implements ChatModelFactory {
     @Override
     public ChatModel create(ProviderConfig config) {
         AnthropicChatOptions.Builder options = AnthropicChatOptions.builder();
-        if (config.getModel() != null && !config.getModel().isBlank()) {
-            options.model(config.getModel());
+        if (config.getBaseUrl() != null && !config.getBaseUrl().isBlank()) {
+            options.baseUrl(config.getBaseUrl().trim());
         }
         if (config.getApiKey() != null && !config.getApiKey().isBlank()) {
             options.apiKey(config.getApiKey());
         }
-        if (config.getBaseUrl() != null && !config.getBaseUrl().isBlank()) {
-            options.baseUrl(config.getBaseUrl().trim());
+        if (config.getModel() != null && !config.getModel().isBlank()) {
+            options.model(config.getModel());
         }
         AnthropicChatOptions built = options.build();
 

@@ -89,11 +89,11 @@
         </div>
 
         <div class="field">
-            <label class="label">Model</label>
+            <label class="label">Base URL <span class="has-text-grey has-text-weight-normal">(optional)</span></label>
             <div class="control">
-                <input class="input" type="text" id="f-model" placeholder="Model id" autocomplete="off">
+                <input class="input" type="text" id="f-baseurl" placeholder="Leave blank to use the default endpoint" autocomplete="off">
             </div>
-            <p class="help">Defaults to the provider's model; type another to override.</p>
+            <p class="help">Override it to reach a proxy, gateway or self-hosted server.</p>
         </div>
 
         <div class="field">
@@ -102,6 +102,14 @@
                 <input class="input" type="password" id="f-apikey" placeholder="API key" autocomplete="off">
             </div>
             <p class="help" id="apikey-help"></p>
+        </div>
+
+        <div class="field">
+            <label class="label">Model</label>
+            <div class="control">
+                <input class="input" type="text" id="f-model" placeholder="Model id" autocomplete="off">
+            </div>
+            <p class="help">Defaults to the provider's model; type another to override.</p>
         </div>
 
         <div class="field">
@@ -210,6 +218,7 @@
         $("name-help").style.display = "block";
         $("f-description").value = "";
         $("f-content").value = "";
+        $("f-baseurl").value = "";
         $("f-apikey").value = "";
         $("apikey-help").textContent = "";
         $("form-error").textContent = "";
@@ -229,6 +238,7 @@
         $("name-help").style.display = "none";
         $("f-description").value = a.description || "";
         $("f-content").value = a.content || "";
+        $("f-baseurl").value = a.baseUrl || "";
         $("f-apikey").value = "";
         $("apikey-help").textContent = a.apiKeyMasked ? "Current: " + a.apiKeyMasked + " — leave blank to keep" : "";
         $("form-error").textContent = "";
@@ -246,6 +256,7 @@
                 name: editing || $("f-name").value.trim(),
                 provider: $("f-provider").value,
                 model: $("f-model").value.trim(),
+                baseUrl: $("f-baseurl").value.trim(),
                 apiKey: $("f-apikey").value.trim(),
                 description: $("f-description").value.trim(),
                 content: $("f-content").value
