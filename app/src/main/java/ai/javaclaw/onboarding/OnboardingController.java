@@ -8,11 +8,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Controller
@@ -92,6 +94,35 @@ public class OnboardingController {
         }
 
         return "redirect:/onboarding/" + (nextId != null ? nextId : COMPLETE_STEP_ID);
+    }
+
+    @PostMapping(value = "/onboarding/credentials/models", produces = "text/html")
+    @ResponseBody
+    public String models(@RequestParam(name = "apiKey", required = false) String apiKey,
+                         @RequestParam(name = "baseUrl", required = false) String baseUrl,
+                         @RequestParam(name = "model", required = false) String query,
+                         HttpSession session) {
+        String providerId = (String) session.getAttribute("onboarding.provider");
+        if (providerId == null || providerId.isBlank()) {
+            return "";
+        }
+        AgentOnboardingProvider provider = agentOnboardingProviders.findById(providerId).orElse(null);
+        if (provider == null) {
+            return "";
+        }
+        List<String> models = provider.availableModels(baseUrl, apiKey);
+        String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        StringBuilder html = new StringBuilder();
+        for (String m : models) {
+            if (!q.isEmpty() && !m.toLowerCase(Locale.ROOT).contains(q)) {
+                continue;
+            }
+            html
+                    .append("<button type=\"button\" class=\"autocomplete-item\" data-value=\"").append(m).append("\">")
+                    .append(m)
+                    .append("</button>\n");
+        }
+        return html.toString();
     }
 
     private void saveAndComplete(HttpSession session) {

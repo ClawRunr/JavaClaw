@@ -27,6 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -57,7 +58,6 @@ class AgentPageControllerTest {
         openai = org.mockito.Mockito.mock(AgentOnboardingProvider.class);
         when(openai.getId()).thenReturn("openai");
         when(openai.getLabel()).thenReturn("OpenAI");
-        when(openai.defaultModel()).thenReturn("gpt-4o");
         when(providers.getAll()).thenReturn(List.of(openai));
         when(providers.findById("openai")).thenReturn(Optional.of(openai));
         when(providers.findById("ghost")).thenReturn(Optional.empty());
@@ -185,5 +185,43 @@ class AgentPageControllerTest {
                 .andExpect(view().name("settings/agents/list"));
 
         verify(configurationManager).removeProperty("agent.llm.providers.summariser");
+    }
+
+    @Test
+    void modelsEndpointReturnsSuggestionButtons() throws Exception {
+        when(openai.availableModels(any(), any())).thenReturn(List.of("gpt-4o", "gpt-4o-mini"));
+
+        mockMvc.perform(post("/settings/agents/models")
+                        .param("provider", "openai")
+                        .param("apiKey", "sk-test"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(
+                        """
+                        <button type="button" class="autocomplete-item" data-value="gpt-4o">gpt-4o</button>
+                        <button type="button" class="autocomplete-item" data-value="gpt-4o-mini">gpt-4o-mini</button>
+                        """));
+    }
+
+    @Test
+    void modelsEndpointFiltersByTypedQuery() throws Exception {
+        when(openai.availableModels(any(), any())).thenReturn(List.of("gpt-4o", "gpt-4o-mini"));
+
+        mockMvc.perform(post("/settings/agents/models")
+                        .param("provider", "openai")
+                        .param("apiKey", "sk-test")
+                        .param("model", "minI"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(
+                        """
+                        <button type="button" class="autocomplete-item" data-value="gpt-4o-mini">gpt-4o-mini</button>
+                        """));
+    }
+
+    @Test
+    void modelsEndpointReturnsEmptyBodyWhenProviderMissing() throws Exception {
+        mockMvc.perform(post("/settings/agents/models")
+                        .param("provider", "ghost"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(""));
     }
 }
