@@ -19,8 +19,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
@@ -103,5 +110,80 @@ class AgentPageControllerTest {
 
         mockMvc.perform(get("/settings/agents/ghost/edit"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void createWritesMdFileAndProviderConfig() throws Exception {
+        when(store.exists("summariser")).thenReturn(false);
+        when(store.list()).thenReturn(List.of());
+
+        mockMvc.perform(post("/settings/agents")
+                        .param("name", "summariser")
+                        .param("provider", "openai")
+                        .param("baseUrl", "https://gateway.example.com/v1")
+                        .param("apiKey", "sk-secret")
+                        .param("model", "gpt-4o"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("settings/agents/list"));
+
+        verify(store).save(any(Subagent.class));
+        verify(configurationManager).updateProperties(argThat(m ->
+                "openai".equals(m.get("agent.llm.providers.summariser.provider"))
+                        && "https://gateway.example.com/v1".equals(m.get("agent.llm.providers.summariser.base-url"))
+                        && "sk-secret".equals(m.get("agent.llm.providers.summariser.api-key"))
+                        && "gpt-4o".equals(m.get("agent.llm.providers.summariser.model"))));
+    }
+
+    @Test
+    void createValidationErrorRendersDrawerWith422AndRetarget() throws Exception {
+        when(store.exists("summariser")).thenReturn(false);
+        when(providerProperties.getProviders()).thenReturn(new LinkedHashMap<>());
+
+        mockMvc.perform(post("/settings/agents")
+                        .param("name", "summariser")
+                        .param("provider", "ghost"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(header().string("HX-Retarget", "#agent-drawer"))
+                .andExpect(view().name("settings/agents/drawer"))
+                .andExpect(model().attribute("error", "Unknown provider: ghost"));
+    }
+
+    @Test
+    void updateSuccessRendersList() throws Exception {
+        when(store.exists("summariser")).thenReturn(true);
+        when(store.list()).thenReturn(List.of());
+        when(providerProperties.getProviders()).thenReturn(new LinkedHashMap<>());
+
+        mockMvc.perform(put("/settings/agents/summariser")
+                        .param("name", "summariser")
+                        .param("provider", "openai")
+                        .param("model", "gpt-4o"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("settings/agents/list"));
+
+        verify(store).save(any(Subagent.class));
+    }
+
+    @Test
+    void updateUnknownNameIsNotFound() throws Exception {
+        when(store.exists("ghost")).thenReturn(false);
+
+        mockMvc.perform(put("/settings/agents/ghost")
+                        .param("name", "ghost")
+                        .param("provider", "openai"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deleteRemovesMdAndProviderConfigAndRendersList() throws Exception {
+        when(store.delete("summariser")).thenReturn(true);
+        when(store.list()).thenReturn(List.of());
+        when(providerProperties.getProviders()).thenReturn(new LinkedHashMap<>());
+
+        mockMvc.perform(delete("/settings/agents/summariser"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("settings/agents/list"));
+
+        verify(configurationManager).removeProperty("agent.llm.providers.summariser");
     }
 }

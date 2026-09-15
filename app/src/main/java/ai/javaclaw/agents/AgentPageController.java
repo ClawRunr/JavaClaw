@@ -79,9 +79,117 @@ public class AgentPageController {
         return "settings/agents/drawer";
     }
 
+    @PostMapping
+    public String create(@RequestParam Map<String, String> form, Model model, HttpServletResponse response) {
+        String name;
+        try {
+            name = validateNewName(form.get("name"));
+            validateProvider(form.get("provider"));
+        } catch (ValidationException e) {
+            return drawerError(model, response, form, e.getMessage(), false);
+        }
+        save(name, form);
+        return populateList(model);
+    }
+
+    @PutMapping("/{name}")
+    public String update(@PathVariable String name, @RequestParam Map<String, String> form,
+                         Model model, HttpServletResponse response) {
+        requireExisting(name);
+        try {
+            validateProvider(form.get("provider"));
+        } catch (ValidationException e) {
+            return drawerError(model, response, form, e.getMessage(), true);
+        }
+        save(name, form);
+        return populateList(model);
+    }
+
+    @DeleteMapping("/{name}")
+    public String delete(@PathVariable String name, Model model) {
+        if (name == null || !NAME_PATTERN.matcher(name).matches()) {
+            throw new NotFoundException();
+        }
+        try {
+            boolean removedFile = store.delete(name);
+            boolean hadConfig = providerProperties.getProviders().containsKey(name);
+            if (!removedFile && !hadConfig) {
+                throw new NotFoundException();
+            }
+            configurationManager.removeProperty(PROVIDERS_PREFIX + "." + name);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to delete agent " + name, e);
+        }
+        return populateList(model);
+    }
+
     @ExceptionHandler(NotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public void handleNotFound() {
+    }
+
+    private String drawerError(Model model, HttpServletResponse response,
+                               Map<String, String> form, String error, boolean isEdit) {
+        response.setStatus(HttpStatus.UNPROCESSABLE_ENTITY.value());
+        response.setHeader("HX-Retarget", "#agent-drawer");
+        populateDrawer(model, form, isEdit);
+        model.addAttribute("error", error);
+        return "settings/agents/drawer";
+    }
+
+    private void save(String name, Map<String, String> form) {
+        try {
+            store.save(new Subagent(name, form.get("model"), form.get("description"), form.get("content")));
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to save agent " + name, e);
+        }
+
+        Map<String, Object> props = new LinkedHashMap<>();
+        props.put(PROVIDERS_PREFIX + "." + name + ".provider", form.get("provider"));
+        if (hasText(form.get("baseUrl"))) {
+            props.put(PROVIDERS_PREFIX + "." + name + ".base-url", form.get("baseUrl").trim());
+        }
+        if (hasText(form.get("apiKey"))) {
+            props.put(PROVIDERS_PREFIX + "." + name + ".api-key", form.get("apiKey").trim());
+        }
+        if (hasText(form.get("model"))) {
+            props.put(PROVIDERS_PREFIX + "." + name + ".model", form.get("model").trim());
+        }
+        try {
+            configurationManager.updateProperties(props);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to save agent " + name, e);
+        }
+    }
+
+    private String validateNewName(String raw) {
+        String name = raw == null ? "" : raw.trim();
+        if (name.isBlank() || !NAME_PATTERN.matcher(name).matches()) {
+            throw new ValidationException("Agent name must match [a-z0-9-]+");
+        }
+        if (providerProperties.getProviders().containsKey(name) || store.exists(name)) {
+            throw new ValidationException("An agent named '" + name + "' already exists");
+        }
+        return name;
+    }
+
+    private void validateProvider(String provider) {
+        if (provider == null || provider.isBlank()) {
+            throw new ValidationException("A provider is required");
+        }
+        if (providers.findById(provider).isEmpty()) {
+            throw new ValidationException("Unknown provider: " + provider);
+        }
+    }
+
+    private void requireExisting(String name) {
+        if (name == null || !NAME_PATTERN.matcher(name).matches() || !store.exists(name)) {
+            throw new NotFoundException();
+        }
+    }
+
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
     }
 
     private String populateList(Model model) {
