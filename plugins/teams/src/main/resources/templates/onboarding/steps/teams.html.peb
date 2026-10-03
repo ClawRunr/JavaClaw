@@ -1,0 +1,53 @@
+<div id="onboarding-step" class="step-fragment">
+    <p class="is-uppercase has-text-weight-semibold has-text-grey is-size-7 mb-3">Step {{ currentStepNumber }} of {{ totalSteps }}</p>
+    <h2 class="title is-3 mb-3">Connect Microsoft Teams.</h2>
+    <p class="subtitle is-5 has-text-grey-dark">
+        Register a bot in Azure Bot Service and provide its App ID, App Secret and your Azure AD
+        Tenant ID. These are written to application.yaml and used to authenticate against the
+        Bot Framework Connector API when sending replies back to Teams.
+    </p>
+
+    {% if error %}
+    <article class="message is-danger">
+        <div class="message-body">{{ error }}</div>
+    </article>
+    {% endif %}
+
+    <form method="post" action="/onboarding/teams">
+        <div class="field">
+            <label class="label" for="teamsAppId">Bot App ID</label>
+            <div class="control">
+                <input id="teamsAppId" class="input is-medium" type="text" name="teamsAppId" value="{{ teamsAppId }}" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" autocapitalize="none" spellcheck="false">
+            </div>
+        </div>
+
+        <div class="field">
+            <label class="label" for="teamsAppSecret">Bot App Secret</label>
+            <div class="control">
+                <input id="teamsAppSecret" class="input is-medium" type="password" name="teamsAppSecret" placeholder="Paste the client secret" autocomplete="off">
+            </div>
+            <p class="help">Required every time you save this step — it is never pre-filled back into the form.</p>
+        </div>
+
+        <div class="field">
+            <label class="label" for="teamsTenantId">Azure AD Tenant ID</label>
+            <div class="control">
+                <input id="teamsTenantId" class="input is-medium" type="text" name="teamsTenantId" value="{{ teamsTenantId }}" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" autocapitalize="none" spellcheck="false">
+            </div>
+        </div>
+
+        <div class="notification is-light mt-4">
+            <p class="has-text-weight-semibold mb-2">Stored properties</p>
+            <p class="has-text-grey-dark">agent.channels.teams.app-id</p>
+            <p class="has-text-grey-dark">agent.channels.teams.app-secret</p>
+            <p class="has-text-grey-dark">agent.channels.teams.tenant-id</p>
+        </div>
+
+        <div class="buttons mt-4">
+            <a class="button is-light is-medium" href="{{ previousStepUrl }}">Back</a>
+            <button class="button is-primary is-medium" type="submit">Continue</button>
+            {% if isOptional %}<a class="button is-ghost is-medium" href="{{ nextStepUrl }}">Skip</a>{% endif %}
+            <span class="button is-ghost is-medium htmx-indicator">Saving...</span>
+        </div>
+    </form>
+</div>
