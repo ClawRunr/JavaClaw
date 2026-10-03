@@ -24,14 +24,16 @@ public class TeamsWebhookController {
     private final ChannelRegistry channelRegistry;
     private final Agent agent;
     private final TeamsChannel channel;
+    private final BotFrameworkJwtValidator jwtValidator;
     private final Executor executor;
 
     public TeamsWebhookController(TeamsProperties properties, ChannelRegistry channelRegistry,
-                                  Agent agent, TeamsChannel channel) {
+                                  Agent agent, TeamsChannel channel, BotFrameworkJwtValidator jwtValidator) {
         this.properties = properties;
         this.channelRegistry = channelRegistry;
         this.agent = agent;
         this.channel = channel;
+        this.jwtValidator = jwtValidator;
         this.executor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "teams-webhook-worker");
             t.setDaemon(true);
@@ -84,17 +86,12 @@ public class TeamsWebhookController {
         return from != null && allowed.trim().equals(from.id());
     }
 
-    /**
-     * TODO (before exposing this endpoint publicly): validate the JWT in the Authorization
-     * header against Bot Framework's JWKS (https://login.botframework.com/v1/.well-known/keys),
-     * checking issuer, audience (= appId) and expiry. Currently this only checks a bearer
-     * token is present, which is NOT sufficient authentication on its own.
-     */
     private boolean isRequestAuthorized(String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             LOGGER.warn("Rejected Teams webhook call with missing/invalid Authorization header");
             return false;
         }
-        return true;
+        String token = authHeader.substring("Bearer ".length()).trim();
+        return jwtValidator.isValid(token);
     }
 }
