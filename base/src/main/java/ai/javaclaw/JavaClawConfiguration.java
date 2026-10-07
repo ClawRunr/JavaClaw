@@ -3,14 +3,14 @@ package ai.javaclaw;
 import ai.javaclaw.tasks.TaskManager;
 import ai.javaclaw.tools.JavaClawTaskTool;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.memory.ChatMemoryRepository;
-import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.model.SpringAIModelProperties;
+import org.springframework.ai.session.DefaultSessionService;
+import org.springframework.ai.session.SessionRepository;
+import org.springframework.ai.session.SessionService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -23,6 +23,9 @@ public class JavaClawConfiguration {
 
     public static final String AGENT_MD = "AGENT.private.md";
 
+    /** Single-tenant install: every session belongs to this user. */
+    public static final String AGENT_USER_ID = "javaclaw";
+
     private static final String NO_MODEL_MESSAGE =
             "No AI model has been configured. If you did configure a model recently, restart JavaClaw "
                     + "manually for the changes to take effect.";
@@ -34,8 +37,10 @@ public class JavaClawConfiguration {
     }
 
     @Bean
-    public ChatMemory chatMemory(ChatMemoryRepository chatMemoryRepository) {
-        return MessageWindowChatMemory.builder().chatMemoryRepository(chatMemoryRepository).build();
+    public SessionService sessionService(SessionRepository sessionRepository) {
+        return DefaultSessionService.builder()
+                .sessionRepository(sessionRepository)
+                .build();
     }
 
     @Bean

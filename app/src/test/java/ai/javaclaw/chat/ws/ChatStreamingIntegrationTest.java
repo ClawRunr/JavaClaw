@@ -5,8 +5,9 @@ import ai.javaclaw.agent.ResponseListener;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.chat.ChatChannel;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.memory.ChatMemoryRepository;
-import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
+import org.springframework.ai.session.DefaultSessionService;
+import org.springframework.ai.session.InMemorySessionRepository;
+import org.springframework.ai.session.SessionService;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -109,8 +110,10 @@ class ChatStreamingIntegrationTest {
         }
 
         @Bean
-        ChatMemoryRepository chatMemoryRepository() {
-            return new InMemoryChatMemoryRepository();
+        SessionService sessionService() {
+            return DefaultSessionService.builder()
+                    .sessionRepository(InMemorySessionRepository.builder().build())
+                    .build();
         }
 
         @Bean

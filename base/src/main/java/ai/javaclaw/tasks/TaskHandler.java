@@ -79,7 +79,7 @@ public class TaskHandler {
      * Derives the conversation id used for a task's chat memory.
      *
      * <p>A task's id is the absolute path of its markdown file. Passed straight through it reaches
-     * {@code FileSystemChatMemoryRepository}, which resolves {@code conversations/chat-{id}.yaml} -
+     * {@code FileSystemSessionRepository}, which resolves {@code conversations/chat-{id}.json} -
      * so each task creates a directory tree mirroring its own location on disk instead of a single
      * conversation file, never appears in the conversation list, and on Windows is rejected outright
      * because of the colon in the drive letter.

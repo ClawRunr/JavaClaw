@@ -1,5 +1,6 @@
 package ai.javaclaw.chat;
 
+import ai.javaclaw.JavaClawConfiguration;
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.ResponseListener;
 import ai.javaclaw.channels.ChannelRegistry;
@@ -8,9 +9,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.session.Session;
+import org.springframework.ai.session.SessionService;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.ObjectMapper;
@@ -31,13 +33,19 @@ import static org.mockito.Mockito.when;
 class ChatChannelTest {
 
     @Mock Agent agent;
-    @Mock ChatMemoryRepository chatMemoryRepository;
+    @Mock SessionService sessionService;
 
     ChatChannel chatChannel;
 
     @BeforeEach
     void setUp() {
-        chatChannel = new ChatChannel(agent, new ChannelRegistry(), chatMemoryRepository, new ObjectMapper());
+        chatChannel = new ChatChannel(agent, new ChannelRegistry(), sessionService, new ObjectMapper());
+    }
+
+    private static List<Session> sessions(String... ids) {
+        return java.util.Arrays.stream(ids)
+                .map(id -> Session.builder().id(id).userId(JavaClawConfiguration.AGENT_USER_ID).build())
+                .toList();
     }
 
     // -----------------------------------------------------------------------
@@ -46,7 +54,7 @@ class ChatChannelTest {
 
     @Test
     void conversationIdsAlwaysContainsWebFirst() {
-        when(chatMemoryRepository.findConversationIds()).thenReturn(List.of("telegram-42", "web"));
+        when(sessionService.findByUserId(JavaClawConfiguration.AGENT_USER_ID)).thenReturn(sessions("telegram-42", "web"));
 
         List<String> ids = chatChannel.conversationIds();
 
@@ -55,7 +63,7 @@ class ChatChannelTest {
 
     @Test
     void conversationIdsIncludesWebEvenWhenRepositoryReturnsEmpty() {
-        when(chatMemoryRepository.findConversationIds()).thenReturn(List.of());
+        when(sessionService.findByUserId(JavaClawConfiguration.AGENT_USER_ID)).thenReturn(List.of());
 
         List<String> ids = chatChannel.conversationIds();
 
@@ -64,7 +72,7 @@ class ChatChannelTest {
 
     @Test
     void conversationIdsIncludesOtherChannelsAfterWeb() {
-        when(chatMemoryRepository.findConversationIds()).thenReturn(List.of("telegram-42", "telegram-99"));
+        when(sessionService.findByUserId(JavaClawConfiguration.AGENT_USER_ID)).thenReturn(sessions("telegram-42", "telegram-99"));
 
         List<String> ids = chatChannel.conversationIds();
 
@@ -73,7 +81,7 @@ class ChatChannelTest {
 
     @Test
     void conversationIdsDeduplicatesWeb() {
-        when(chatMemoryRepository.findConversationIds()).thenReturn(List.of("web", "telegram-42"));
+        when(sessionService.findByUserId(JavaClawConfiguration.AGENT_USER_ID)).thenReturn(sessions("web", "telegram-42"));
 
         List<String> ids = chatChannel.conversationIds();
 
@@ -86,7 +94,7 @@ class ChatChannelTest {
 
     @Test
     void loadHistoryReturnsWelcomeBubbleWhenNoHistory() {
-        when(chatMemoryRepository.findByConversationId("web")).thenReturn(List.of());
+        when(sessionService.getMessages("web")).thenReturn(List.of());
 
         List<String> bubbles = chatChannel.loadHistoryAsHtml("web");
 
@@ -96,7 +104,7 @@ class ChatChannelTest {
 
     @Test
     void loadHistoryRendersUserAndAgentBubbles() {
-        when(chatMemoryRepository.findByConversationId("web")).thenReturn(List.of(
+        when(sessionService.getMessages("web")).thenReturn(List.of(
                 new UserMessage("Hello"),
                 new AssistantMessage("Hi there")
         ));
@@ -110,7 +118,7 @@ class ChatChannelTest {
 
     @Test
     void loadHistoryEscapesHtmlInMessages() {
-        when(chatMemoryRepository.findByConversationId("web")).thenReturn(List.of(
+        when(sessionService.getMessages("web")).thenReturn(List.of(
                 new UserMessage("<script>alert('xss')</script>")
         ));
 
@@ -121,11 +129,11 @@ class ChatChannelTest {
 
     @Test
     void loadHistoryUsesSuppliedConversationId() {
-        when(chatMemoryRepository.findByConversationId("telegram-42")).thenReturn(List.of());
+        when(sessionService.getMessages("telegram-42")).thenReturn(List.of());
 
         chatChannel.loadHistoryAsHtml("telegram-42");
 
-        verify(chatMemoryRepository).findByConversationId("telegram-42");
+        verify(sessionService).getMessages("telegram-42");
     }
 
     // -----------------------------------------------------------------------
