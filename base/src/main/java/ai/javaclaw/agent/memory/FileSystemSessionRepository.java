@@ -19,12 +19,16 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
@@ -40,15 +44,18 @@ import java.util.stream.Stream;
  * appends are idempotent by event id, compaction uses a compare-and-swap on the
  * event-log version, and reads of unknown sessions return empty rather than throwing.
  * Messages are stored the same way as the library's JDBC repository: message type,
- * plain text, plus a JSON blob for tool calls / tool responses. All operations are
- * serialized on a single lock — sufficient for a single-node agent.
+ * plain text, plus a JSON blob for tool calls / tool responses.
+ *
+ * <p>Concurrency: read-modify-write operations take a per-session lock, so different
+ * sessions never block each other. Files are replaced atomically (write to a temp file,
+ * then move), so reads never see a partially written file and need no lock.
  */
 @Component
 public class FileSystemSessionRepository implements SessionRepository {
 
     private final Path conversationsDir;
     private final JsonMapper jsonMapper = JsonMapper.builder().enable(SerializationFeature.INDENT_OUTPUT).build();
-    private final Object lock = new Object();
+    private final ConcurrentHashMap<String, ReentrantLock> sessionLocks = new ConcurrentHashMap<>();
 
     public FileSystemSessionRepository(@Value("${agent.workspace:Unknown}") Resource workspaceDir) throws IOException {
         this.conversationsDir = workspaceDir.getFilePath().resolve("conversations");
@@ -56,7 +63,7 @@ public class FileSystemSessionRepository implements SessionRepository {
 
     @Override
     public Session save(Session session) {
-        synchronized (lock) {
+        return withSessionLock(session.id(), () -> {
             SessionFile existing = load(session.id());
             List<EventEntry> events = existing != null ? existing.events() : List.of();
             long version = existing != null ? existing.eventVersion() : 0L;
@@ -66,51 +73,46 @@ public class FileSystemSessionRepository implements SessionRepository {
                     createdAt, session.expiresAt() != null ? session.expiresAt().toString() : null,
                     session.metadata(), version, events));
             return session;
-        }
+        });
     }
 
     @Override
     public Session findById(String sessionId) {
-        synchronized (lock) {
-            SessionFile data = load(sessionId);
-            return data != null ? toSession(data) : null;
-        }
+        SessionFile data = load(sessionId);
+        return data != null ? toSession(data) : null;
     }
 
     @Override
     public List<Session> findByUserId(String userId) {
-        synchronized (lock) {
-            return loadAll().stream()
-                    .filter(data -> userId.equals(data.userId()))
-                    .map(FileSystemSessionRepository::toSession)
-                    .toList();
-        }
+        return loadAll().stream()
+                .filter(data -> userId.equals(data.userId()))
+                .map(FileSystemSessionRepository::toSession)
+                .toList();
     }
 
     @Override
     public List<String> findExpiredSessionIds(Instant before) {
-        synchronized (lock) {
-            return loadAll().stream()
-                    .filter(data -> data.expiresAt() != null && Instant.parse(data.expiresAt()).isBefore(before))
-                    .map(SessionFile::id)
-                    .toList();
-        }
+        return loadAll().stream()
+                .filter(data -> data.expiresAt() != null && Instant.parse(data.expiresAt()).isBefore(before))
+                .map(SessionFile::id)
+                .toList();
     }
 
     @Override
     public void delete(String sessionId) {
-        synchronized (lock) {
+        withSessionLock(sessionId, () -> {
             try {
                 Files.deleteIfExists(resolveFile(sessionId));
             } catch (IOException e) {
                 throw new RuntimeException("Failed to delete session: " + sessionId, e);
             }
-        }
+            return null;
+        });
     }
 
     @Override
     public void appendEvent(SessionEvent event) {
-        synchronized (lock) {
+        withSessionLock(event.getSessionId(), () -> {
             SessionFile data = load(event.getSessionId());
             if (data == null) {
                 throw new IllegalArgumentException("Session not found: " + event.getSessionId());
@@ -118,18 +120,19 @@ public class FileSystemSessionRepository implements SessionRepository {
             boolean alreadyAppended = data.events().stream().anyMatch(e -> e.id().equals(event.getId()));
             if (alreadyAppended) {
                 // Idempotent replay of an already-committed event: no duplicate, no version bump
-                return;
+                return null;
             }
             List<EventEntry> events = new ArrayList<>(data.events());
             events.add(toEntry(event));
             write(data.withEvents(events));
-        }
+            return null;
+        });
     }
 
     @Override
     public boolean compactEvents(String sessionId, List<SessionEvent> archivedEvents,
                                  List<SessionEvent> retainedEvents, long expectedVersion) {
-        synchronized (lock) {
+        return withSessionLock(sessionId, () -> {
             SessionFile data = load(sessionId);
             if (data == null) {
                 throw new IllegalArgumentException("Session not found: " + sessionId);
@@ -146,39 +149,45 @@ public class FileSystemSessionRepository implements SessionRepository {
             retainedEvents.forEach(e -> events.add(toEntry(e)));
             write(data.withEvents(events));
             return true;
-        }
+        });
     }
 
     @Override
     public long getEventVersion(String sessionId) {
-        synchronized (lock) {
-            SessionFile data = load(sessionId);
-            return data != null ? data.eventVersion() : 0L;
-        }
+        SessionFile data = load(sessionId);
+        return data != null ? data.eventVersion() : 0L;
     }
 
     @Override
     public List<SessionEvent> findEvents(String sessionId, EventFilter filter) {
-        synchronized (lock) {
-            SessionFile data = load(sessionId);
-            if (data == null) {
-                return List.of();
-            }
-            List<SessionEvent> matched = data.events().stream()
-                    .map(entry -> toEvent(sessionId, entry))
-                    .filter(filter::matches)
-                    .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        SessionFile data = load(sessionId);
+        if (data == null) {
+            return List.of();
+        }
+        List<SessionEvent> matched = data.events().stream()
+                .map(entry -> toEvent(sessionId, entry))
+                .filter(filter::matches)
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
 
-            if (filter.lastN() != null && matched.size() > filter.lastN()) {
-                matched = matched.subList(matched.size() - filter.lastN(), matched.size());
-            }
-            if (filter.pageSize() != null) {
-                int page = filter.page() != null ? filter.page() : 0;
-                int fromIdx = page * filter.pageSize();
-                matched = fromIdx >= matched.size() ? new ArrayList<>()
-                        : matched.subList(fromIdx, Math.min(fromIdx + filter.pageSize(), matched.size()));
-            }
-            return List.copyOf(matched);
+        if (filter.lastN() != null && matched.size() > filter.lastN()) {
+            matched = matched.subList(matched.size() - filter.lastN(), matched.size());
+        }
+        if (filter.pageSize() != null) {
+            int page = filter.page() != null ? filter.page() : 0;
+            int fromIdx = page * filter.pageSize();
+            matched = fromIdx >= matched.size() ? new ArrayList<>()
+                    : matched.subList(fromIdx, Math.min(fromIdx + filter.pageSize(), matched.size()));
+        }
+        return List.copyOf(matched);
+    }
+
+    private <T> T withSessionLock(String sessionId, Supplier<T> action) {
+        ReentrantLock lock = sessionLocks.computeIfAbsent(sessionId, _ -> new ReentrantLock());
+        lock.lock();
+        try {
+            return action.get();
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -188,9 +197,10 @@ public class FileSystemSessionRepository implements SessionRepository {
 
     private SessionFile load(String sessionId) {
         Path file = resolveFile(sessionId);
-        if (!Files.exists(file)) return null;
         try {
             return jsonMapper.readValue(Files.readString(file), SessionFile.class);
+        } catch (NoSuchFileException e) {
+            return null;
         } catch (IOException e) {
             throw new RuntimeException("Failed to read session: " + sessionId, e);
         }
@@ -212,10 +222,11 @@ public class FileSystemSessionRepository implements SessionRepository {
 
     private void write(SessionFile data) {
         Path file = resolveFile(data.id());
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         try {
             Files.createDirectories(file.getParent());
-            Files.writeString(file, jsonMapper.writeValueAsString(data),
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.writeString(tmp, jsonMapper.writeValueAsString(data));
+            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save session: " + data.id(), e);
         }
@@ -281,14 +292,15 @@ public class FileSystemSessionRepository implements SessionRepository {
             case ASSISTANT -> {
                 if (messageData != null && !messageData.isBlank()) {
                     List<AssistantMessage.ToolCall> toolCalls = jsonMapper.readValue(messageData,
-                            new TypeReference<List<AssistantMessage.ToolCall>>() { });
+                            new TypeReference<>() {});
                     yield AssistantMessage.builder().content(text).toolCalls(toolCalls).build();
                 }
                 yield new AssistantMessage(text != null ? text : "");
             }
             case TOOL -> {
                 List<ToolResponseMessage.ToolResponse> responses = messageData != null && !messageData.isBlank()
-                        ? jsonMapper.readValue(messageData, new TypeReference<List<ToolResponseMessage.ToolResponse>>() { })
+                        ? jsonMapper.readValue(messageData, new TypeReference<>() {
+                })
                         : List.of();
                 yield ToolResponseMessage.builder().responses(responses).build();
             }
