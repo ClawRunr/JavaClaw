@@ -79,6 +79,30 @@ Then open [http://localhost:8080/onboarding](http://localhost:8080/onboarding) t
 
 Configuration is persisted to `app/src/main/resources/application.yaml` and takes effect immediately.
 
+### Parallel Search MCP (optional)
+
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) provides
+`web_search` and `web_fetch` without a Parallel API key. Anonymous access is free
+for light use and subject to rate limits.
+
+To enable it with JavaClaw's existing Streamable HTTP client, run from the
+repository root after completing onboarding:
+
+```bash
+./gradlew :app:bootRun --args='--spring.config.additional-location=file:./examples/parallel-search.yaml'
+```
+
+The overlay adds a `parallel` connection and keeps your existing configuration.
+To persist it through the **MCP Servers** onboarding step instead, add a server
+named `parallel`, choose **Streamable HTTP**, enter `https://search.parallel.ai/mcp`,
+and set the optional headers field to:
+
+```text
+User-Agent: JavaClaw/1.0 (Parallel Search MCP)
+```
+
+Save and restart JavaClaw to connect. No Authorization header is required.
+
 ## Workspace
 
 The `workspace/` directory is the agent's home:
