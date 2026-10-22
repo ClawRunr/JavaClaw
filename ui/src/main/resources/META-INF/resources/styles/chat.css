@@ -1,0 +1,62 @@
+/*
+ * Layout of the chat at /ui: a centred reading column, the reader's messages on the right and the
+ * agent's on the left, matching the HTMX chat at /chat. Only Lumo tokens are used, so colours and
+ * light/dark stay with the theme rather than being fixed here.
+ */
+
+.chat-transcript,
+.chat-composer {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 60rem;
+    margin-inline: auto;
+}
+
+.chat-transcript {
+    display: flex;
+    flex-direction: column;
+    gap: var(--lumo-space-m);
+    padding: var(--lumo-space-l) var(--lumo-space-m);
+}
+
+.chat-composer {
+    padding: 0 var(--lumo-space-m) var(--lumo-space-m);
+}
+
+.message {
+    max-width: 80%;
+    padding: var(--lumo-space-s) var(--lumo-space-m);
+    border-radius: var(--lumo-border-radius-l);
+    background: var(--lumo-contrast-5pct);
+    align-self: flex-start;
+    /* The corner nearest the speaker's side stays tight, like the bubbles in /chat. */
+    border-end-start-radius: var(--lumo-border-radius-s);
+}
+
+.message-user {
+    align-self: flex-end;
+    background: var(--lumo-primary-color-10pct);
+    border-end-start-radius: var(--lumo-border-radius-l);
+    border-end-end-radius: var(--lumo-border-radius-s);
+}
+
+.message-error {
+    background: var(--lumo-error-color-10pct);
+}
+
+.message-role {
+    display: block;
+    font-size: var(--lumo-font-size-xs);
+    font-weight: 600;
+    color: var(--lumo-secondary-text-color);
+}
+
+.message-error .message-role {
+    color: var(--lumo-error-text-color);
+}
+
+/* Line breaks in a message are kept; nothing in it is interpreted as markup. */
+.message-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}

@@ -77,8 +77,7 @@ public class ChatView extends VerticalLayout {
         this.agent = agent;
 
         transcript.setId("transcript");
-        transcript.setWidthFull();
-        transcript.getStyle().set("padding", "var(--lumo-space-m)");
+        transcript.addClassName("chat-transcript");
         scroller.setWidthFull();
         addAttachListener(event -> scrollToNewest());
 
@@ -93,7 +92,7 @@ public class ChatView extends VerticalLayout {
         send.addClickListener(event -> sendQuestion());
 
         HorizontalLayout composerRow = new HorizontalLayout(composer, send);
-        composerRow.setWidthFull();
+        composerRow.addClassName("chat-composer");
         composerRow.setAlignItems(FlexComponent.Alignment.END);
 
         setSizeFull();
@@ -177,20 +176,14 @@ public class ChatView extends VerticalLayout {
     private void append(Role role, String text) {
         Span label = new Span(role.label);
         label.addClassName("message-role");
-        label.getStyle()
-                .set("font-weight", "600")
-                .set("font-size", "var(--lumo-font-size-s)")
-                .set("color", role == Role.ERROR ? "var(--lumo-error-text-color)" : "var(--lumo-secondary-text-color)");
 
         Div body = new Div();
         body.addClassName("message-text");
         // setText escapes, so markup in a message is displayed, never rendered.
         body.setText(text == null ? "" : text);
-        body.getStyle().set("white-space", "pre-wrap");
 
         Div message = new Div(label, body);
         message.addClassNames("message", "message-" + role.cssName);
-        message.getStyle().set("margin-bottom", "var(--lumo-space-l)");
         transcript.add(message);
     }
 

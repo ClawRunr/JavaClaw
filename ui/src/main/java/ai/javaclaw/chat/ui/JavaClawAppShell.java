@@ -8,10 +8,11 @@ import com.vaadin.flow.theme.lumo.Lumo;
  * Page-level settings for every Vaadin view.
  *
  * <p>Vaadin 25 no longer applies a theme on its own; without this the components render with only
- * their bare structural styles. It loads Vaadin's stock Lumo theme and nothing else - JavaClaw's own
- * look, light and dark, is a separate step.
+ * their bare structural styles. It loads Vaadin's stock Lumo theme and the chat's layout sheet -
+ * JavaClaw's own look, light and dark, is a separate step.
  */
 @StyleSheet(Lumo.STYLESHEET)
+@StyleSheet("/styles/chat.css")
 public class JavaClawAppShell implements AppShellConfigurator {
 
     /** Vaadin creates the shell itself; it carries no state, only the annotation above. */
