@@ -4,11 +4,15 @@ spring-ai = "2.0.0"
 telegrambots = "9.5.0"
 commonmark = "0.28.0"
 archunit = "1.4.2"
+# 25.1.x is the newest Vaadin line built against Spring Boot 4.0.x; 25.2.x requires Boot 4.1.
+vaadin = "25.1.11"
 
 [libraries]
 bom-spring-boot = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
 bom-spring-ai = { module = "org.springframework.ai:spring-ai-bom", version.ref = "spring-ai" }
 bom-spring-modulith = { module = "org.springframework.modulith:spring-modulith-bom", version = "2.0.6" }
+bom-vaadin = { module = "com.vaadin:vaadin-bom", version.ref = "vaadin" }
+vaadin-spring-boot-starter = { module = "com.vaadin:vaadin-spring-boot-starter" }
 spring-ai-agent-utils = { module = "org.springaicommunity:spring-ai-agent-utils", version = "0.9.0" }
 spring-ai-lucene = { module = "org.apache.lucene:lucene-core", version = "9.12.3" }
 spring-modulith-starter-test = { module = "org.springframework.modulith:spring-modulith-starter-test" }
@@ -30,3 +34,4 @@ commonmark-ext-gfm-strikethrough = { module = "org.commonmark:commonmark-ext-gfm
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
 jib = { id = "com.google.cloud.tools.jib", version = "3.5.3" }
+vaadin = { id = "com.vaadin", version.ref = "vaadin" }

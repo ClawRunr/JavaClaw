@@ -19,6 +19,12 @@ management:
     restart:
       enabled: true
 
+vaadin:
+  # Keeps Vaadin off the context root, where IndexController redirects to the HTMX chat.
+  url-mapping: /ui/*
+  # Scan only our own packages for routes; scanning the whole classpath slows startup noticeably.
+  allowed-packages: ai.javaclaw
+
 pebble:
   suffix: .html.peb
 agent:

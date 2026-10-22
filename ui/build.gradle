@@ -1,0 +1,22 @@
+plugins {
+    id 'java-library'
+    alias(libs.plugins.vaadin)
+}
+
+dependencies {
+    implementation platform(libs.bom.vaadin)
+    implementation libs.vaadin.spring.boot.starter
+
+    implementation project(':base')
+    // base declares spring-ai-client-chat as 'implementation', so it does not reach this module.
+    implementation 'org.springframework.ai:spring-ai-client-chat'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+vaadin {
+    // A development-mode build only runs with Vaadin's dev server on the classpath, so the packaged
+    // jar and the Jib image would fail on startup. With no custom frontend, production mode uses
+    // Vaadin's pre-compiled bundle and needs no Node.
+    productionMode = true
+}
