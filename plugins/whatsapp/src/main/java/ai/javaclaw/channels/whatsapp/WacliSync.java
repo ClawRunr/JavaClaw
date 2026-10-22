@@ -74,9 +74,11 @@ class WacliSync {
         if (isRunning()) {
             return;
         }
+        // Reset before scheduling: the first run starts immediately on the sync thread, and a reset
+        // after it could wipe failures that run has already counted.
+        failures = 0;
         executor = Executors.newSingleThreadScheduledExecutor(new NamedThreadFactory("wacli-sync", true));
         executor.scheduleWithFixedDelay(this::syncOnce, 0, restartDelay.toMillis(), TimeUnit.MILLISECONDS);
-        failures = 0;
     }
 
     void stop() {
