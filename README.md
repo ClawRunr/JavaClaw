@@ -6,7 +6,7 @@ JavaClaw is a Java-based personal AI assistant that runs on your own devices. It
 
 ## Features
 
-- **Multi-Channel Support** — Chat UI (WebSocket), Telegram, Discord, and an extensible plugin-based channel architecture
+- **Multi-Channel Support** — Chat UI (WebSocket), Telegram, Discord, WhatsApp, Microsoft Teams, and an extensible plugin-based channel architecture
 - **Task Management** — Create, schedule (one-off, delayed, or recurring via cron), and track tasks as human-readable Markdown files
 - **Extensible Skills** — Load skills from `workspace/skills/` and from `skills jar` packages on the classpath
 - **LLM Provider Choice** — Plug in OpenAI, Anthropic, or Ollama (local); switchable during onboarding
@@ -42,6 +42,7 @@ JavaClaw/
     ├── brave/      # Brave web search integration
     ├── discord/    # Discord Gateway channel plugin
     ├── playwright/ # Browser automation tools
+    ├── teams/      # Microsoft Teams webhook channel plugin
     └── telegram/   # Telegram long-poll channel plugin
 ```
 
@@ -178,6 +179,48 @@ agent can run shell commands. Point it at your own "Message Yourself" chat to ta
 from your own number. `wacli` itself is taken from your `PATH`.
 
 > **Disclaimer:** wacli uses the unofficial WhatsApp Web protocol — use at your own risk.
+
+### Microsoft Teams
+
+Teams delivers messages to a bot through [Azure Bot Service](https://learn.microsoft.com/azure/bot-service/):
+Microsoft calls a public HTTPS webhook on JavaClaw, and JavaClaw answers through the Bot Framework
+Connector API.
+
+**1. Expose the webhook**
+
+The webhook lives at `/api/teams/webhook`. Azure must be able to reach it over public HTTPS, so for
+a self-hosted setup put a tunnel in front of JavaClaw, for example:
+
+```bash
+ngrok http 8080   # gives you https://<random>.ngrok-free.app
+```
+
+**2. Create the bot**
+
+In the Azure portal, create an **Azure Bot** resource, set its messaging endpoint to
+`https://<your-host>/api/teams/webhook`, and enable the **Microsoft Teams** channel. Note the bot's
+App ID, create a client secret for it, and note your Tenant ID.
+
+**3. Configure**
+
+Configure during onboarding or by setting:
+
+```yaml
+agent:
+  channels:
+    teams:
+      enabled: true
+      app-id: <bot-app-id>
+      app-secret: <bot-client-secret>
+      tenant-id: <azure-tenant-id>
+      allowed-user-id: <your-entra-object-id>
+```
+
+`allowed-user-id` is the only Teams user the assistant responds to: either your Microsoft Entra
+object ID (Azure portal → Microsoft Entra ID → Users) or your Teams user ID (`29:...`). It is
+required, because the agent can run shell commands; without it every message is ignored. Every
+webhook call must carry a valid Bot Framework JWT (signature, issuer, audience, expiry and
+`serviceUrl` are checked), so requests that do not come from Microsoft are rejected with `401`.
 
 
 ## Skills
