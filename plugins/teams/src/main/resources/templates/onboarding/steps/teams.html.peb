@@ -4,7 +4,8 @@
     <p class="subtitle is-5 has-text-grey-dark">
         Register a bot in Azure Bot Service and provide its App ID, App Secret and your Azure AD
         Tenant ID. These are written to application.yaml and used to authenticate against the
-        Bot Framework Connector API when sending replies back to Teams.
+        Bot Framework Connector API when sending replies back to Teams. Only the user you enter
+        below can talk to the assistant.
     </p>
 
     {% if error %}
@@ -36,11 +37,20 @@
             </div>
         </div>
 
+        <div class="field">
+            <label class="label" for="teamsAllowedUserId">Allowed user ID</label>
+            <div class="control">
+                <input id="teamsAllowedUserId" class="input is-medium" type="text" name="teamsAllowedUserId" value="{{ teamsAllowedUserId }}" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" autocapitalize="none" spellcheck="false">
+            </div>
+            <p class="help">Your Microsoft Entra object ID (Azure portal → Microsoft Entra ID → Users → your user → Object ID). Messages from anyone else are ignored.</p>
+        </div>
+
         <div class="notification is-light mt-4">
             <p class="has-text-weight-semibold mb-2">Stored properties</p>
             <p class="has-text-grey-dark">agent.channels.teams.app-id</p>
             <p class="has-text-grey-dark">agent.channels.teams.app-secret</p>
             <p class="has-text-grey-dark">agent.channels.teams.tenant-id</p>
+            <p class="has-text-grey-dark">agent.channels.teams.allowed-user-id</p>
         </div>
 
         <div class="buttons mt-4">

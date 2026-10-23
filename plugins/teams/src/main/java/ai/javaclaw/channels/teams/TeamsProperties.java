@@ -11,9 +11,9 @@ public class TeamsProperties {
     private String tenantId;
 
     /**
-     * Optional: Azure AD object ID of the single Teams user the assistant should respond to.
-     * When blank, the first user who messages the bot is accepted (not recommended for
-     * anything but local testing).
+     * Required: the single Teams user the assistant responds to, either their Microsoft Entra
+     * (Azure AD) object ID or their Teams user ID ({@code 29:...}). When blank, every message
+     * is rejected, because the agent can run shell commands and browse on the user's behalf.
      */
     private String allowedUserId;
 

@@ -44,10 +44,11 @@ public class TeamsWebhookController {
     @PostMapping("/api/teams/webhook")
     public ResponseEntity<Void> webhook(@RequestHeader(value = "Authorization", required = false) String authHeader,
                                         @RequestBody(required = false) TeamsActivityPayload activity) {
-        if (!isRequestAuthorized(authHeader)) {
+        // The token is bound to the activity's serviceUrl, so a request without a body cannot be authorized
+        if (!isRequestAuthorized(authHeader, activity == null ? null : activity.serviceUrl())) {
             return ResponseEntity.status(401).build();
         }
-        if (activity == null || !"message".equals(activity.type())) {
+        if (!"message".equals(activity.type())) {
             return ResponseEntity.ok().build();
         }
         if (!isAllowedUser(activity.from())) {
@@ -59,39 +60,59 @@ public class TeamsWebhookController {
         if (text == null || text.isBlank()) {
             return ResponseEntity.ok().build();
         }
+        String teamsConversationId = activity.conversation() == null ? null : activity.conversation().id();
+        if (teamsConversationId == null || teamsConversationId.isBlank()) {
+            LOGGER.warn("Ignoring Teams message without a conversation id");
+            return ResponseEntity.ok().build();
+        }
 
-        String conversationId = activity.conversation() == null ? null : activity.conversation().id();
-        channel.updateConversationReference(new TeamsConversationReference(activity.serviceUrl(), conversationId));
+        // Captured per message, so the reply goes back to this conversation even if another
+        // message (from another conversation) arrives while the agent is still working on this one
+        TeamsConversationReference reference =
+                new TeamsConversationReference(activity.serviceUrl(), teamsConversationId);
+        channel.updateConversationReference(reference);
 
         channelRegistry.publishMessageReceivedEvent(
-                new TeamsChannelMessageReceivedEvent(channel.getName(), text, conversationId));
-        executor.execute(() -> handleMessage(conversationId, text));
+                new TeamsChannelMessageReceivedEvent(channel.getName(), text, teamsConversationId));
+        executor.execute(() -> handleMessage(reference, text));
         return ResponseEntity.ok().build();
     }
 
-    private void handleMessage(String conversationId, String text) {
+    private void handleMessage(TeamsConversationReference reference, String text) {
+        String conversationId = getConversationId(reference.conversationId());
         try {
             String response = agent.respondTo(conversationId, text);
-            channel.sendMessage(response);
+            channel.sendMessage(reference, response);
         } catch (RuntimeException e) {
             LOGGER.error("Failed to handle Teams message for conversation '{}'", conversationId, e);
         }
     }
 
+    /**
+     * Only the configured user may talk to the agent. Teams sends both the Teams user ID
+     * ({@code from.id}, {@code 29:...}) and the Entra object ID ({@code from.aadObjectId}),
+     * and either may be configured. Without a configured user, every message is rejected.
+     */
     private boolean isAllowedUser(TeamsActivityPayload.From from) {
         String allowed = properties.getAllowedUserId();
         if (allowed == null || allowed.isBlank()) {
-            return true; // not restricted — fine for local testing, not for production
+            LOGGER.warn("No agent.channels.teams.allowed-user-id configured, rejecting all Teams messages");
+            return false;
         }
-        return from != null && allowed.trim().equals(from.id());
+        String allowedUserId = allowed.trim();
+        return from != null && (allowedUserId.equals(from.id()) || allowedUserId.equalsIgnoreCase(from.aadObjectId()));
     }
 
-    private boolean isRequestAuthorized(String authHeader) {
+    private boolean isRequestAuthorized(String authHeader, String serviceUrl) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             LOGGER.warn("Rejected Teams webhook call with missing/invalid Authorization header");
             return false;
         }
         String token = authHeader.substring("Bearer ".length()).trim();
-        return jwtValidator.isValid(token);
+        return jwtValidator.isValid(token, serviceUrl);
+    }
+
+    private static String getConversationId(String teamsConversationId) {
+        return "teams-" + teamsConversationId;
     }
 }

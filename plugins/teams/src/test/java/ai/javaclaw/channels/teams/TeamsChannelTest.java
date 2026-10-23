@@ -97,4 +97,28 @@ class TeamsChannelTest {
 
         channel.sendMessage("hi there"); // must be handled internally (logged), never thrown
     }
+
+    @Test
+    void sendMessageWithReferencePostsToThatConversationNotTheLastKnownOne() throws Exception {
+        when(tokenProvider.getToken()).thenReturn("tok-123");
+        when(httpResponse.statusCode()).thenReturn(200);
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(httpResponse);
+
+        channel.updateConversationReference(new TeamsConversationReference("https://smba.example/", "latest-conv"));
+
+        channel.sendMessage(new TeamsConversationReference("https://smba.example/", "original-conv"), "hi there");
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(captor.capture(), any(HttpResponse.BodyHandler.class));
+        assertThat(captor.getValue().uri().toString())
+                .isEqualTo("https://smba.example/v3/conversations/original-conv/activities");
+    }
+
+    @Test
+    void sendMessageWithReferenceDoesNothingForBlankMessage() {
+        channel.sendMessage(new TeamsConversationReference("https://smba.example/", "conv-1"), " ");
+
+        verifyNoInteractions(httpClient, tokenProvider);
+    }
 }

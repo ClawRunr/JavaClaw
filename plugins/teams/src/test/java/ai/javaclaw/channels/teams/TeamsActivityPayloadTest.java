@@ -18,7 +18,7 @@ class TeamsActivityPayloadTest {
                   "serviceUrl": "https://smba.trafficmanager.net/amer/",
                   "channelId": "msteams",
                   "text": "hello there",
-                  "from": { "id": "29:user-object-id", "name": "Alice" },
+                  "from": { "id": "29:teams-user-id", "name": "Alice", "aadObjectId": "aad-object-id" },
                   "conversation": { "id": "19:conv-id@thread.v2" },
                   "recipient": { "id": "28:bot-id" }
                 }
@@ -29,7 +29,8 @@ class TeamsActivityPayloadTest {
         assertThat(payload.type()).isEqualTo("message");
         assertThat(payload.text()).isEqualTo("hello there");
         assertThat(payload.serviceUrl()).isEqualTo("https://smba.trafficmanager.net/amer/");
-        assertThat(payload.from().id()).isEqualTo("29:user-object-id");
+        assertThat(payload.from().id()).isEqualTo("29:teams-user-id");
+        assertThat(payload.from().aadObjectId()).isEqualTo("aad-object-id");
         assertThat(payload.conversation().id()).isEqualTo("19:conv-id@thread.v2");
     }
 }

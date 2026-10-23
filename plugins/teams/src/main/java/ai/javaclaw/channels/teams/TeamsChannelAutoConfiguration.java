@@ -6,7 +6,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import ai.javaclaw.agent.Agent;
 
 import java.net.http.HttpClient;
 
@@ -31,27 +30,5 @@ public class TeamsChannelAutoConfiguration {
     @ConditionalOnProperty(prefix = "agent.channels.teams", name = "enabled", havingValue = "true")
     public TeamsChannel teamsChannel(BotFrameworkTokenProvider tokenProvider, ChannelRegistry channelRegistry) {
         return new TeamsChannel(tokenProvider, channelRegistry);
-    }
-
-    @Bean
-    @ConditionalOnProperty(
-            prefix = "agent.channels.teams",
-            name = "enabled",
-            havingValue = "true"
-    )
-    public TeamsWebhookController teamsWebhookController(
-            TeamsProperties properties,
-            ChannelRegistry channelRegistry,
-            Agent agent,
-            TeamsChannel channel,
-            BotFrameworkJwtValidator jwtValidator) {
-
-        return new TeamsWebhookController(
-                properties,
-                channelRegistry,
-                agent,
-                channel,
-                jwtValidator
-        );
     }
 }

@@ -22,7 +22,7 @@ public class TeamsChannel implements Channel {
 
     private final BotFrameworkTokenProvider tokenProvider;
     private final HttpClient httpClient;
-    private final AtomicReference<TeamsConversationReference> conversationReference =
+    private final AtomicReference<TeamsConversationReference> lastConversationReference =
             new AtomicReference<>();
 
     public TeamsChannel(BotFrameworkTokenProvider tokenProvider, ChannelRegistry channelRegistry) {
@@ -41,19 +41,30 @@ public class TeamsChannel implements Channel {
         return CHANNEL_ID;
     }
 
-    /** Called by the webhook controller whenever a message arrives from the allowed user. */
+    /**
+     * Called by the webhook controller whenever a message arrives from the allowed user, so that
+     * {@link #sendMessage(String)} (used for messages the agent sends on its own, e.g. from tasks)
+     * knows where to go.
+     */
     void updateConversationReference(TeamsConversationReference reference) {
-        conversationReference.set(reference);
+        lastConversationReference.set(reference);
     }
 
+    /** Sends to the last conversation the allowed user wrote in. */
     @Override
     public void sendMessage(String message) {
-        if (message == null || message.isBlank()) {
+        TeamsConversationReference reference = lastConversationReference.get();
+        if (reference == null) {
+            LOGGER.warn("No known Teams conversation yet, cannot send a message of {} characters",
+                    message == null ? 0 : message.length());
             return;
         }
-        TeamsConversationReference reference = conversationReference.get();
-        if (reference == null) {
-            LOGGER.warn("No known Teams conversation yet, cannot send message '{}'", message);
+        sendMessage(reference, message);
+    }
+
+    /** Sends to the given conversation, e.g. as the reply to the message that came from it. */
+    public void sendMessage(TeamsConversationReference reference, String message) {
+        if (message == null || message.isBlank()) {
             return;
         }
 
@@ -70,10 +81,11 @@ public class TeamsChannel implements Channel {
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() >= 300) {
-                LOGGER.error("Teams send failed with status {}: {}", response.statusCode(), response.body());
+                LOGGER.error("Teams send to conversation '{}' failed with status {}: {}",
+                        reference.conversationId(), response.statusCode(), response.body());
             }
         } catch (Exception e) {
-            LOGGER.error("Failed to send Teams message '{}'", message, e);
+            LOGGER.error("Failed to send Teams message to conversation '{}'", reference.conversationId(), e);
         }
     }
 }

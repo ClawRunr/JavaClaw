@@ -14,7 +14,8 @@ public record TeamsActivityPayload(
         @JsonProperty("conversation") Conversation conversation) {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record From(@JsonProperty("id") String id, @JsonProperty("name") String name) {
+    public record From(@JsonProperty("id") String id, @JsonProperty("name") String name,
+                       @JsonProperty("aadObjectId") String aadObjectId) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
