@@ -259,6 +259,17 @@
     opacity: 1;
     background: var(--bulma-success);
 }
+/* The answer ended without this tool reporting back (returnDirect, or it threw). */
+.ar-tool--unanswered .ar-tool__dot {
+    animation: none;
+    opacity: .5;
+    background: rgba(200, 212, 240, .6);
+}
+.ar-tool--failed .ar-tool__dot {
+    animation: none;
+    opacity: 1;
+    background: var(--bulma-danger);
+}
 
 .ar-tool__body {
     padding: .6rem .7rem .7rem;
@@ -469,19 +480,20 @@
             renderToolResult(frame.data);
         } else if (frame.type === 'done') {
             clearTypingIndicator();
-            endStream(id);
+            endStream(id, 'ar-tool--unanswered', 'no result');
         } else if (frame.type === 'error') {
-            var bubble = streamBubble(id);
-            bubble.textContent = frame.data;
-            bubble.closest('.ar-msg').classList.add('ar-msg--error');
-            endStream(id);
+            // Append rather than replace: text and tool cards already shown still stand.
+            delete streamTexts[id];
+            appendToken(id, frame.data);
+            streamBubble(id).closest('.ar-msg').classList.add('ar-msg--error');
+            endStream(id, 'ar-tool--failed', 'failed');
         }
     }
 
     // Tool cards render inside the agent bubble, between runs of text. Each run of
     // text therefore needs its own span — assigning to the bubble's textContent would
     // wipe out any card already in it.
-    var toolCards = {};   // tool call id -> { card, startedAt }
+    var toolCards = {};   // tool call id -> { card, conversationId, startedAt }
     var streamTexts = {}; // conversationId -> trailing text span of the open bubble
 
     var TOOL_ICON =
@@ -518,7 +530,7 @@
         bubble.appendChild(card);
         // Text arriving after this call starts a new run below the card.
         delete streamTexts[conversationId];
-        if (data.id) toolCards[data.id] = { card: card, startedAt: Date.now() };
+        if (data.id) toolCards[data.id] = { card: card, conversationId: conversationId, startedAt: Date.now() };
     }
 
     function renderToolResult(data) {
@@ -603,7 +615,15 @@
         run.textContent += token;
     }
 
-    function endStream(conversationId) {
+    // Cards still waiting when the answer ends will never get a result — settle them.
+    function endStream(conversationId, unfinishedClass, unfinishedLabel) {
+        Object.keys(toolCards).forEach(function (callId) {
+            var entry = toolCards[callId];
+            if (entry.conversationId !== conversationId) return;
+            entry.card.classList.add(unfinishedClass);
+            entry.card.querySelector('.ar-tool__time').textContent = unfinishedLabel;
+            delete toolCards[callId];
+        });
         delete streamBubbles[conversationId];
         delete streamTexts[conversationId];
     }

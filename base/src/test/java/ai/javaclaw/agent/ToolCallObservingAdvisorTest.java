@@ -57,15 +57,30 @@ class ToolCallObservingAdvisorTest {
     }
 
     @Test
-    void logsAToolCallOnceEvenThoughArgumentsArriveAcrossChunks() {
+    void reportsACallOnceWithItsFinalArgumentsWhenTheyGrowAcrossChunks() {
+        List<AgentEvent> seen = new ArrayList<>();
+        ToolCallObservingAdvisor observed = new ToolCallObservingAdvisor("web", seen::add);
         when(chain.nextStream(any())).thenReturn(Flux.just(
-                responseWith(toolCall("call-1", "readFile")),
-                responseWith(toolCall("call-1", "readFile")),
-                responseWith(toolCall("call-1", "readFile"))));
+                responseWith(toolCall("call-1", "readFile", "{\"pa")),
+                responseWith(toolCall("call-1", "readFile", "{\"path\":\"pom")),
+                responseWith(toolCall("call-1", "readFile", "{\"path\":\"pom.xml\"}"))));
 
-        advisor.adviseStream(request(new UserMessage("hi")), chain).blockLast();
+        observed.adviseStream(request(new UserMessage("hi")), chain).blockLast();
 
-        assertThat(infoMessages()).containsExactly("Conversation web calls tool readFile");
+        assertThat(seen).containsExactly(new AgentEvent.ToolCall("call-1", "readFile", "{\"path\":\"pom.xml\"}"));
+    }
+
+    @Test
+    void reportsNoCallWhenTheRoundFailsBeforeItsArgumentsAreComplete() {
+        List<AgentEvent> seen = new ArrayList<>();
+        ToolCallObservingAdvisor observed = new ToolCallObservingAdvisor("web", seen::add);
+        when(chain.nextStream(any())).thenReturn(Flux.concat(
+                Flux.just(responseWith(toolCall("call-1", "readFile", "{\"pa"))),
+                Flux.error(new RuntimeException("connection reset"))));
+
+        observed.adviseStream(request(new UserMessage("hi")), chain).onErrorComplete().blockLast();
+
+        assertThat(seen).isEmpty();
     }
 
     @Test
@@ -127,7 +142,11 @@ class ToolCallObservingAdvisorTest {
     }
 
     private static AssistantMessage.ToolCall toolCall(String id, String name) {
-        return new AssistantMessage.ToolCall(id, "function", name, "{\"path\":\"pom.xml\"}");
+        return toolCall(id, name, "{\"path\":\"pom.xml\"}");
+    }
+
+    private static AssistantMessage.ToolCall toolCall(String id, String name, String arguments) {
+        return new AssistantMessage.ToolCall(id, "function", name, arguments);
     }
 
     private static ChatClientResponse responseWith(AssistantMessage.ToolCall call) {

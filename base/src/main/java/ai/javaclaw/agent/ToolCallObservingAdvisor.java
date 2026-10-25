@@ -9,14 +9,18 @@ import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
 import org.springframework.ai.chat.client.advisor.api.StreamAdvisor;
 import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  * Reports every tool the model calls, to the log and to an optional {@link AgentEvent} consumer.
@@ -38,10 +42,7 @@ public class ToolCallObservingAdvisor implements CallAdvisor, StreamAdvisor {
 
     private final String conversationId;
     private final Consumer<AgentEvent> events;
-    /**
-     * Calls seen but not yet answered. Doubles as de-duplication: arguments stream in as partial
-     * JSON across many chunks, so the same call is seen repeatedly.
-     */
+    /** Calls reported but not yet answered, so each result is reported once. */
     private final Set<String> pending = ConcurrentHashMap.newKeySet();
 
     /** @param events receives each call and result, so a UI can render them; may be a no-op. */
@@ -53,34 +54,43 @@ public class ToolCallObservingAdvisor implements CallAdvisor, StreamAdvisor {
     @Override
     public Flux<ChatClientResponse> adviseStream(ChatClientRequest request, StreamAdvisorChain chain) {
         reportResults(request);
-        return chain.nextStream(request).doOnNext(this::reportCalls);
+        // The bundled providers deliver each call whole, but nothing in the advisor contract
+        // promises that. Report once the round ends — still before the loop runs the tools —
+        // keeping the last arguments seen, so a provider that grows them chunk by chunk shows
+        // the final ones rather than a fragment.
+        Map<String, AssistantMessage.ToolCall> round = new LinkedHashMap<>();
+        return chain.nextStream(request)
+                .doOnNext(response -> toolCalls(response).forEach(call -> round.put(call.id(), call)))
+                .doOnComplete(() -> round.values().forEach(this::reportCall));
     }
 
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
         reportResults(request);
         ChatClientResponse response = chain.nextCall(request);
-        reportCalls(response);
+        toolCalls(response).forEach(this::reportCall);
         return response;
     }
 
     /** Calls ride on the responses coming back from the model, before the loop executes them. */
-    private void reportCalls(ChatClientResponse response) {
+    private static Stream<AssistantMessage.ToolCall> toolCalls(ChatClientResponse response) {
         ChatResponse chatResponse = response.chatResponse();
         if (chatResponse == null) {
+            return Stream.empty();
+        }
+        return chatResponse.getResults().stream()
+                .flatMap(generation -> generation.getOutput().getToolCalls().stream())
+                .filter(call -> StringUtils.hasText(call.id()) && StringUtils.hasText(call.name()));
+    }
+
+    private void reportCall(AssistantMessage.ToolCall call) {
+        if (!pending.add(call.id())) {
             return;
         }
-        chatResponse.getResults().stream()
-                .flatMap(generation -> generation.getOutput().getToolCalls().stream())
-                .filter(call -> StringUtils.hasText(call.id()) && StringUtils.hasText(call.name()))
-                .filter(call -> pending.add(call.id()))
-                .forEach(call -> {
-                    log.info("Conversation {} calls tool {}", conversationId, call.name());
-                    // Arguments carry whatever the user typed and can be large — keep them off INFO.
-                    log.debug("Conversation {} tool {} arguments: {}",
-                            conversationId, call.name(), call.arguments());
-                    events.accept(new AgentEvent.ToolCall(call.id(), call.name(), call.arguments()));
-                });
+        log.info("Conversation {} calls tool {}", conversationId, call.name());
+        // Arguments carry whatever the user typed and can be large — keep them off INFO.
+        log.debug("Conversation {} tool {} arguments: {}", conversationId, call.name(), call.arguments());
+        events.accept(new AgentEvent.ToolCall(call.id(), call.name(), call.arguments()));
     }
 
     /** Their results arrive as message history on the next round of the loop. */

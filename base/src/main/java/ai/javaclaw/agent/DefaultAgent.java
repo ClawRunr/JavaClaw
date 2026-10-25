@@ -33,8 +33,8 @@ public class DefaultAgent implements Agent {
                     .blockLast();
             events.accept(new AgentEvent.Done());
         } catch (UnsupportedOperationException e) {
-            // The configured model cannot stream — fall back to the blocking call
-            events.accept(new AgentEvent.Token(respondTo(conversationId, question)));
+            // The configured model cannot stream — fall back to the blocking call, still reporting tools
+            events.accept(new AgentEvent.Token(ask(conversationId, question, events).call().content()));
             events.accept(new AgentEvent.Done());
         } catch (RuntimeException e) {
             log.warn("Streaming response failed for conversation {}", conversationId, e);
