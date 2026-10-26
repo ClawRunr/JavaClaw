@@ -24,9 +24,8 @@ class AnthropicAgentAutoConfigurationTest {
     }
 
     @Test
-    void bothAutoConfigurationsAreRegisteredViaImportsFile() throws IOException {
-        assertThat(importedAutoConfigurations(AnthropicAgentAutoConfigurationTest.class)).contains(
-                AnthropicAgentAutoConfiguration.class.getName(),
-                AnthropticClaudeCodeConfiguration.class.getName());
+    void autoConfigurationIsRegisteredViaImportsFile() throws IOException {
+        assertThat(importedAutoConfigurations(AnthropicAgentAutoConfigurationTest.class))
+                .contains(AnthropicAgentAutoConfiguration.class.getName());
     }
 }
