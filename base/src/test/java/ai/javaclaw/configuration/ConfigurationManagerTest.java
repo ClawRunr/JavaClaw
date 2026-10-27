@@ -123,6 +123,23 @@ class ConfigurationManagerTest {
     }
 
     @Test
+    void aNullValueRemovesTheKeyInTheSameWrite() throws IOException {
+        ConfigurationManager manager = managerAt(configDir.toString());
+        manager.updateProperties(Map.of("agent.llm.providers.default.base-url", "https://proxy.example.com",
+                "agent.llm.providers.default.model", "gpt-5.4"));
+        publishedEvents.clear();
+
+        Map<String, Object> props = new java.util.LinkedHashMap<>();
+        props.put("agent.llm.providers.default.provider", "claude-code");
+        props.put("agent.llm.providers.default.base-url", null);
+        manager.updateProperties(props);
+
+        String written = Files.readString(configDir.resolve("application.private.yaml"));
+        assertThat(written).contains("provider: claude-code").contains("model: gpt-5.4").doesNotContain("base-url");
+        assertThat(publishedEvents).hasSize(1);
+    }
+
+    @Test
     void publishesAConfigurationChangedEventOnEveryWrite() throws IOException {
         ConfigurationManager manager = managerAt(configDir.toString());
 

@@ -2,11 +2,8 @@ spring:
   application:
     name: JavaClaw
   config:
-    # ConfigurationManager writes onboarding/settings changes to the source file; it is imported last so the
-    # in-process restart after a change sees it (the classpath copy is only refreshed by a rebuild).
-    import:
-      - optional:classpath:application.private.yaml
-      - optional:file:./app/src/main/resources/application.private.yaml
+    # The file ConfigurationManager writes, so the in-process restart after a change reads it.
+    import: optional:file:./app/src/main/resources/application.private.yaml
   datasource:
     url: jdbc:h2:file:./workspace/app
   ai:

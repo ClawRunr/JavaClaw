@@ -47,9 +47,11 @@ public class S3_CredentialsStep implements OnboardingProvider {
         String modelKey = base + ".model";
 
         String currentModel = (String) session.get(S2_ProviderStep.SESSION_MODEL);
-        String existingBaseUrl = env.getProperty(baseUrlKey, "");
-        String existingApiKey = env.getProperty(apiKeyKey, "");
-        String existingModel = env.getProperty(modelKey, "");
+        // The saved values only prefill the form when they belong to the selected provider, never to the one being replaced.
+        boolean configuredForProvider = provider.getId().equals(env.getProperty(base + ".provider"));
+        String existingBaseUrl = configuredForProvider ? env.getProperty(baseUrlKey, "") : "";
+        String existingApiKey = configuredForProvider ? env.getProperty(apiKeyKey, "") : "";
+        String existingModel = configuredForProvider ? env.getProperty(modelKey, "") : "";
         model.put("selectedProvider", provider.getId());
         model.put("providerLabel", provider.getLabel());
         model.put("baseUrlPropertyKey", baseUrlKey);

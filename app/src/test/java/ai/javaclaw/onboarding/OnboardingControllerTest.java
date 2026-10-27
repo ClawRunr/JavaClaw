@@ -11,10 +11,12 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -104,10 +106,40 @@ class OnboardingControllerTest {
     }
 
     @Test
-    void blankBaseUrlIsNotSaved() throws Exception {
+    void blankBaseUrlRemovesAPreviouslySavedOne() throws Exception {
         MockHttpSession session = openAiSessionThrough("   ");
 
-        assertThat(savedProperties(session)).doesNotContainKey(BASE_URL_KEY);
+        assertThat(savedProperties(session)).containsEntry(BASE_URL_KEY, null);
+    }
+
+    @Test
+    void savedValuesOfAnotherProviderAreNotOffered() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("agent.llm.providers.default.provider", "openai")
+                .withProperty("agent.llm.providers.default.base-url", "https://proxy.example.com")
+                .withProperty("agent.llm.providers.default.api-key", "sk-old")
+                .withProperty("agent.llm.providers.default.model", "gpt-5.4");
+        when(agentOnboardingProviders.findById(LISTED.getId())).thenReturn(Optional.of(LISTED));
+        Map<String, Object> session = new HashMap<>(Map.of("onboarding.provider", LISTED.getId()));
+        Map<String, Object> model = new HashMap<>();
+
+        new S3_CredentialsStep(env, agentOnboardingProviders).prepareModel(session, model);
+
+        assertThat(model).containsEntry("model", "model-b").containsEntry("baseUrl", "").containsEntry("apiKey", "");
+        assertThat((List<?>) model.get("modelChoices")).hasSize(2);
+    }
+
+    @Test
+    void savedValuesOfTheSameProviderAreOffered() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("agent.llm.providers.default.provider", "listed")
+                .withProperty("agent.llm.providers.default.model", "model-a");
+        when(agentOnboardingProviders.findById(LISTED.getId())).thenReturn(Optional.of(LISTED));
+        Map<String, Object> model = new HashMap<>();
+
+        new S3_CredentialsStep(env, agentOnboardingProviders).prepareModel(new HashMap<>(Map.of("onboarding.provider", "listed")), model);
+
+        assertThat(model).containsEntry("model", "model-a");
     }
 
     @Test
