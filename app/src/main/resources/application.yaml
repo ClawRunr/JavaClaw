@@ -2,7 +2,8 @@ spring:
   application:
     name: JavaClaw
   config:
-    import: optional:classpath:application.private.yaml
+    # The file ConfigurationManager writes, so the in-process restart after a change reads it.
+    import: optional:file:./app/src/main/resources/application.private.yaml
   datasource:
     url: jdbc:h2:file:./workspace/app
   ai:

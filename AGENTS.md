@@ -30,7 +30,8 @@ root
 ├── base/               ← Core: agent, tasks, tools, channels, config
 ├── app/                ← Spring Boot entry point, onboarding UI, web routes, chat channel
 ├── providers/
-│   ├── anthropic/      ← Anthropic (Claude) provider + Claude Code OAuth support
+│   ├── anthropic/      ← Anthropic (Claude) API-key provider
+│   ├── claude-code/    ← Claude Pro/Max subscription via the official Claude Code CLI
 │   ├── openai/         ← OpenAI (GPT) provider
 │   ├── ollama/         ← Ollama local provider (no API key required)
 │   └── google/         ← Google Gen AI (Gemini) provider
@@ -113,12 +114,13 @@ User/Agent → TaskManager.create()
 
 | Provider | Module | Default Model | API Key |
 |---|---|---|---|
-| `anthropic` | `providers/anthropic` | `claude-sonnet-4-6` | Required (or Claude Code OAuth) |
+| `anthropic` | `providers/anthropic` | `claude-sonnet-4-6` | Required |
+| `claude-code` | `providers/claude-code` | `claude-sonnet-5-5` (picked from a dropdown) | Not required (Claude Code CLI login) |
 | `openai` | `providers/openai` | `gpt-5.4` | Required |
 | `ollama` | `providers/ollama` | `qwen3.5:27b` | Not required (local) |
 | `google.genai` | `providers/google` | `gemini-3-flash-preview` | Required |
 
-The `AnthropicAgentOnboardingProvider` additionally supports a **system-wide token** via `AnthropicClaudeCodeOAuthTokenExtractor` — if a Claude Code OAuth token is found locally, it is offered as a zero-config option during onboarding.
+**Claude subscription (`claude-code`)** is a port of the Hermes "Claude Subscription DirectSDK" provider. JavaClaw never reads or sends the Claude Code credential: `ClaudeCodeChatModel` starts a fresh `claude -p` process per model call (stream-json in/out, native tools/skills/settings/memory/compaction off, `--max-turns 1`), replays the conversation as stream-json frames and returns the one assistant turn, so JavaClaw's own `ToolCallingAdvisor` keeps the agent loop. A request-scoped loopback `AdmissionRelay` (Claude Code's `ANTHROPIC_BASE_URL`) forwards only the first Messages request upstream, applies prompt-cache hygiene (`RelayPayloads`) and also serves an inert MCP endpoint that advertises JavaClaw's tools to the CLI while refusing to run them. Claude Code's own assistant messages (signed thinking included) ride along in assistant-message metadata so unchanged turns replay byte for byte. Requirements: `claude` installed (`JAVACLAW_CLAUDE_COMMAND` overrides the lookup) and logged in (`claude auth login`, or `JAVACLAW_CLAUDE_CONFIG_DIR` for a separate config dir). `ANTHROPIC_API_KEY`/`ANTHROPIC_BASE_URL`/Bedrock/Vertex overrides in JavaClaw's environment are refused rather than silently billing an API key, and a custom base URL is rejected. `AgentOnboardingProvider.readinessProblem()` lets onboarding check `claude auth status` before saving.
 
 ---
 
@@ -217,5 +219,5 @@ Templates live under `templates/onboarding/`, with plugin steps contributed from
 - `base/src/test/` — `TaskManagerTest`, `TaskHandlerTest`, `FileSystemTaskRepositoryTest`: task lifecycle + file persistence; `DefaultChatClientRegistryTest` and `SubagentStoreTest`: model registry + subagent storage; `ConfigurationManagerTest`: YAML path updates.
 - `plugins/discord/src/test/` — `DiscordChannelTest`, `DiscordOnboardingProviderTest`: authorized Discord flow + onboarding config handling.
 - `plugins/telegram/src/test/` — `TelegramChannelTest`: unauthorized user rejection, authorized message flow (mocked).
-- `providers/anthropic/src/test/` — `AnthropicClaudeCodeBackendTest`: Claude Code OAuth token extraction.
+- `providers/claude-code/src/test/` — `ClaudeCodeChatModelIntegrationTest`: the real `claude` CLI against a fake loopback upstream (no credentials or inference; skipped without `claude`); `RelayPayloadsTest`: cache-hygiene transforms ported from the Hermes admission tests; `ClaudeCodeRequestTest`, `SseCaptureTest`, `ClaudeCodeCliTest`, `ClaudeCodeModelsTest`.
 - `app/src/test/` — `OnboardingControllerTest`: session-based workflow; `AgentPageControllerTest`: agents page fragment + validation behavior; `JavaClawApplicationTests`: full Spring context load with Testcontainers.

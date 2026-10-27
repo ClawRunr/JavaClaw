@@ -35,10 +35,20 @@ public class ConfigurationManager {
         writeApplicationYaml(config, Set.of(key));
     }
 
+    /**
+     * Updates several keys in a single write. A {@code null} value removes that key, so a caller can drop a stale
+     * setting in the same write (and the same restart) as the new ones.
+     */
     public void updateProperties(Map<String, Object> keyValues) throws IOException {
         Map<String, Object> config = readApplicationYaml();
 
-        keyValues.forEach((k, v) -> setNestedValue(config, k.split("\\."), v));
+        keyValues.forEach((k, v) -> {
+            if (v == null) {
+                removeNestedValue(config, k.split("\\."));
+            } else {
+                setNestedValue(config, k.split("\\."), v);
+            }
+        });
 
         writeApplicationYaml(config, keyValues.keySet());
     }

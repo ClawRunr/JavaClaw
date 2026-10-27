@@ -2,13 +2,15 @@ package ai.javaclaw.onboarding.steps;
 
 import ai.javaclaw.llm.LlmProviderProperties;
 import ai.javaclaw.onboarding.AgentOnboardingProvider;
-import ai.javaclaw.onboarding.AgentOnboardingProvider.SystemWideToken;
+import ai.javaclaw.onboarding.AgentOnboardingProvider.ModelChoice;
 import ai.javaclaw.onboarding.AgentOnboardingProviders;
 import ai.javaclaw.onboarding.OnboardingProvider;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -45,19 +47,24 @@ public class S3_CredentialsStep implements OnboardingProvider {
         String modelKey = base + ".model";
 
         String currentModel = (String) session.get(S2_ProviderStep.SESSION_MODEL);
-        String existingBaseUrl = env.getProperty(baseUrlKey, "");
-        String existingApiKey = env.getProperty(apiKeyKey, "");
-        String existingModel = env.getProperty(modelKey, "");
+        // The saved values only prefill the form when they belong to the selected provider, never to the one being replaced.
+        boolean configuredForProvider = provider.getId().equals(env.getProperty(base + ".provider"));
+        String existingBaseUrl = configuredForProvider ? env.getProperty(baseUrlKey, "") : "";
+        String existingApiKey = configuredForProvider ? env.getProperty(apiKeyKey, "") : "";
+        String existingModel = configuredForProvider ? env.getProperty(modelKey, "") : "";
         model.put("selectedProvider", provider.getId());
         model.put("providerLabel", provider.getLabel());
         model.put("baseUrlPropertyKey", baseUrlKey);
         model.put("providerApiPropertyKey", apiKeyKey);
         model.put("chatModelPropertyKey", modelKey);
         model.put("requiresApiKey", provider.requiresApiKey());
+        model.put("supportsBaseUrl", provider.supportsBaseUrl());
         model.put("baseUrl", session.getOrDefault(S2_ProviderStep.SESSION_BASE_URL, existingBaseUrl));
         model.put("apiKey", session.getOrDefault(S2_ProviderStep.SESSION_API_KEY, existingApiKey));
-        model.put("model", currentModel != null && !currentModel.isBlank() ? currentModel : (!existingModel.isBlank() ? existingModel : provider.defaultModel()));
-        provider.systemWideToken().ifPresent(t -> model.put("systemWideTokenName", t.name()));
+        String selectedModel = currentModel != null && !currentModel.isBlank() ? currentModel : (!existingModel.isBlank() ? existingModel : provider.defaultModel());
+        model.put("model", selectedModel);
+        model.put("modelChoices", modelChoices(provider, selectedModel));
+        provider.readinessProblem().ifPresent(problem -> model.put("readinessProblem", problem));
     }
 
     @Override
@@ -68,7 +75,7 @@ public class S3_CredentialsStep implements OnboardingProvider {
             return "Provider selection is missing. Please go back and select a provider.";
         }
 
-        String baseUrl = formParams.getOrDefault("baseUrl", "").trim();
+        String baseUrl = provider.supportsBaseUrl() ? formParams.getOrDefault("baseUrl", "").trim() : "";
         String apiKey = formParams.getOrDefault("apiKey", "").trim();
         String model = formParams.getOrDefault("model", "").trim();
 
@@ -76,22 +83,28 @@ public class S3_CredentialsStep implements OnboardingProvider {
             return "Enter a model to continue.";
         }
 
-        if ("true".equals(formParams.get("useSystemToken"))) {
-            SystemWideToken sysToken = provider.systemWideToken().orElse(null);
-            if (sysToken == null) {
-                return "System token is no longer available. Please enter your API key manually.";
-            }
-            apiKey = sysToken.token();
-        }
-
         if (provider.requiresApiKey() && apiKey.isBlank()) {
             return "Enter an API key to continue.";
+        }
+
+        String readinessProblem = provider.readinessProblem().orElse(null);
+        if (readinessProblem != null) {
+            return readinessProblem;
         }
 
         session.put(S2_ProviderStep.SESSION_BASE_URL, baseUrl);
         session.put(S2_ProviderStep.SESSION_API_KEY, apiKey);
         session.put(S2_ProviderStep.SESSION_MODEL, model);
         return null;
+    }
+
+    /** The provider's model list; a configured model that is not on it stays selectable so it is never silently replaced. */
+    private static List<ModelChoice> modelChoices(AgentOnboardingProvider provider, String selectedModel) {
+        List<ModelChoice> choices = new ArrayList<>(provider.models());
+        if (!choices.isEmpty() && choices.stream().noneMatch(choice -> choice.id().equals(selectedModel))) {
+            choices.addFirst(new ModelChoice(selectedModel, selectedModel));
+        }
+        return choices;
     }
 
 }

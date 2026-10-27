@@ -80,12 +80,9 @@ public class S2_ProviderStep implements OnboardingProvider {
         String base = "agent.llm.providers." + LlmProviderProperties.DEFAULT_PROVIDER_NAME;
         Map<String, Object> props = new LinkedHashMap<>();
         props.put(base + ".provider", agentOnboardingProvider.getId());
-        if (StringUtils.hasText(baseUrl)) {
-            props.put(base + ".base-url", baseUrl);
-        }
-        if (StringUtils.hasText(apiKey)) {
-            props.put(base + ".api-key", apiKey);
-        }
+        // A null value removes the key, so a base URL or API key left by a previously configured provider is dropped.
+        props.put(base + ".base-url", StringUtils.hasText(baseUrl) ? baseUrl : null);
+        props.put(base + ".api-key", StringUtils.hasText(apiKey) ? apiKey : null);
         if (StringUtils.hasText(model)) {
             props.put(base + ".model", model);
         }
