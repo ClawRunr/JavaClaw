@@ -1,7 +1,7 @@
 package ai.javaclaw.chat;
 
 import ai.javaclaw.agent.Agent;
-import ai.javaclaw.agent.ResponseListener;
+import ai.javaclaw.agent.AgentEvent;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,10 +22,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ChatChannelTest {
@@ -134,21 +131,16 @@ class ChatChannelTest {
 
     @Test
     void chatDelegatesToAgentWithConversationId() {
-        when(agent.respondTo(eq("web"), eq("hello"), any(ResponseListener.class))).thenReturn("hi");
+        chatChannel.chat("web", "hello");
 
-        String response = chatChannel.chat("web", "hello");
-
-        assertThat(response).isEqualTo("hi");
-        verify(agent).respondTo(eq("web"), eq("hello"), any(ResponseListener.class));
+        verify(agent).respondTo(eq("web"), eq("hello"), anyConsumer());
     }
 
     @Test
     void chatUsesSuppliedConversationId() {
-        when(agent.respondTo(eq("telegram-42"), any(), any(ResponseListener.class))).thenReturn("reply");
-
         chatChannel.chat("telegram-42", "hello");
 
-        verify(agent).respondTo(eq("telegram-42"), eq("hello"), any(ResponseListener.class));
+        verify(agent).respondTo(eq("telegram-42"), eq("hello"), anyConsumer());
     }
 
     // -----------------------------------------------------------------------
@@ -222,7 +214,7 @@ class ChatChannelTest {
     void flushPendingMessagesDeliversMessagesBufferedWhileSendFailed() throws IOException {
         WebSocketSession failingSession = mock(WebSocketSession.class);
         when(failingSession.isOpen()).thenReturn(true);
-        org.mockito.Mockito.doThrow(new IOException("connection gone")).when(failingSession).sendMessage(any());
+        doThrow(new IOException("connection gone")).when(failingSession).sendMessage(any());
         chatChannel.setWsSession(failingSession);
         chatChannel.sendMessage("Background result");
 
@@ -249,10 +241,10 @@ class ChatChannelTest {
     @Test
     void chatStreamsTokensAsChunkFramesFollowedByDoneFrame() throws IOException {
         WebSocketSession session = openSession();
-        agentStreams(listener -> {
-            listener.onToken("Hello ");
-            listener.onToken("world");
-            listener.onComplete();
+        agentStreams(events -> {
+            events.accept(new AgentEvent.Token("Hello "));
+            events.accept(new AgentEvent.Token("world"));
+            events.accept(new AgentEvent.Done());
         });
 
         chatChannel.chat("web", "hello");
@@ -272,9 +264,33 @@ class ChatChannelTest {
     }
 
     @Test
+    void chatStreamsToolCallAndResultFrames() throws IOException {
+        WebSocketSession session = openSession();
+        agentStreams(events -> {
+            events.accept(new AgentEvent.ToolCall("call-1", "readFile", "{\"path\":\"pom.xml\"}"));
+            events.accept(new AgentEvent.ToolResult("call-1", "readFile", "file contents"));
+            events.accept(new AgentEvent.Done());
+        });
+
+        chatChannel.chat("web", "hello");
+
+        List<Map<String, Object>> frames = capturedFrames(session, 3);
+        assertThat(frames.get(0))
+                .containsEntry("type", "toolCall")
+                .containsEntry("conversationId", "web")
+                .containsEntry("data", Map.of("id", "call-1", "name", "readFile",
+                        "input", "{\"path\":\"pom.xml\"}"));
+        assertThat(frames.get(1))
+                .containsEntry("type", "toolResult")
+                .containsEntry("data", Map.of("id", "call-1", "name", "readFile",
+                        "output", "file contents"));
+        assertThat(frames.get(2)).containsEntry("type", "done");
+    }
+
+    @Test
     void chatStreamsErrorFrameWhenResponseFails() throws IOException {
         WebSocketSession session = openSession();
-        agentStreams(listener -> listener.onError("boom"));
+        agentStreams(events -> events.accept(new AgentEvent.Failed("boom")));
 
         chatChannel.chat("web", "hello");
 
@@ -287,13 +303,18 @@ class ChatChannelTest {
 
     @Test
     void chatDropsStreamFramesWhenNoSessionIsActive() {
-        agentStreams(listener -> {
-            listener.onToken("Hello");
-            listener.onComplete();
+        agentStreams(events -> {
+            events.accept(new AgentEvent.Token("Hello"));
+            events.accept(new AgentEvent.Done());
         });
 
         // should not throw
         chatChannel.chat("web", "hello");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.function.Consumer<AgentEvent> anyConsumer() {
+        return any(java.util.function.Consumer.class);
     }
 
     private WebSocketSession openSession() {
@@ -303,11 +324,11 @@ class ChatChannelTest {
         return session;
     }
 
-    private void agentStreams(java.util.function.Consumer<ResponseListener> progress) {
-        when(agent.respondTo(eq("web"), eq("hello"), any(ResponseListener.class))).thenAnswer(invocation -> {
+    private void agentStreams(java.util.function.Consumer<java.util.function.Consumer<AgentEvent>> progress) {
+        doAnswer(invocation -> {
             progress.accept(invocation.getArgument(2));
-            return "";
-        });
+            return null;
+        }).when(agent).respondTo(eq("web"), eq("hello"), anyConsumer());
     }
 
     @SuppressWarnings("unchecked")

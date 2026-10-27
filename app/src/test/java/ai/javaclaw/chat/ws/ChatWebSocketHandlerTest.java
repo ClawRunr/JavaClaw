@@ -12,11 +12,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class ChatWebSocketHandlerTest {
 
@@ -26,14 +22,14 @@ class ChatWebSocketHandlerTest {
         WebSocketSession session = mock(WebSocketSession.class);
         ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
 
-        when(chatChannel.chat("web", "hello")).thenThrow(new RuntimeException("""
+        doThrow(new RuntimeException("""
                 HTTP 401 - {
                     "error": {
                         "message": "Incorrect API key provided: Test.",
                         "code": "invalid_api_key"
                     }
                 }
-                """));
+                """)).when(chatChannel).chat("web", "hello");
 
         handler.handleTextMessage(session, new TextMessage(new ObjectMapper().writeValueAsString(Map.of(
                 "type", "userMessage",
@@ -66,7 +62,7 @@ class ChatWebSocketHandlerTest {
         WebSocketSession session = mock(WebSocketSession.class);
         ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
 
-        when(chatChannel.chat(anyString(), anyString())).thenThrow(new RuntimeException("boom"));
+        doThrow(new RuntimeException("boom")).when(chatChannel).chat(anyString(), anyString());
 
         handler.handleTextMessage(session, new TextMessage(new ObjectMapper().writeValueAsString(Map.of(
                 "type", "userMessage",
@@ -92,7 +88,6 @@ class ChatWebSocketHandlerTest {
         ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
 
         // the response is streamed to the client by ChatChannel while chat() runs
-        when(chatChannel.chat("web", "hello")).thenReturn("streamed response");
 
         handler.handleTextMessage(session, new TextMessage(new ObjectMapper().writeValueAsString(Map.of(
                 "type", "userMessage",

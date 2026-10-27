@@ -6,6 +6,8 @@ package ai.javaclaw.chat;
  */
 public enum StreamFrameType {
     CHUNK("chunk"),
+    TOOL_CALL("toolCall"),
+    TOOL_RESULT("toolResult"),
     DONE("done"),
     ERROR("error");
 

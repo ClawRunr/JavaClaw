@@ -8,13 +8,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -24,7 +23,9 @@ class DefaultAgentTest {
     @Mock ChatClient.ChatClientRequestSpec requestSpec;
     @Mock ChatClient.StreamResponseSpec streamSpec;
     @Mock ChatClient.CallResponseSpec callSpec;
-    @Mock ResponseListener listener;
+
+    /** Events are a stream, so record and assert the sequence rather than mocking callbacks. */
+    final List<AgentEvent> events = new ArrayList<>();
 
     DefaultAgent agent;
 
@@ -41,14 +42,12 @@ class DefaultAgentTest {
     void reportsEachTokenAndCompletionToListener() {
         when(streamSpec.content()).thenReturn(Flux.just("Hello ", "world"));
 
-        String response = agent.respondTo("web", "hello", listener);
+        agent.respondTo("web", "hello", events::add);
 
-        assertThat(response).isEqualTo("Hello world");
-        var inOrder = inOrder(listener);
-        inOrder.verify(listener).onToken("Hello ");
-        inOrder.verify(listener).onToken("world");
-        inOrder.verify(listener).onComplete();
-        verify(listener, never()).onError(any());
+        assertThat(events).containsExactly(
+                new AgentEvent.Token("Hello "),
+                new AgentEvent.Token("world"),
+                new AgentEvent.Done());
     }
 
     @Test
@@ -57,13 +56,11 @@ class DefaultAgentTest {
                 Flux.just("Hello "),
                 Flux.error(new RuntimeException("boom"))));
 
-        String response = agent.respondTo("web", "hello", listener);
+        agent.respondTo("web", "hello", events::add);
 
-        assertThat(response).isEqualTo("Hello ");
-        var inOrder = inOrder(listener);
-        inOrder.verify(listener).onToken("Hello ");
-        inOrder.verify(listener).onError("boom");
-        verify(listener, never()).onComplete();
+        assertThat(events).containsExactly(
+                new AgentEvent.Token("Hello "),
+                new AgentEvent.Failed("boom"));
     }
 
     @Test
@@ -72,12 +69,10 @@ class DefaultAgentTest {
         when(requestSpec.call()).thenReturn(callSpec);
         when(callSpec.content()).thenReturn("full response");
 
-        String response = agent.respondTo("web", "hello", listener);
+        agent.respondTo("web", "hello", events::add);
 
-        assertThat(response).isEqualTo("full response");
-        var inOrder = inOrder(listener);
-        inOrder.verify(listener).onToken("full response");
-        inOrder.verify(listener).onComplete();
-        verify(listener, never()).onError(any());
+        assertThat(events).containsExactly(
+                new AgentEvent.Token("full response"),
+                new AgentEvent.Done());
     }
 }
