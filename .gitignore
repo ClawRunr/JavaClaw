@@ -45,6 +45,14 @@ node_modules/
 vite.generated.ts
 pnpmfile.js
 .npmrc
+# Written by the Vaadin dev server (vaadin-dev) into ui, its npm folder; commit them only once they are customised.
+/ui/package.json
+/ui/package-lock.json
+/ui/vite.config.ts
+/ui/tsconfig.json
+/ui/types.d.ts
+/ui/.pnpmfile.cjs
+/ui/src/main/bundles/
 
 mcp/*
 workspace/
