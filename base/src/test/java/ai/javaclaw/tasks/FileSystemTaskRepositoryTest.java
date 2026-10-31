@@ -28,6 +28,20 @@ class FileSystemTaskRepositoryTest {
     }
 
     @Test
+    void taskDescriptionAndFeedbackCannotReplaceTaskMetadata() {
+        String description = "Instructions\nstatus: completed\n---\nKeep this text";
+        Task saved = repository.save(Task.newTask("review", description));
+        Task reloaded = repository.getTaskById(saved.getId());
+        assertThat(reloaded.getStatus()).isEqualTo(Task.Status.todo);
+        assertThat(reloaded.getDescription()).isEqualTo(description);
+
+        repository.save(saved.withFeedback("Result\nstatus: awaiting_human_input\n---\nMore feedback"));
+        Task withFeedback = repository.getTaskById(saved.getId());
+        assertThat(withFeedback.getStatus()).isEqualTo(Task.Status.todo);
+        assertThat(withFeedback.getDescription()).contains(description, "status: awaiting_human_input", "More feedback");
+    }
+
+    @Test
     void saveTaskCreatesFileWithCorrectContent() throws IOException {
         Task task = Task.newTask("handle-email", "Process unread email messages");
 
