@@ -8,10 +8,16 @@ import org.springframework.core.io.FileSystemResource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +31,47 @@ class FileSystemTaskRepositoryTest {
     @BeforeEach
     void setUp() throws IOException {
         repository = new FileSystemTaskRepository(new FileSystemResource(workspaceDir));
+    }
+
+    @Test
+    void concurrentCreatesNeverShareAFile() throws Exception {
+        Instant timestamp = Instant.parse("2026-03-21T10:00:00Z");
+        try (var executor = Executors.newFixedThreadPool(8)) {
+            var futures = new ArrayList<Future<Task>>();
+            for (int index = 0; index < 20; index++) {
+                String description = "Request " + index;
+                futures.add(executor.submit(() -> repository.save(Task.newTask("same-name", timestamp, description))));
+            }
+            var ids = new HashSet<String>();
+            for (var future : futures) {
+                Task saved = future.get(10, TimeUnit.SECONDS);
+                assertThat(ids.add(saved.getId())).isTrue();
+                assertThat(repository.getTaskById(saved.getId()).getDescription()).isEqualTo(saved.getDescription());
+            }
+        }
+    }
+
+    @Test
+    void sameNameAndTimestampTasksRemainIndependent() {
+        var timestamp = Instant.parse("2026-03-21T10:00:00Z");
+        Task first = repository.save(Task.newTask("check-mail", timestamp, "First request"));
+        Task second = repository.save(Task.newTask("check-mail", timestamp, "Second request"));
+
+        assertThat(second.getId()).isNotEqualTo(first.getId());
+        assertThat(repository.getTaskById(first.getId()).getDescription()).isEqualTo("First request");
+        assertThat(repository.getTaskById(second.getId()).getDescription()).isEqualTo("Second request");
+        repository.save(first.withStatus(Task.Status.completed));
+        assertThat(repository.getTaskById(second.getId()).getStatus()).isEqualTo(Task.Status.todo);
+    }
+
+    @Test
+    void sanitizedNameCollisionsRemainIndependent() {
+        var timestamp = Instant.parse("2026-03-21T10:00:00Z");
+        Task first = repository.save(Task.newTask("check mail", timestamp, "First"));
+        Task second = repository.save(Task.newTask("check?mail", timestamp, "Second"));
+
+        assertThat(second.getId()).isNotEqualTo(first.getId());
+        assertThat(repository.getTaskById(first.getId()).getName()).isEqualTo("check mail");
     }
 
     @Test
