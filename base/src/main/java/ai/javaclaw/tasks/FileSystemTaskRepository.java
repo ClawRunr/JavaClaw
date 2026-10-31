@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
@@ -33,7 +34,7 @@ public class FileSystemTaskRepository implements TaskRepository {
 
     @Override
     public Task save(Task task) {
-        Path path = ofNullable(task.getId()).map(Path::of).orElseGet(() -> buildTaskPath(task));
+        Path path = ofNullable(task.getId()).map(Path::of).orElseGet(() -> reserveTaskPath(task));
         writeTaskFile(path, task);
         return new Task(path.toAbsolutePath().toString(), task.getName(), task.getCreatedAt(), task.getStatus(), task.getDescription());
     }
@@ -115,6 +116,22 @@ public class FileSystemTaskRepository implements TaskRepository {
     }
 
     // --- private helpers ---
+
+    private Path reserveTaskPath(Task task) {
+        Path base = buildTaskPath(task);
+        String filename = base.getFileName().toString();
+        for (int suffix = 0; ; suffix++) {
+            Path candidate = suffix == 0 ? base : base.resolveSibling(
+                    filename.substring(0, filename.length() - 3) + "-" + suffix + ".md");
+            try {
+                return Files.createFile(candidate);
+            } catch (FileAlreadyExistsException ignored) {
+                // Reserve the next filename atomically, including for concurrent writers.
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to create task file: " + candidate, e);
+            }
+        }
+    }
 
     private Path buildTaskPath(Task task) {
         LocalDateTime dateTime = task.getCreatedAt().atZone(ZoneId.systemDefault()).toLocalDateTime();
