@@ -4,6 +4,7 @@ import ai.javaclaw.agent.Agent;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -15,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -149,11 +151,33 @@ class TeamsWebhookControllerTest {
         when(agent.respondTo("teams-conv-1", "hello")).thenReturn("hi!");
         TeamsActivityPayload activity = new TeamsActivityPayload("message", "activity-1", SERVICE_URL, "msteams", "hello",
                 new TeamsActivityPayload.From("29:some-teams-id", "Some User", "AAD-OBJECT-ID"),
-                new TeamsActivityPayload.Conversation("conv-1"));
+                new TeamsActivityPayload.Conversation("conv-1", "personal"));
 
         controller("aad-object-id").webhook("Bearer t", activity);
 
         verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).respondTo("teams-conv-1", "hello");
+    }
+
+    // -----------------------------------------------------------------------
+    // Conversation type
+    // -----------------------------------------------------------------------
+
+    @Test
+    void ignoresMessagesFromTheAllowedUserInAChannel() {
+        ResponseEntity<Void> response = controller(ALLOWED_USER)
+                .webhook("Bearer t", activity("message", ALLOWED_USER, "hello", "conv-1", "channel"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verifyNoInteractions(agent, channel, channelRegistry);
+    }
+
+    @Test
+    void ignoresMessagesFromTheAllowedUserInAGroupChat() {
+        ResponseEntity<Void> response = controller(ALLOWED_USER)
+                .webhook("Bearer t", activity("message", ALLOWED_USER, "hello", "conv-1", "groupChat"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verifyNoInteractions(agent, channel, channelRegistry);
     }
 
     // -----------------------------------------------------------------------
@@ -165,8 +189,8 @@ class TeamsWebhookControllerTest {
         when(agent.respondTo("teams-conv-1", "hello")).thenReturn("hi!");
         TeamsConversationReference reference = new TeamsConversationReference(SERVICE_URL, "conv-1");
 
-        ResponseEntity<Void> response =
-                controller(ALLOWED_USER).webhook("Bearer t", activity("message", ALLOWED_USER, "hello", "conv-1"));
+        ResponseEntity<Void> response = controller(ALLOWED_USER)
+                .webhook("Bearer t", activity("message", ALLOWED_USER, "hello", "conv-1", "personal"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         verify(channel).updateConversationReference(reference);
@@ -196,9 +220,33 @@ class TeamsWebhookControllerTest {
                 .sendMessage(new TeamsConversationReference(SERVICE_URL, "conv-2"), "answer-2");
     }
 
+    // -----------------------------------------------------------------------
+    // Agent failures
+    // -----------------------------------------------------------------------
+
+    @Test
+    void tellsTheUserWhenTheAgentFailsWithoutExposingTheError() {
+        when(agent.respondTo("teams-conv-1", "hello"))
+                .thenThrow(new IllegalStateException("provider said: invalid api key sk-123"));
+
+        controller(ALLOWED_USER).webhook("Bearer t", activity("message", ALLOWED_USER, "hello", "conv-1"));
+
+        ArgumentCaptor<String> message = ArgumentCaptor.forClass(String.class);
+        verify(channel, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS))
+                .sendMessage(eq(new TeamsConversationReference(SERVICE_URL, "conv-1")), message.capture());
+        assertThat(message.getValue())
+                .isEqualTo(TeamsWebhookController.ERROR_MESSAGE)
+                .doesNotContain("provider said: invalid api key sk-123");
+    }
+
     private TeamsActivityPayload activity(String type, String fromId, String text, String conversationId) {
+        return activity(type, fromId, text, conversationId, "personal");
+    }
+
+    private TeamsActivityPayload activity(String type, String fromId, String text, String conversationId,
+                                          String conversationType) {
         return new TeamsActivityPayload(type, "activity-1", SERVICE_URL, "msteams", text,
                 new TeamsActivityPayload.From(fromId, "Some User", null),
-                new TeamsActivityPayload.Conversation(conversationId));
+                new TeamsActivityPayload.Conversation(conversationId, conversationType));
     }
 }

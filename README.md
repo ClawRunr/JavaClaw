@@ -222,6 +222,10 @@ required, because the agent can run shell commands; without it every message is 
 webhook call must carry a valid Bot Framework JWT (signature, issuer, audience, expiry and
 `serviceUrl` are checked), so requests that do not come from Microsoft are rejected with `401`.
 
+The assistant only responds in personal (1:1) chats with the bot. Messages in team channels or group
+chats are ignored, even from the allowed user, because replies can contain shell output or file
+contents. Messages the agent sends on its own, e.g. from scheduled tasks, also only go to the 1:1 chat.
+
 
 ## Skills
 

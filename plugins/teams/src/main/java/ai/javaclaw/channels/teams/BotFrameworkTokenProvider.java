@@ -5,9 +5,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -42,12 +44,18 @@ class BotFrameworkTokenProvider {
     }
 
     private CachedToken fetchToken() {
-        String tokenUrl = "https://login.microsoftonline.com/" + properties.getTenantId()
+        String tenantId = properties.getTenantId();
+        if (tenantId == null || tenantId.isBlank()) {
+            throw new IllegalStateException("No agent.channels.teams.tenant-id configured, cannot obtain a Bot Framework access token");
+        }
+        // URLEncoder encodes a space as '+', which is only valid in a form body, not in a path segment
+        String tokenUrl = "https://login.microsoftonline.com/" + encode(tenantId.trim()).replace("+", "%20")
                 + "/oauth2/v2.0/token";
+        // Client secrets may contain '+', '&' or '=', so every value must be form-encoded
         String body = "grant_type=client_credentials"
-                + "&client_id=" + properties.getAppId()
-                + "&client_secret=" + properties.getAppSecret()
-                + "&scope=" + SCOPE;
+                + "&client_id=" + encode(properties.getAppId())
+                + "&client_secret=" + encode(properties.getAppSecret())
+                + "&scope=" + encode(SCOPE);
 
         HttpRequest request = HttpRequest.newBuilder(URI.create(tokenUrl))
                 .header("Content-Type", "application/x-www-form-urlencoded")
@@ -56,9 +64,9 @@ class BotFrameworkTokenProvider {
         try {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) {
+                // The response body is left out on purpose: it may echo request details
                 throw new IllegalStateException(
-                        "Bot Framework token request failed with status " + response.statusCode()
-                                + ": " + response.body());
+                        "Bot Framework token request failed with status " + response.statusCode());
             }
             TokenResponse parsed = JSON.readValue(response.body(), TokenResponse.class);
             return new CachedToken(parsed.accessToken(),
@@ -67,6 +75,10 @@ class BotFrameworkTokenProvider {
             LOGGER.error("Failed to fetch Bot Framework access token", e);
             throw new IllegalStateException("Could not obtain Bot Framework access token", e);
         }
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
     }
 
     private record CachedToken(String value, Instant expiresAt) {

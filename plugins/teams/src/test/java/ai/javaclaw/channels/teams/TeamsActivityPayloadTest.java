@@ -19,7 +19,7 @@ class TeamsActivityPayloadTest {
                   "channelId": "msteams",
                   "text": "hello there",
                   "from": { "id": "29:teams-user-id", "name": "Alice", "aadObjectId": "aad-object-id" },
-                  "conversation": { "id": "19:conv-id@thread.v2" },
+                  "conversation": { "id": "19:conv-id@thread.v2", "conversationType": "personal" },
                   "recipient": { "id": "28:bot-id" }
                 }
                 """;
@@ -32,5 +32,6 @@ class TeamsActivityPayloadTest {
         assertThat(payload.from().id()).isEqualTo("29:teams-user-id");
         assertThat(payload.from().aadObjectId()).isEqualTo("aad-object-id");
         assertThat(payload.conversation().id()).isEqualTo("19:conv-id@thread.v2");
+        assertThat(payload.conversation().conversationType()).isEqualTo("personal");
     }
 }

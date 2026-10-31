@@ -19,6 +19,8 @@ public record TeamsActivityPayload(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Conversation(@JsonProperty("id") String id) {
+    /** {@code conversationType} is {@code "personal"}, {@code "groupChat"} or {@code "channel"}. */
+    public record Conversation(@JsonProperty("id") String id,
+                               @JsonProperty("conversationType") String conversationType) {
     }
 }

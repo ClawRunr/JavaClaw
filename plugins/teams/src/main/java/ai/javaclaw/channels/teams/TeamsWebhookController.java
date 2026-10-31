@@ -19,6 +19,8 @@ import java.util.concurrent.Executors;
 public class TeamsWebhookController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TeamsWebhookController.class);
+    private static final String PERSONAL_CONVERSATION = "personal";
+    static final String ERROR_MESSAGE = "Sorry, something went wrong while handling your message.";
 
     private final TeamsProperties properties;
     private final ChannelRegistry channelRegistry;
@@ -56,6 +58,13 @@ public class TeamsWebhookController {
                     activity.from() == null ? null : activity.from().id());
             return ResponseEntity.ok().build();
         }
+        // Replies can contain shell output or file contents, so they must never land in a channel or group chat
+        String conversationType = activity.conversation() == null ? null : activity.conversation().conversationType();
+        if (!PERSONAL_CONVERSATION.equals(conversationType)) {
+            LOGGER.warn("Ignoring Teams message in a '{}' conversation, only personal chats are supported",
+                    conversationType);
+            return ResponseEntity.ok().build();
+        }
         String text = activity.text();
         if (text == null || text.isBlank()) {
             return ResponseEntity.ok().build();
@@ -85,6 +94,16 @@ public class TeamsWebhookController {
             channel.sendMessage(reference, response);
         } catch (RuntimeException e) {
             LOGGER.error("Failed to handle Teams message for conversation '{}'", conversationId, e);
+            sendErrorMessage(reference);
+        }
+    }
+
+    /** Lets the user know the message was not handled, without exposing any error details. */
+    private void sendErrorMessage(TeamsConversationReference reference) {
+        try {
+            channel.sendMessage(reference, ERROR_MESSAGE);
+        } catch (RuntimeException e) {
+            LOGGER.error("Failed to send error message to Teams conversation '{}'", reference.conversationId(), e);
         }
     }
 
