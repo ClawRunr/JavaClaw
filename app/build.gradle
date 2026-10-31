@@ -30,6 +30,10 @@ dependencies {
     implementation(libs.pebble.spring.starter)
 
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
+    // Runs from the IDE can pick up ui's development-mode build info, which needs Vaadin's dev server.
+    // developmentOnly keeps it out of the boot jar and the Jib image, which stay in production mode.
+    developmentOnly platform(libs.bom.vaadin)
+    developmentOnly 'com.vaadin:vaadin-dev'
     runtimeOnly 'com.h2database:h2'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
@@ -48,6 +52,8 @@ bootRun {
 }
 
 jib {
+    // Like bootJar, leave developmentOnly dependencies (devtools, vaadin-dev) out of the image
+    configurationName = 'productionRuntimeClasspath'
     to {
         image = 'jobrunr.io/javaclaw'
         tags = ['latest']
