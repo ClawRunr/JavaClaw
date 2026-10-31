@@ -17,6 +17,7 @@ dependencies {
     implementation project(':plugins:playwright')
     implementation project(':plugins:brave')
     implementation project(':plugins:whatsapp')
+    implementation project(':plugins:teams')
 
     implementation project(':ui')
 
