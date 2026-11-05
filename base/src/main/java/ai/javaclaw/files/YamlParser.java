@@ -11,7 +11,8 @@ import java.util.Map;
  * <ol>
  *   <li>A file optionally starts with a frontmatter block delimited by {@code ---}.</li>
  *   <li>Inside the frontmatter, each line is either {@code key: value} or a continuation
- *       of the previous value (any line that does not match {@code <word>: }).</li>
+ *       of the previous value (any line that does not match {@code <word>: }).
+ *       Serialized multiline values use {@code key: |} with two-space-indented lines.</li>
  *   <li>The frontmatter ends at the next lone {@code ---} line, or at EOF if no closing
  *       delimiter is present.</li>
  *   <li>Everything after the closing {@code ---} is the body, returned verbatim.</li>
@@ -63,8 +64,18 @@ public class YamlParser {
 
         if (hasFrontmatter) {
             sb.append(FRONTMATTER_MARKER).append(System.lineSeparator());
-            doc.frontmatter().forEach((k, v) ->
-                    sb.append(k).append(": ").append(v).append(System.lineSeparator()));
+            doc.frontmatter().forEach((k, v) -> {
+                String value = v == null ? "null" : v.replace("\r\n", "\n");
+                sb.append(k).append(": ");
+                if (value.contains("\n")) {
+                    sb.append("|").append(System.lineSeparator());
+                    for (String line : value.split("\n", -1)) {
+                        sb.append("  ").append(line).append(System.lineSeparator());
+                    }
+                } else {
+                    sb.append(value).append(System.lineSeparator());
+                }
+            });
         }
 
         if (hasBody) {
@@ -104,8 +115,11 @@ public class YamlParser {
         String[] lines = block.split("\n", -1);
         String currentKey = null;
         StringBuilder currentValue = new StringBuilder();
+        boolean literalValue = false;
+        boolean hasLiteralLine = false;
 
-        for (String line : lines) {
+        for (int index = 0; index < lines.length; index++) {
+            String line = lines[index];
             // Raw key: value line (unindented, contains ": ")
             int colonIdx = line.indexOf(": ");
             if (colonIdx > 0 && !line.startsWith(" ") && !line.startsWith("\t")) {
@@ -113,13 +127,17 @@ public class YamlParser {
                     result.put(currentKey, currentValue.toString().stripTrailing());
                 }
                 currentKey = line.substring(0, colonIdx);
-                currentValue = new StringBuilder(line.substring(colonIdx + 2));
+                String value = line.substring(colonIdx + 2);
+                literalValue = value.equals("|") && index + 1 < lines.length && lines[index + 1].startsWith("  ");
+                hasLiteralLine = false;
+                currentValue = new StringBuilder(literalValue ? "" : value);
             } else if (currentKey != null) {
                 // Continuation line of a multi-line value
-                if (currentValue.length() > 0) {
-                    currentValue.append(System.lineSeparator());
+                if (literalValue ? hasLiteralLine : currentValue.length() > 0) {
+                    currentValue.append('\n');
                 }
-                currentValue.append(line);
+                currentValue.append(literalValue && line.startsWith("  ") ? line.substring(2) : line);
+                hasLiteralLine = true;
             }
         }
 

@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class FileSystemTaskRepositoryTest {
 
@@ -31,6 +32,20 @@ class FileSystemTaskRepositoryTest {
     @BeforeEach
     void setUp() throws IOException {
         repository = new FileSystemTaskRepository(new FileSystemResource(workspaceDir));
+    }
+
+    @Test
+    void taskDescriptionAndFeedbackCannotReplaceTaskMetadata() {
+        String description = "Instructions\nstatus: completed\n---\nKeep this text";
+        Task saved = repository.save(Task.newTask("review", description));
+        Task reloaded = repository.getTaskById(saved.getId());
+        assertThat(reloaded.getStatus()).isEqualTo(Task.Status.todo);
+        assertThat(reloaded.getDescription()).isEqualTo(description);
+
+        repository.save(saved.withFeedback("Result\nstatus: awaiting_human_input\n---\nMore feedback"));
+        Task withFeedback = repository.getTaskById(saved.getId());
+        assertThat(withFeedback.getStatus()).isEqualTo(Task.Status.todo);
+        assertThat(withFeedback.getDescription()).contains(description, "status: awaiting_human_input", "More feedback");
     }
 
     @Test
@@ -72,6 +87,16 @@ class FileSystemTaskRepositoryTest {
 
         assertThat(second.getId()).isNotEqualTo(first.getId());
         assertThat(repository.getTaskById(first.getId()).getName()).isEqualTo("check mail");
+    }
+
+    @Test
+    void failedNewTaskLeavesNoFileBehind() {
+        var timestamp = Instant.parse("2026-03-21T10:00:00Z");
+        var invalidTask = new Task(null, "invalid", timestamp, null, "Cannot be serialized");
+
+        assertThatThrownBy(() -> repository.save(invalidTask)).isInstanceOf(NullPointerException.class);
+
+        assertThat(repository.getTasks(LocalDate.ofInstant(timestamp, ZoneId.systemDefault()), null)).isEmpty();
     }
 
     @Test
