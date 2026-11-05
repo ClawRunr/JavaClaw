@@ -21,8 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
-import static java.util.Optional.ofNullable;
-
 @Component
 public class FileSystemTaskRepository implements TaskRepository {
 
@@ -34,8 +32,14 @@ public class FileSystemTaskRepository implements TaskRepository {
 
     @Override
     public Task save(Task task) {
-        Path path = ofNullable(task.getId()).map(Path::of).orElseGet(() -> reserveTaskPath(task));
-        writeTaskFile(path, task);
+        String content = serializeTask(task);
+        Path path;
+        if (task.getId() == null) {
+            path = createTaskFile(task, content);
+        } else {
+            path = Path.of(task.getId());
+            writeFile(path, content);
+        }
         return new Task(path.toAbsolutePath().toString(), task.getName(), task.getCreatedAt(), task.getStatus(), task.getDescription());
     }
 
@@ -117,16 +121,16 @@ public class FileSystemTaskRepository implements TaskRepository {
 
     // --- private helpers ---
 
-    private Path reserveTaskPath(Task task) {
+    private Path createTaskFile(Task task, String content) {
         Path base = buildTaskPath(task);
         String filename = base.getFileName().toString();
         for (int suffix = 0; ; suffix++) {
             Path candidate = suffix == 0 ? base : base.resolveSibling(
                     filename.substring(0, filename.length() - 3) + "-" + suffix + ".md");
             try {
-                return Files.createFile(candidate);
+                return Files.writeString(candidate, content, StandardOpenOption.CREATE_NEW);
             } catch (FileAlreadyExistsException ignored) {
-                // Reserve the next filename atomically, including for concurrent writers.
+                // Claim the next filename atomically, including for concurrent writers.
             } catch (IOException e) {
                 throw new RuntimeException("Failed to create task file: " + candidate, e);
             }
@@ -142,13 +146,13 @@ public class FileSystemTaskRepository implements TaskRepository {
         return dir.resolve(String.format("%s-%s.md", timeStr, safeName));
     }
 
-    private void writeTaskFile(Path path, Task task) {
+    private String serializeTask(Task task) {
         Map<String, String> fm = new LinkedHashMap<>();
         fm.put("task", task.getName());
         fm.put("createdAt", task.getCreatedAt().toString());
         fm.put("status", task.getStatus().toString());
         fm.put("description", task.getDescription());
-        writeFile(path, YamlParser.serialize(new YamlDocument(fm, null)));
+        return YamlParser.serialize(new YamlDocument(fm, null));
     }
 
     private void writeRecurringTaskFile(Path path, RecurringTask task) {
