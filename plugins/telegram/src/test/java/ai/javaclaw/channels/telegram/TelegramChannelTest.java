@@ -1,6 +1,8 @@
 package ai.javaclaw.channels.telegram;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.approval.PendingApprovals;
+import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,6 +16,9 @@ import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
+import java.time.Clock;
+
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -82,7 +87,7 @@ class TelegramChannelTest {
 
         channel.consume(updateFromUnknownUser("other_user"));
 
-        verify(agent, never()).respondTo(anyString(), anyString());
+        verify(agent, never()).answer(anyString(), anyString(), any(), any());
         verifyNoInteractions(telegramClient);
     }
 
@@ -93,31 +98,31 @@ class TelegramChannelTest {
     @Test
     void usernameMatchingIsCaseInsensitive() {
         TelegramChannel channel = channel("Allowed_User");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.answer(anyString(), anyString(), any(), any())).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
 
-        verify(agent).respondTo(anyString(), anyString());
+        verify(agent).answer(anyString(), anyString(), any(), any());
     }
 
     @Test
     void stripsLeadingAtFromConfiguredUsername() {
         TelegramChannel channel = channel("@Allowed_User");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.answer(anyString(), anyString(), any(), any())).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
 
-        verify(agent).respondTo(anyString(), anyString());
+        verify(agent).answer(anyString(), anyString(), any(), any());
     }
 
     @Test
     void stripsLeadingAtFromIncomingUsername() {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.answer(anyString(), anyString(), any(), any())).thenReturn("hi");
 
         channel.consume(updateFrom("@allowed_user", "hello", 42L, null));
 
-        verify(agent).respondTo(anyString(), anyString());
+        verify(agent).answer(anyString(), anyString(), any(), any());
     }
 
     // -----------------------------------------------------------------------
@@ -127,27 +132,27 @@ class TelegramChannelTest {
     @Test
     void usesChannelChatIdAsConversationId() {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.answer(anyString(), anyString(), any(), any())).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
 
-        verify(agent).respondTo(eq("telegram-42"), eq("hello"));
+        verify(agent).answer(eq("telegram-42"), eq("hello"), any(), any());
     }
 
     @Test
     void includesMessageThreadIdInConversationId() {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.answer(anyString(), anyString(), any(), any())).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, 567));
 
-        verify(agent).respondTo(eq("telegram-42-567"), eq("hello"));
+        verify(agent).answer(eq("telegram-42-567"), eq("hello"), any(), any());
     }
 
     @Test
     void sendsAgentResponseToCorrectChatId() throws TelegramApiException {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.answer(anyString(), anyString(), any(), any())).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
 
@@ -158,7 +163,7 @@ class TelegramChannelTest {
     @Test
     void passesMessageThreadIdToSendMessage() throws TelegramApiException {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.answer(anyString(), anyString(), any(), any())).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, 567));
 
@@ -169,7 +174,7 @@ class TelegramChannelTest {
     @Test
     void doesNotSetMessageThreadIdWhenAbsent() throws TelegramApiException {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.answer(anyString(), anyString(), any(), any())).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
 
@@ -198,7 +203,7 @@ class TelegramChannelTest {
     @Test
     void sendMessageConvertsMarkdownToTelegramHtml() throws TelegramApiException {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString()))
+        when(agent.answer(anyString(), anyString(), any(), any()))
                 .thenReturn("Here is **bold** text and a [link](https://example.com)");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, 567));
@@ -214,7 +219,7 @@ class TelegramChannelTest {
     @Test
     void sendMessageFallbacksToSendingRawTextWhenFailingToSendHtml() throws TelegramApiException {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString()))
+        when(agent.answer(anyString(), anyString(), any(), any()))
                 .thenReturn("Here is **bold** text and an image: ![An example image](/assets/images/clawrunr.png)");
 
         when(telegramClient.execute(argThat((SendMessage msg) ->
@@ -234,7 +239,9 @@ class TelegramChannelTest {
     // -----------------------------------------------------------------------
 
     private TelegramChannel channel(String allowedUsername) {
-        return new TelegramChannel("token", allowedUsername, telegramClient, agent, new ChannelRegistry());
+        // Turns run on the calling thread here, so each test sees the whole exchange when consume returns
+        ChannelApprovals approvals = new ChannelApprovals(agent, new PendingApprovals(), Clock.systemUTC(), Runnable::run);
+        return new TelegramChannel("token", allowedUsername, telegramClient, approvals, new ChannelRegistry());
     }
 
     private Update updateFromUnknownUser(String username) {

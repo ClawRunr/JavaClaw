@@ -1,7 +1,7 @@
 package ai.javaclaw.channels.telegram;
 
-import ai.javaclaw.agent.Agent;
 import ai.javaclaw.channels.Channel;
+import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
@@ -22,12 +22,15 @@ import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 import static java.util.Optional.ofNullable;
 
 public class TelegramChannel implements Channel, SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TelegramChannel.class);
+
+    static final String ERROR_MESSAGE = "Sorry, something went wrong while handling your message.";
 
     private static final Parser MARKDOWN_PARSER = Parser.builder().build();
     private static final HtmlRenderer HTML_RENDERER = HtmlRenderer.builder()
@@ -38,19 +41,20 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
     private final String botToken;
     private final String allowedUsername;
     private final TelegramClient telegramClient;
-    private final Agent agent;
+    private final ChannelApprovals approvals;
     private final ChannelRegistry channelRegistry;
     private Long chatId;
 
-    public TelegramChannel(String botToken, String allowedUsername, Agent agent, ChannelRegistry channelRegistry) {
-        this(botToken, allowedUsername, new OkHttpTelegramClient(botToken), agent, channelRegistry);
+    public TelegramChannel(String botToken, String allowedUsername, ChannelApprovals approvals, ChannelRegistry channelRegistry) {
+        this(botToken, allowedUsername, new OkHttpTelegramClient(botToken), approvals, channelRegistry);
     }
 
-    TelegramChannel(String botToken, String allowedUsername, TelegramClient telegramClient, Agent agent, ChannelRegistry channelRegistry) {
+    TelegramChannel(String botToken, String allowedUsername, TelegramClient telegramClient, ChannelApprovals approvals,
+                    ChannelRegistry channelRegistry) {
         this.botToken = botToken;
         this.allowedUsername = normalizeUsername(allowedUsername);
         this.telegramClient = telegramClient;
-        this.agent = agent;
+        this.approvals = approvals;
         this.channelRegistry = channelRegistry;
         channelRegistry.registerChannel(this);
         LOGGER.info("Started Telegram integration");
@@ -79,11 +83,22 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
         }
 
         String messageText = requestMessage.getText();
-        this.chatId = requestMessage.getChatId();
+        long messageChatId = requestMessage.getChatId();
+        this.chatId = messageChatId;
         Integer messageThreadId = requestMessage.getMessageThreadId();
-        channelRegistry.publishMessageReceivedEvent(new TelegramChannelMessageReceivedEvent(getName(), messageText, chatId, messageThreadId));
-        String response = agent.respondTo(getConversationId(chatId, messageThreadId), messageText);
-        sendMessage(chatId, messageThreadId, response);
+        String conversationId = getConversationId(messageChatId, messageThreadId);
+        Consumer<String> reply = text -> sendMessage(messageChatId, messageThreadId, text);
+
+        // /approve and /deny are answered here, on the update thread, and never reach the model
+        if (approvals.handleCommand(conversationId, messageText, reply)) {
+            return;
+        }
+        channelRegistry.publishMessageReceivedEvent(new TelegramChannelMessageReceivedEvent(getName(), messageText, messageChatId, messageThreadId));
+        // The turn runs in the background, so this thread stays free to receive an /approve it may wait for
+        approvals.respond(conversationId, messageText, reply, e -> {
+            LOGGER.error("Failed to handle Telegram message for conversation '{}'", conversationId, e);
+            reply.accept(ERROR_MESSAGE);
+        });
     }
 
     @Override
