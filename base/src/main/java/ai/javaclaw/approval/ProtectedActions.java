@@ -21,7 +21,9 @@ import java.util.regex.Pattern;
  *   <li>adding or changing an MCP server ({@code McpTool});</li>
  *   <li>any call that is not read-only and writes to, or mentions, the configuration that holds
  *       {@code agent.approval.*} — a write to the runtime config file or any
- *       {@code application*.yaml|yml|properties}, or a shell command or subagent prompt naming one.</li>
+ *       {@code application*.yaml|yml|properties}, or a shell command or subagent prompt naming one;</li>
+ *   <li>any call that is not read-only and writes into a protected directory, such as the
+ *       conversation history in {@code workspace/conversations/} the agent's memory is replayed from.</li>
  * </ul>
  * The text check is a tripwire for honest mistakes and casual injection, not a sandbox: a
  * determined shell command can build the file name at run time. That is why {@code Bash} and
@@ -40,10 +42,23 @@ public class ProtectedActions {
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private final Path configFile;
+    private final Map<Path, String> protectedDirectories;
 
     /** @param configFile the runtime configuration file {@code ConfigurationManager} writes */
     public ProtectedActions(Path configFile) {
+        this(configFile, Map.of());
+    }
+
+    /**
+     * @param configFile           the runtime configuration file {@code ConfigurationManager} writes
+     * @param protectedDirectories directories no call may write into unasked, each with the name the
+     *                             reason shows (for example {@code workspace/conversations})
+     */
+    public ProtectedActions(Path configFile, Map<Path, String> protectedDirectories) {
         this.configFile = normalize(configFile);
+        Map<Path, String> directories = new java.util.LinkedHashMap<>();
+        protectedDirectories.forEach((dir, name) -> directories.put(resolved(dir), name));
+        this.protectedDirectories = Map.copyOf(directories);
     }
 
     /**
@@ -60,6 +75,14 @@ public class ProtectedActions {
         for (String key : PATH_ARGUMENTS) {
             if (args.get(key) instanceof String path && isConfigFile(path)) {
                 return Optional.of("writes the approval configuration (" + path + ")");
+            }
+        }
+        for (String key : PATH_ARGUMENTS) {
+            if (args.get(key) instanceof String path) {
+                Optional<String> directory = protectedDirectoryOf(path);
+                if (directory.isPresent()) {
+                    return Optional.of("writes into " + directory.get() + "/");
+                }
             }
         }
         List<String> texts = new ArrayList<>();
@@ -88,6 +111,39 @@ public class ProtectedActions {
         }
         Path name = target.getFileName();
         return name != null && CONFIG_MENTION.matcher(name.toString()).matches();
+    }
+
+    private Optional<String> protectedDirectoryOf(String path) {
+        Path target;
+        try {
+            target = resolved(Path.of(path));
+        } catch (InvalidPathException e) {
+            return Optional.empty();
+        }
+        return protectedDirectories.entrySet().stream()
+                .filter(directory -> target.startsWith(directory.getKey()))
+                .map(Map.Entry::getValue)
+                .findFirst();
+    }
+
+    /**
+     * The absolute, normalized path with symlinks resolved as far as it exists, so neither
+     * {@code ..} nor a link (or {@code /tmp} vs {@code /private/tmp}) can step around a check.
+     */
+    static Path resolved(Path path) {
+        Path absolute = normalize(path);
+        Path existing = absolute;
+        while (existing != null && !Files.exists(existing)) {
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            return absolute;
+        }
+        try {
+            return existing.toRealPath().resolve(existing.relativize(absolute)).normalize();
+        } catch (IOException | SecurityException e) {
+            return absolute;
+        }
     }
 
     private static boolean sameFile(Path a, Path b) {

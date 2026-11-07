@@ -16,6 +16,9 @@ public final class ApprovalGateFixtures {
     /** Where tests pretend the runtime configuration lives. */
     public static final Path CONFIG_FILE = Path.of("app", "src", "main", "resources", "application.private.yaml");
 
+    /** Where tests pretend the conversation history lives; writes there always ask. */
+    public static final Path CONVERSATIONS_DIR = Path.of("workspace", "conversations");
+
     /** Test tools, one per risk level, plus one nobody classified. */
     public static final ToolRiskContributor TEST_TOOL_RISKS = () -> Map.of(
             "readNotes", ToolRisk.READ_ONLY,
@@ -33,7 +36,8 @@ public final class ApprovalGateFixtures {
     public static ApprovalGate gate(ApprovalProperties properties, PendingApprovals pendingApprovals) {
         return new ApprovalGate(properties,
                 new ToolRiskRegistry(List.of(new DefaultToolRisks(), TEST_TOOL_RISKS)),
-                new ProtectedActions(CONFIG_FILE), pendingApprovals, Clock.systemUTC());
+                new ProtectedActions(CONFIG_FILE, Map.of(CONVERSATIONS_DIR, "workspace/conversations")),
+                pendingApprovals, Clock.systemUTC());
     }
 
     public static ApprovalProperties rules(List<String> allow, List<String> ask, List<String> deny) {
