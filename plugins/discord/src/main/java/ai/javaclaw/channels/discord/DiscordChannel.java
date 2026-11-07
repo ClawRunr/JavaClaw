@@ -1,7 +1,7 @@
 package ai.javaclaw.channels.discord;
 
-import ai.javaclaw.agent.Agent;
 import ai.javaclaw.channels.Channel;
+import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
 import net.dv8tion.jda.api.JDA;
@@ -23,13 +23,15 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
     private static final Logger log = LoggerFactory.getLogger(DiscordChannel.class);
 
     private final String allowedUserId;
-    private final Agent agent;
+    static final String ERROR_MESSAGE = "Sorry, something went wrong while handling your message.";
+
+    private final ChannelApprovals approvals;
     private final ChannelRegistry channelRegistry;
     private volatile MessageChannel lastChannel;
 
-    public DiscordChannel(String allowedUserId, Agent agent, ChannelRegistry channelRegistry) {
+    public DiscordChannel(String allowedUserId, ChannelApprovals approvals, ChannelRegistry channelRegistry) {
         this.allowedUserId = normalizeUserId(allowedUserId);
-        this.agent = agent;
+        this.approvals = approvals;
         this.channelRegistry = channelRegistry;
         channelRegistry.registerChannel(this);
         log.info("Started Discord integration");
@@ -55,10 +57,18 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
             return;
         }
 
+        String conversationId = getConversationId(channel.getId());
+        // /approve and /deny are answered here, on JDA's event thread, and never reach the model
+        if (approvals.handleCommand(conversationId, content, text -> reply(channel, text))) {
+            return;
+        }
         lastChannel = channel;
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), content));
-        String response = agent.respondTo(getConversationId(channel.getId()), content);
-        reply(channel, response);
+        // The turn runs in the background, so JDA can still deliver an /approve it may wait for
+        approvals.respond(conversationId, content, text -> reply(channel, text), e -> {
+            log.error("Failed to handle Discord message for conversation '{}'", conversationId, e);
+            reply(channel, ERROR_MESSAGE);
+        });
     }
 
     @Override

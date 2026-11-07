@@ -1,6 +1,6 @@
 package ai.javaclaw.channels.discord;
 
-import ai.javaclaw.agent.Agent;
+import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
@@ -22,9 +22,9 @@ public class DiscordChannelAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "agent.channels.discord", name = {"token", "allowed-user"})
     public DiscordChannel discordChannel(@Value("${agent.channels.discord.allowed-user}") String allowedUser,
-                                         Agent agent,
+                                         ChannelApprovals approvals,
                                          ChannelRegistry channelRegistry) {
-        return new DiscordChannel(allowedUser, agent, channelRegistry);
+        return new DiscordChannel(allowedUser, approvals, channelRegistry);
     }
 
     @Bean(destroyMethod = "shutdown")
