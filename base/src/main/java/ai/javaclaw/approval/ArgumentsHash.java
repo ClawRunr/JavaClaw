@@ -1,13 +1,10 @@
 package ai.javaclaw.approval;
 
+import ai.javaclaw.utils.Hashes;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -25,15 +22,8 @@ public final class ArgumentsHash {
     }
 
     public static String of(String toolName, String arguments) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update(toolName.getBytes(StandardCharsets.UTF_8));
-            digest.update((byte) 0);
-            digest.update(canonicalJson(arguments).getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 not available", e);
-        }
+        // The NUL keeps "ab" + "c" and "a" + "bc" apart
+        return Hashes.sha256Hex(toolName + "\0" + canonicalJson(arguments));
     }
 
     static String canonicalJson(String arguments) {

@@ -17,16 +17,16 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
+
+import static ai.javaclaw.utils.Hashes.sha256;
+import static ai.javaclaw.utils.Hashes.sha256Hex;
 
 /**
  * One Spring AI {@link Prompt} translated for Claude Code: the system prompt, the conversation as
@@ -283,17 +283,5 @@ final class ClaudeCodeRequest {
             schema.putObject("properties");
         }
         return schema;
-    }
-
-    private static String sha256Hex(String value) {
-        return HexFormat.of().formatHex(sha256(value));
-    }
-
-    private static byte[] sha256(String value) {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
     }
 }

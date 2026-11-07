@@ -10,8 +10,6 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.util.StringUtils;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -24,6 +22,8 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+
+import static ai.javaclaw.utils.JsonObjects.parseObject;
 
 /**
  * Decides, call by call, whether a tool the model asked for may run: by rule, by protected action,
@@ -49,7 +49,6 @@ public class ApprovalGate {
     private static final Set<String> FILE_TOOLS = Set.of("Read", "Write", "Edit", "Glob", "Grep", "ListDirectory", "Bash");
     private static final String SUBAGENT_TOOL = "Task";
     private static final List<ApprovalDecision> DECISIONS = List.of(ApprovalDecision.ALLOW_ONCE, ApprovalDecision.DENY);
-    private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private final ApprovalProperties properties;
     private final ApprovalPolicy policy;
@@ -242,7 +241,7 @@ public class ApprovalGate {
             details.put("workingDirectory", System.getProperty("user.dir"));
         }
         if (SUBAGENT_TOOL.equals(toolName)) {
-            Map<?, ?> args = parseObject(arguments);
+            Map<String, Object> args = parseObject(arguments);
             putIfText(details, "subagentType", args.get("subagent_type"));
             putIfText(details, "prompt", args.get("prompt"));
             if (Boolean.TRUE.equals(args.get("run_in_background"))) {
@@ -250,14 +249,6 @@ public class ApprovalGate {
             }
         }
         return details;
-    }
-
-    private static Map<?, ?> parseObject(String arguments) {
-        try {
-            return JSON.readValue(arguments, Object.class) instanceof Map<?, ?> map ? map : Map.of();
-        } catch (JacksonException e) {
-            return Map.of();
-        }
     }
 
     private static void putIfText(Map<String, String> into, String key, Object value) {

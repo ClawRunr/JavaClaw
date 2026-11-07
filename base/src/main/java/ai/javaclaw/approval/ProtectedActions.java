@@ -1,8 +1,5 @@
 package ai.javaclaw.approval;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.json.JsonMapper;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -13,6 +10,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+
+import static ai.javaclaw.utils.FilePaths.realPath;
+import static ai.javaclaw.utils.JsonObjects.parseObject;
 
 /**
  * Calls that always ask, whatever the rules say, because they could switch the approval gate
@@ -39,8 +39,6 @@ public class ProtectedActions {
     private static final Pattern CONFIG_MENTION = Pattern.compile(
             "application[\\w.-]*\\.(?:ya?ml|properties)|agent\\.approval", Pattern.CASE_INSENSITIVE);
 
-    private static final JsonMapper JSON = JsonMapper.builder().build();
-
     private final Path configFile;
     private final Map<Path, String> protectedDirectories;
 
@@ -57,7 +55,7 @@ public class ProtectedActions {
     public ProtectedActions(Path configFile, Map<Path, String> protectedDirectories) {
         this.configFile = normalize(configFile);
         Map<Path, String> directories = new java.util.LinkedHashMap<>();
-        protectedDirectories.forEach((dir, name) -> directories.put(resolved(dir), name));
+        protectedDirectories.forEach((dir, name) -> directories.put(realPath(dir), name));
         this.protectedDirectories = Map.copyOf(directories);
     }
 
@@ -71,7 +69,7 @@ public class ProtectedActions {
         if (risk.equals(Optional.of(ToolRisk.READ_ONLY))) {
             return Optional.empty();
         }
-        Map<String, Object> args = parse(arguments);
+        Map<String, Object> args = parseObject(arguments);
         for (String key : PATH_ARGUMENTS) {
             if (args.get(key) instanceof String path && isConfigFile(path)) {
                 return Optional.of("writes the approval configuration (" + path + ")");
@@ -116,7 +114,7 @@ public class ProtectedActions {
     private Optional<String> protectedDirectoryOf(String path) {
         Path target;
         try {
-            target = resolved(Path.of(path));
+            target = realPath(Path.of(path));
         } catch (InvalidPathException e) {
             return Optional.empty();
         }
@@ -124,26 +122,6 @@ public class ProtectedActions {
                 .filter(directory -> target.startsWith(directory.getKey()))
                 .map(Map.Entry::getValue)
                 .findFirst();
-    }
-
-    /**
-     * The absolute, normalized path with symlinks resolved as far as it exists, so neither
-     * {@code ..} nor a link (or {@code /tmp} vs {@code /private/tmp}) can step around a check.
-     */
-    static Path resolved(Path path) {
-        Path absolute = normalize(path);
-        Path existing = absolute;
-        while (existing != null && !Files.exists(existing)) {
-            existing = existing.getParent();
-        }
-        if (existing == null) {
-            return absolute;
-        }
-        try {
-            return existing.toRealPath().resolve(existing.relativize(absolute)).normalize();
-        } catch (IOException | SecurityException e) {
-            return absolute;
-        }
     }
 
     private static boolean sameFile(Path a, Path b) {
@@ -156,19 +134,6 @@ public class ProtectedActions {
 
     private static Path normalize(Path path) {
         return path.toAbsolutePath().normalize();
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> parse(String arguments) {
-        if (arguments == null || arguments.isBlank()) {
-            return Map.of();
-        }
-        try {
-            Object value = JSON.readValue(arguments, Object.class);
-            return value instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
-        } catch (JacksonException e) {
-            return Map.of();
-        }
     }
 
     private static void collectStrings(Object value, List<String> into) {

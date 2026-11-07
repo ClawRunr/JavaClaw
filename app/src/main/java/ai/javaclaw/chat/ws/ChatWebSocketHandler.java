@@ -1,5 +1,6 @@
 package ai.javaclaw.chat.ws;
 
+import ai.javaclaw.utils.Errors;
 import ai.javaclaw.chat.ChatChannel;
 import ai.javaclaw.chat.ChatHtml;
 import ai.javaclaw.chat.Htmx;
@@ -161,15 +162,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     }
 
     private static String genericUserFacingError(Exception ex) {
-        return "An error occurred while contacting the AI provider.\nDetails: " + summarizeError(ex);
-    }
-
-    private static String summarizeError(Throwable ex) {
-        String message = ex.getMessage();
-        if (message == null || message.isBlank()) {
-            return ex.getClass().getSimpleName();
-        }
-
-        return message;
+        return "An error occurred while contacting the AI provider.\nDetails: " + Errors.summarize(ex);
     }
 }

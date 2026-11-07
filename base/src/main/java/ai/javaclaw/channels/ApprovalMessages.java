@@ -4,7 +4,6 @@ import ai.javaclaw.approval.ApprovalDecision;
 import ai.javaclaw.approval.ApprovalRequest;
 import ai.javaclaw.approval.Denial;
 import ai.javaclaw.mcp.McpToolDirectory;
-import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
@@ -15,12 +14,14 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+
+import static ai.javaclaw.utils.FilePaths.realPath;
+import static ai.javaclaw.utils.JsonObjects.parseObject;
 
 /**
  * Writes approval requests for messaging channels: a plain-language title per tool, the facts that
@@ -165,7 +166,7 @@ public class ApprovalMessages {
 
     Summary summarize(ApprovalRequest request) {
         String tool = request.toolName();
-        Map<String, Object> args = parse(request.arguments());
+        Map<String, Object> args = parseObject(request.arguments());
         List<Part> parts = new ArrayList<>();
         String title = TITLES.getOrDefault(tool, "run " + tool);
         switch (tool) {
@@ -369,35 +370,5 @@ public class ApprovalMessages {
     private static String string(Map<String, Object> args, String key) {
         Object value = args.get(key);
         return value == null ? "" : value instanceof String s ? s : JSON.writeValueAsString(value);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> parse(String arguments) {
-        if (arguments == null || arguments.isBlank()) {
-            return Map.of();
-        }
-        try {
-            Object value = JSON.readValue(arguments, Object.class);
-            return value instanceof Map<?, ?> map ? new LinkedHashMap<>((Map<String, Object>) map) : Map.of();
-        } catch (JacksonException e) {
-            return Map.of();
-        }
-    }
-
-    /** Absolute and normalized, with symlinks resolved as far as the path exists. */
-    private static Path realPath(Path path) {
-        Path absolute = path.toAbsolutePath().normalize();
-        Path existing = absolute;
-        while (existing != null && !Files.exists(existing)) {
-            existing = existing.getParent();
-        }
-        if (existing == null) {
-            return absolute;
-        }
-        try {
-            return existing.toRealPath().resolve(existing.relativize(absolute)).normalize();
-        } catch (IOException | SecurityException e) {
-            return absolute;
-        }
     }
 }

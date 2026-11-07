@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import static ai.javaclaw.utils.FilePaths.ensureDirectory;
+
 /**
  * Persists chat conversation history as YAML files inside the agent workspace.
  *
@@ -115,14 +117,5 @@ public class FileSystemChatMemoryRepository implements ChatMemoryRepository {
      */
     private Path resolveFile(String conversationId) {
         return conversationsDir.resolve("chat-" + conversationId + ".yaml");
-    }
-
-    private static Path ensureDirectory(Path dir) {
-        try {
-            Files.createDirectories(dir);
-            return dir;
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to create directory: " + dir, e);
-        }
     }
 }

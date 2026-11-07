@@ -1,5 +1,6 @@
 package ai.javaclaw.agents;
 
+import org.springframework.util.StringUtils;
 import ai.javaclaw.configuration.ConfigurationManager;
 import ai.javaclaw.llm.LlmProviderProperties;
 import ai.javaclaw.llm.LlmProviderProperties.ProviderConfig;
@@ -146,13 +147,13 @@ public class AgentPageController {
 
         Map<String, Object> props = new LinkedHashMap<>();
         props.put(PROVIDERS_PREFIX + "." + name + ".provider", form.get("provider"));
-        if (hasText(form.get("baseUrl"))) {
+        if (StringUtils.hasText(form.get("baseUrl"))) {
             props.put(PROVIDERS_PREFIX + "." + name + ".base-url", form.get("baseUrl").trim());
         }
-        if (hasText(form.get("apiKey"))) {
+        if (StringUtils.hasText(form.get("apiKey"))) {
             props.put(PROVIDERS_PREFIX + "." + name + ".api-key", form.get("apiKey").trim());
         }
-        if (hasText(form.get("model"))) {
+        if (StringUtils.hasText(form.get("model"))) {
             props.put(PROVIDERS_PREFIX + "." + name + ".model", form.get("model").trim());
         }
         try {
@@ -186,10 +187,6 @@ public class AgentPageController {
         if (name == null || !NAME_PATTERN.matcher(name).matches() || !store.exists(name)) {
             throw new NotFoundException();
         }
-    }
-
-    private static boolean hasText(String s) {
-        return s != null && !s.isBlank();
     }
 
     private String populateList(Model model) {

@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import static java.util.Optional.ofNullable;
+import static ai.javaclaw.utils.FilePaths.ensureDirectory;
 
 @Component
 public class FileSystemTaskRepository implements TaskRepository {
@@ -147,15 +148,6 @@ public class FileSystemTaskRepository implements TaskRepository {
             Files.writeString(path, content, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {
             throw new RuntimeException("Failed to write task file: " + path, e);
-        }
-    }
-
-    private static Path ensureDirectory(Path dir) {
-        try {
-            Files.createDirectories(dir);
-            return dir;
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to create directory: " + dir, e);
         }
     }
 

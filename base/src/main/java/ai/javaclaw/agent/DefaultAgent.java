@@ -1,5 +1,6 @@
 package ai.javaclaw.agent;
 
+import ai.javaclaw.utils.Errors;
 import ai.javaclaw.approval.ApprovalListener;
 import ai.javaclaw.approval.ApprovalRequest;
 import ai.javaclaw.approval.ApprovalTurn;
@@ -48,7 +49,7 @@ public class DefaultAgent implements Agent {
             events.accept(new AgentEvent.Done());
         } catch (RuntimeException e) {
             log.warn("Streaming response failed for conversation {}", conversationId, e);
-            events.accept(new AgentEvent.Failed(summarizeError(e)));
+            events.accept(new AgentEvent.Failed(Errors.summarize(e)));
         }
     }
 
@@ -97,10 +98,5 @@ public class DefaultAgent implements Agent {
                         outcome.toolName(), outcome.denial()));
             }
         };
-    }
-
-    private static String summarizeError(Throwable ex) {
-        String message = ex.getMessage();
-        return message == null || message.isBlank() ? ex.getClass().getSimpleName() : message;
     }
 }
