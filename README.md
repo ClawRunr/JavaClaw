@@ -103,6 +103,14 @@ The `workspace/` directory is the agent's home:
 
 Available at [http://localhost:8080/chat](http://localhost:8080/chat). Uses WebSocket for real-time delivery and falls back to REST polling when no WebSocket session is active.
 
+JavaClaw's WebSockets (the chat's, and the push socket Vaadin registers for the `/ui` pages) only accept pages served by JavaClaw itself (the same scheme, host and port), because the chat can answer [tool approvals](#tool-approval). A handshake from another origin, or without an `Origin` header, is refused. If a reverse proxy serves JavaClaw under another address, list that origin in `agent.web.allowed-origins`:
+
+```yaml
+agent:
+  web:
+    allowed-origins: [https://claw.example.com]
+```
+
 ### Telegram
 
 Configure during onboarding or by setting:
@@ -284,6 +292,8 @@ Key properties in `application.yaml`:
 | `agent.skills.paths` | Classpath resource roots to scan for skills (e.g. `classpath:/META-INF/skills`) |
 | `spring.ai.model.chat` | Active LLM provider/model |
 | `javaclaw.tools.dynamic-discovery.enabled` | Enable dynamic tool discovery (Tool Search Tool pattern) instead of exposing all tools up front |
+| `agent.approval.*` | Which tool calls need your approval, and how long a request waits. See [Tool Approval](#tool-approval) |
+| `agent.web.allowed-origins` | Extra browser origins (`scheme://host[:port]`) allowed to open JavaClaw's WebSockets, for a reverse proxy. Empty by default: only JavaClaw's own origin. Wildcards are refused at startup. |
 | `jobrunr.dashboard.port` | JobRunr dashboard port (default: `8081`) |
 | `jobrunr.background-job-server.worker-count` | Concurrent job workers (default: `1`) |
 
@@ -312,6 +322,62 @@ Flag behavior:
 Notes:
 - Tool search quality depends on `@Tool(description = "...")`. Keep descriptions specific and disambiguating.
 - Tuning: raise `lucene-min-score-threshold` to be stricter; lower it if tools are not found. Adjust `max-results` to control how many tools get surfaced.
+
+### Tool Approval
+
+Before the agent runs a tool that can change something, it pauses and asks you where the request came from: in the web chat, or in the Telegram, Discord, WhatsApp or Teams chat you wrote in. You see the tool, its risk, its exact arguments and, for file tools, the working directory. For a subagent you see the subagent type and the full prompt. You choose to allow it once or deny it. A denied call is not an error: the agent gets the denial and the reason as the tool's result and carries on without it.
+
+Every tool has a risk level: `READ_ONLY`, `WRITE`, `EXECUTE` or `NETWORK`. With no rules configured, `READ_ONLY` tools (for example `Read`, `Skill`, `CheckListTool`, `toolSearchTool`) run without asking. Everything else asks, including MCP tools and any other tool nobody has classified.
+
+```yaml
+agent:
+  approval:
+    timeout: 2m          # how long a request waits; at most 10m. Timing out counts as deny.
+    ask-fallback: deny   # deny | allow — used when nobody can be asked (see below)
+    rules:
+      allow: [WebFetch, WebSearch]   # run without asking
+      ask: [Read]                    # always ask, even if also allowed
+      deny: [Task]                   # never run; not even offered to the model
+```
+
+| Property | Default | Description |
+|---|---|---|
+| `agent.approval.rules.allow` | empty | Tool names that run without asking. |
+| `agent.approval.rules.ask` | empty | Tool names that always ask. |
+| `agent.approval.rules.deny` | empty | Tool names that never run and are not offered to the model. |
+| `agent.approval.timeout` | `2m` | How long an approval waits for an answer before it counts as denied. Must be greater than zero and at most `10m`; other values stop the application from starting. |
+| `agent.approval.ask-fallback` | `deny` | What happens to a call that needs approval when nobody can be asked: `deny` or `allow`. Never applies to protected actions (below), which are always denied when nobody can be asked. |
+| `agent.web.allowed-origins` | empty | Extra origins allowed to open JavaClaw's WebSockets, for a reverse proxy (see [Chat](#chat-built-in)). |
+
+Rules match tool names exactly and are evaluated in the order deny, ask, allow; the first match wins. With no match, `READ_ONLY` tools run and everything else asks.
+
+Some calls **always ask, whatever the rules say**, because they could turn the approval gate off or widen what the agent can reach:
+- Adding or changing an MCP server (`addStdioMcpServer`, `addStreamableHttpMcpServer`).
+- Writes that target the configuration file holding `agent.approval.*`, or any `application*.yaml|yml|properties` file.
+- Shell commands or subagent prompts that mention those files or `agent.approval`.
+
+The last check matches text: it is a tripwire for mistakes and casual prompt injection, not a sandbox, because a shell command can still build a file name at run time. That is why shell tools and subagents (`Task`) ask by default. When nobody can be asked, a protected action is always denied, even with `ask-fallback: allow`.
+
+**Who can be asked.** The request is asked where the conversation is:
+- **Web chat:** an approval card with **Allow once** and **Deny**, while at least one browser tab is showing that conversation. If the last tab disconnects while a request is waiting, the request is denied immediately. Waiting requests come back when you reconnect or switch back to the conversation.
+- **Telegram, Discord, WhatsApp and Teams:** a message in the same chat, for example:
+
+  ```
+  JavaClaw wants to run WebFetch: {"url":"https://example.com"}
+  Risk: NETWORK
+  Reply /approve a1b2c3 or /deny a1b2c3 (expires in 2 minutes).
+  ```
+
+  Reply `/approve <id>` or `/deny <id>`; these replies never reach the model. JavaClaw then confirms the outcome in one short message, also when the request expires. Very long arguments are cut short in the message, which says so. Only the user each channel already accepts can answer (Teams: personal chats only, as for any message). An unknown, expired, already used or other chat's id changes nothing and gets a short reply saying so.
+- **Everything else** (scheduled tasks and the Vaadin UI): nobody can be asked, so `ask-fallback` decides.
+
+**Only JavaClaw's own pages can answer in the browser.** Every WebSocket JavaClaw serves refuses a handshake from any other origin, and one without an `Origin` header, so another site open in the same browser cannot see or answer approval requests. Behind a reverse proxy, add the proxy's origin to `agent.web.allowed-origins` (see [Chat](#chat-built-in)).
+
+**Scheduled tasks report blocked tools.** A task cannot ask anyone, so with the default `ask-fallback: deny`, any tool it needs that is not `READ_ONLY` or allowed by a rule is refused. The task then ends in `awaiting_human_input`, and its result lists each blocked tool and why, for example `Write: not run because it needs approval and nobody can be asked here`. To let tasks run unattended, allow the tools they need with `agent.approval.rules.allow`, or set `ask-fallback: allow`.
+
+A blocked task is not picked up again on its own, and JavaClaw has no way yet to resume it: re-running its job is refused because the task is no longer `todo`. After allowing the tool, create the task again, or open the task's conversation (`task-…`) in the web chat and ask the agent to finish; there you can approve the tool directly. The task file keeps its `awaiting_human_input` status either way.
+
+Pending approvals are kept in memory, so restarting JavaClaw drops them.
 
 ## Running Tests
 
