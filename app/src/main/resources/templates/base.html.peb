@@ -3,6 +3,10 @@
     <title>JavaClaw{% block title %}{% endblock %}</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="/brand/favicon.ico" sizes="16x16 32x32 48x48">
+    <link rel="icon" type="image/png" href="/brand/icon-192.png" sizes="192x192">
+    <link rel="icon" type="image/png" href="/brand/icon-512.png" sizes="512x512">
+    <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" sizes="180x180">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
     <style>
     .brand-lockup {
@@ -16,6 +20,10 @@
     }
     .brand-word .brand-agent { color: #fff; }
     .brand-word .brand-runr  { color: var(--bulma-primary); }
+    .brand-mascot {
+        user-select: none;
+        -webkit-user-drag: none;
+    }
     </style>
     {% block head %}{% endblock %}
 </head>

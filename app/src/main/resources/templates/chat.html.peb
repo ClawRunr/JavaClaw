@@ -337,6 +337,7 @@
     <nav class="navbar has-background-dark" role="navigation" aria-label="main navigation">
         <div class="navbar-brand">
             <span class="navbar-item">
+                <img class="brand-mascot" src="/brand/icon-192.png" alt="ClawRunr" width="28" height="28" draggable="false">
                 <div class="brand-lockup">
                     <p class="brand-word"><span class="brand-agent">Java</span><span class="brand-runr">Claw</span></p>
                 </div>
