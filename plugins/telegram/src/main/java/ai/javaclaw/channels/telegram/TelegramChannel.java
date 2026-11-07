@@ -1,5 +1,7 @@
 package ai.javaclaw.channels.telegram;
 
+import ai.javaclaw.channels.ApprovalChat;
+import ai.javaclaw.channels.ApprovalFormat;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
@@ -13,6 +15,7 @@ import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
@@ -95,7 +98,7 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
         }
         channelRegistry.publishMessageReceivedEvent(new TelegramChannelMessageReceivedEvent(getName(), messageText, messageChatId, messageThreadId));
         // The turn runs in the background, so this thread stays free to receive an /approve it may wait for
-        approvals.respond(conversationId, messageText, reply, e -> {
+        approvals.respond(conversationId, messageText, new TelegramChat(messageChatId, messageThreadId), e -> {
             LOGGER.error("Failed to handle Telegram message for conversation '{}'", conversationId, e);
             reply.accept(ERROR_MESSAGE);
         });
@@ -135,6 +138,65 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
                 telegramClient.execute(fallbackMessage);
             } catch (TelegramApiException fallbackEx) {
                 throw new RuntimeException("Failed to send both HTML and fallback messages", fallbackEx);
+            }
+        }
+    }
+
+    /**
+     * The chat a turn came from. Approval requests are sent in Telegram's HTML, where
+     * {@code /approve_<id>} becomes a tappable command, and are edited to show their outcome.
+     */
+    private final class TelegramChat implements ApprovalChat {
+
+        private final long chatId;
+        private final Integer messageThreadId;
+
+        TelegramChat(long chatId, Integer messageThreadId) {
+            this.chatId = chatId;
+            this.messageThreadId = messageThreadId;
+        }
+
+        @Override
+        public ApprovalFormat format() {
+            return ApprovalFormat.TELEGRAM_HTML;
+        }
+
+        @Override
+        public void send(String text) {
+            sendMessage(chatId, messageThreadId, text);
+        }
+
+        @Override
+        public Object sendFormatted(String html) {
+            try {
+                Message sent = telegramClient.execute(SendMessage.builder()
+                        .chatId(chatId)
+                        .messageThreadId(messageThreadId)
+                        .text(html)
+                        .parseMode(ParseMode.HTML)
+                        .build());
+                return sent == null ? null : sent.getMessageId();
+            } catch (TelegramApiException e) {
+                throw new IllegalStateException("Could not send the approval request to Telegram", e);
+            }
+        }
+
+        @Override
+        public boolean edit(Object messageId, String html) {
+            if (!(messageId instanceof Integer id)) {
+                return false;
+            }
+            try {
+                telegramClient.execute(EditMessageText.builder()
+                        .chatId(chatId)
+                        .messageId(id)
+                        .text(html)
+                        .parseMode(ParseMode.HTML)
+                        .build());
+                return true;
+            } catch (TelegramApiException e) {
+                LOGGER.warn("Could not edit Telegram message {}: {}", id, e.getMessage());
+                return false;
             }
         }
     }

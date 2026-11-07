@@ -1,9 +1,9 @@
 package ai.javaclaw.channels.telegram;
 
 import ai.javaclaw.agent.Agent;
-import ai.javaclaw.approval.PendingApprovals;
 import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
+import ai.javaclaw.testsupport.ChannelApprovalFixture;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -16,7 +16,6 @@ import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
-import java.time.Clock;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -240,7 +239,7 @@ class TelegramChannelTest {
 
     private TelegramChannel channel(String allowedUsername) {
         // Turns run on the calling thread here, so each test sees the whole exchange when consume returns
-        ChannelApprovals approvals = new ChannelApprovals(agent, new PendingApprovals(), Clock.systemUTC(), Runnable::run);
+        ChannelApprovals approvals = ChannelApprovalFixture.onCallingThread(agent);
         return new TelegramChannel("token", allowedUsername, telegramClient, approvals, new ChannelRegistry());
     }
 

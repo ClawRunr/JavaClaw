@@ -1,5 +1,7 @@
 package ai.javaclaw.channels.discord;
 
+import ai.javaclaw.channels.ApprovalChat;
+import ai.javaclaw.channels.ApprovalFormat;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
@@ -14,6 +16,8 @@ import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.EnumSet;
 
 import static java.util.Optional.ofNullable;
 import static java.util.regex.Pattern.quote;
@@ -65,7 +69,7 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
         lastChannel = channel;
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), content));
         // The turn runs in the background, so JDA can still deliver an /approve it may wait for
-        approvals.respond(conversationId, content, text -> reply(channel, text), e -> {
+        approvals.respond(conversationId, content, new DiscordChat(channel), e -> {
             log.error("Failed to handle Discord message for conversation '{}'", conversationId, e);
             reply(channel, ERROR_MESSAGE);
         });
@@ -92,6 +96,46 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
 
     private boolean isAllowedUser(String userId) {
         return userId != null && userId.equalsIgnoreCase(allowedUserId);
+    }
+
+    /**
+     * The channel a turn came from. Approval requests are sent in Discord markdown with mentions
+     * switched off, so nothing a tool call contains can ping anyone, and are edited to show their
+     * outcome.
+     */
+    private record DiscordChat(MessageChannel channel) implements ApprovalChat {
+
+        private static final EnumSet<Message.MentionType> NO_MENTIONS = EnumSet.noneOf(Message.MentionType.class);
+
+        @Override
+        public ApprovalFormat format() {
+            return ApprovalFormat.DISCORD_MARKDOWN;
+        }
+
+        @Override
+        public void send(String text) {
+            reply(channel, text);
+        }
+
+        @Override
+        public Object sendFormatted(String markdown) {
+            Message sent = channel.sendMessage(markdown).setAllowedMentions(NO_MENTIONS).complete();
+            return sent == null ? null : sent.getId();
+        }
+
+        @Override
+        public boolean edit(Object messageId, String markdown) {
+            if (!(messageId instanceof String id)) {
+                return false;
+            }
+            try {
+                channel.editMessageById(id, markdown).setAllowedMentions(NO_MENTIONS).complete();
+                return true;
+            } catch (RuntimeException e) {
+                log.warn("Could not edit Discord message {}: {}", id, e.getMessage());
+                return false;
+            }
+        }
     }
 
     private static void reply(MessageChannel channel, String text) {

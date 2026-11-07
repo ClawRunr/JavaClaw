@@ -7,6 +7,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static ai.javaclaw.testsupport.ChannelApprovalFixture.ANSWER;
@@ -32,6 +35,7 @@ class TeamsApprovalTest {
 
     final ChannelApprovalFixture fixture = new ChannelApprovalFixture();
     final List<String> sent = new CopyOnWriteArrayList<>();
+    final Map<String, String> edits = new ConcurrentHashMap<>();
     TeamsWebhookController controller;
 
     @BeforeEach
@@ -44,6 +48,14 @@ class TeamsApprovalTest {
         when(channel.getName()).thenReturn(TeamsChannel.CHANNEL_ID);
         doAnswer(invocation -> sent.add(invocation.getArgument(1, String.class)))
                 .when(channel).sendMessage(any(TeamsConversationReference.class), anyString());
+        when(channel.sendMarkdown(any(TeamsConversationReference.class), anyString())).thenAnswer(invocation -> {
+            sent.add(invocation.getArgument(1, String.class));
+            return Optional.of("activity-" + sent.size());
+        });
+        when(channel.updateMarkdown(any(TeamsConversationReference.class), anyString(), anyString())).thenAnswer(invocation -> {
+            edits.put(invocation.getArgument(1, String.class), invocation.getArgument(2, String.class));
+            return true;
+        });
         controller = new TeamsWebhookController(properties, new ChannelRegistry(), fixture.approvals(), channel, jwt);
     }
 
@@ -55,15 +67,20 @@ class TeamsApprovalTest {
     @Test
     void aToolCallIsApprovedInThePersonalChatAndTheAnswerFollows() {
         controller.webhook("Bearer t", activity(OWNER, "fetch example.com", "personal"));
-        await(() -> sent.stream().anyMatch(m -> m.contains("wants to run")));
+        await(() -> !sent.isEmpty());
         String request = sent.getFirst();
-        assertThat(request).contains(ChannelApprovalFixture.TOOL).contains(ARGUMENTS);
+        String id = shortId(request);
+        assertThat(request).startsWith("**Approval needed: run " + ChannelApprovalFixture.TOOL + "**")
+                .contains("```\n  url: https://example.com\n```");
         assertThat(fixture.toolRuns()).isEmpty();
 
-        controller.webhook("Bearer t", activity(OWNER, "/approve " + shortId(request), "personal"));
+        controller.webhook("Bearer t", activity(OWNER, "/approve_" + id, "personal"));
 
         await(() -> sent.contains(ANSWER));
-        assertThat(sent).anyMatch(m -> m.startsWith("Approved " + shortId(request)));
+        // The request activity is updated in place with the outcome
+        assertThat(edits).containsOnlyKeys("activity-1");
+        assertThat(edits.get("activity-1")).contains("✅ **Approved**").doesNotContain("approve\\_");
+        assertThat(sent).hasSize(2);
         assertThat(fixture.toolRuns()).containsExactly(ARGUMENTS);
         assertThat(fixture.modelSaw()).noneMatch(text -> text.contains("/approve"));
     }
@@ -71,20 +88,21 @@ class TeamsApprovalTest {
     @Test
     void anotherUserOrAGroupChatCannotApprove() throws Exception {
         controller.webhook("Bearer t", activity(OWNER, "fetch example.com", "personal"));
-        await(() -> sent.stream().anyMatch(m -> m.contains("wants to run")));
+        await(() -> !sent.isEmpty());
         String id = shortId(sent.getFirst());
 
-        controller.webhook("Bearer t", activity("29:someone-else", "/approve " + id, "personal"));
+        controller.webhook("Bearer t", activity("29:someone-else", "/approve_" + id, "personal"));
         // Personal chats only, even for the owner
-        controller.webhook("Bearer t", activity(OWNER, "/approve " + id, "groupChat"));
+        controller.webhook("Bearer t", activity(OWNER, "/approve_" + id, "groupChat"));
 
         Thread.sleep(300);
-        assertThat(sent).noneMatch(m -> m.startsWith("Approved"));
+        assertThat(edits).isEmpty();
         assertThat(fixture.toolRuns()).isEmpty();
         assertThat(fixture.pending().pendingFor("teams-conv-1")).isNotEmpty();
 
         controller.webhook("Bearer t", activity(OWNER, "/deny " + id, "personal"));
-        await(() -> sent.stream().anyMatch(m -> m.startsWith("Denied " + id)));
+        await(() -> !edits.isEmpty());
+        assertThat(edits.values()).singleElement().asString().contains("❌ **Denied**");
         assertThat(fixture.toolRuns()).isEmpty();
     }
 

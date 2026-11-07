@@ -1,9 +1,8 @@
 package ai.javaclaw.channels.whatsapp;
 
 import ai.javaclaw.agent.Agent;
-import ai.javaclaw.approval.PendingApprovals;
-import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
+import ai.javaclaw.testsupport.ChannelApprovalFixture;
 import ai.javaclaw.channels.whatsapp.WhatsAppChannel.WhatsAppChannelMessageReceivedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,7 +11,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.Clock;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -43,7 +41,7 @@ class WhatsAppChannelTest {
     void setUp() {
         // Turns run on the calling thread here, so each test sees the whole exchange when onMessage returns
         channel = new WhatsAppChannel(whatsApp, channelRegistry,
-                new ChannelApprovals(agent, new PendingApprovals(), Clock.systemUTC(), Runnable::run));
+                ChannelApprovalFixture.onCallingThread(agent));
     }
 
     @Test

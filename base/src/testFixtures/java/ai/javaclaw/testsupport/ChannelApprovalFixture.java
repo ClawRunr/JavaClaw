@@ -10,6 +10,7 @@ import ai.javaclaw.approval.ProtectedActions;
 import ai.javaclaw.approval.ToolRisk;
 import ai.javaclaw.approval.ToolRiskContributor;
 import ai.javaclaw.approval.ToolRiskRegistry;
+import ai.javaclaw.channels.ApprovalMessages;
 import ai.javaclaw.channels.ChannelApprovals;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
@@ -32,6 +33,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 import java.util.regex.Matcher;
@@ -49,7 +51,7 @@ public final class ChannelApprovalFixture implements AutoCloseable {
     public static final String ARGUMENTS = "{\"url\":\"https://example.com\"}";
     public static final String TOOL_RESULT = "fetched";
     public static final String ANSWER = "Done: " + TOOL_RESULT;
-    private static final Pattern SHORT_ID = Pattern.compile("/approve (\\w{6})");
+    private static final Pattern SHORT_ID = Pattern.compile("/approve(?:\\\\)?_([a-z0-9]{6})");
 
     private final PendingApprovals pending = new PendingApprovals();
     private final List<String> toolRuns = new CopyOnWriteArrayList<>();
@@ -79,6 +81,17 @@ public final class ChannelApprovalFixture implements AutoCloseable {
         this.approvals = new ChannelApprovals(agent, pending);
     }
 
+    /**
+     * Approvals whose turns run on the calling thread, so a test sees the whole exchange when the
+     * channel returns. Only for turns that never wait for an approval: one that did would block the
+     * thread its answer has to arrive on.
+     */
+    public static ChannelApprovals onCallingThread(Agent agent) {
+        return new ChannelApprovals(agent, new PendingApprovals(),
+                new ApprovalMessages(Path.of("workspace"), _ -> Optional.empty(), Clock.systemDefaultZone()),
+                Clock.systemDefaultZone(), Runnable::run);
+    }
+
     public Agent agent() {
         return agent;
     }
@@ -101,11 +114,11 @@ public final class ChannelApprovalFixture implements AutoCloseable {
         return modelSaw;
     }
 
-    /** The short id in an approval request message, e.g. {@code a1b2c3}. */
+    /** The short id in an approval request message ({@code /approve_a1b2c3}, in any channel's markup). */
     public static String shortId(String requestMessage) {
         Matcher matcher = SHORT_ID.matcher(requestMessage);
         if (!matcher.find()) {
-            throw new AssertionError("No /approve <id> in: " + requestMessage);
+            throw new AssertionError("No /approve_<id> in: " + requestMessage);
         }
         return matcher.group(1);
     }

@@ -1,33 +1,34 @@
 package ai.javaclaw.channels;
 
 import ai.javaclaw.testsupport.ChannelApprovalFixture;
+import ai.javaclaw.testsupport.RecordingChat;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 
 import static ai.javaclaw.testsupport.ChannelApprovalFixture.ANSWER;
 import static ai.javaclaw.testsupport.ChannelApprovalFixture.ARGUMENTS;
 import static ai.javaclaw.testsupport.ChannelApprovalFixture.TOOL;
+import static ai.javaclaw.testsupport.ChannelApprovalFixture.await;
 import static ai.javaclaw.testsupport.ChannelApprovalFixture.shortId;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The text approval flow messaging channels share, through a real agent and the real gate: the
- * owner gets the exact call with a short id, answers {@code /approve} or {@code /deny} in the same
- * chat, and the turn carries on.
+ * owner gets the call with a short id, answers {@code /approve_<id>} or {@code /deny_<id>} in the
+ * same chat, and the turn carries on. How the request reads per tool is {@link ApprovalMessagesTest}.
  */
 class ChannelApprovalsTest {
 
     static final String CHAT = "telegram-42";
 
     ChannelApprovalFixture fixture = new ChannelApprovalFixture();
-    final BlockingQueue<String> sent = new LinkedBlockingQueue<>();
+    RecordingChat chat = new RecordingChat(ApprovalFormat.TELEGRAM_HTML, true);
     final List<String> replies = new CopyOnWriteArrayList<>();
     final List<RuntimeException> failures = new CopyOnWriteArrayList<>();
 
@@ -37,55 +38,63 @@ class ChannelApprovalsTest {
     }
 
     @Test
-    void theRequestMessageNamesTheCallItsRiskAndAShortIdToAnswerWith() throws Exception {
+    void theRequestHasATitleTheArgumentsAnExpiryTimeAndOneTapCommands() {
         String request = askAndAwaitRequest(CHAT);
 
-        assertThat(request).startsWith("JavaClaw wants to run " + TOOL + ": " + ARGUMENTS + "\n");
-        assertThat(request).contains("Risk: NETWORK");
         String id = shortId(request);
         assertThat(id).hasSize(6);
-        assertThat(request).endsWith("Reply /approve " + id + " or /deny " + id + " (expires in 30 seconds).");
+        assertThat(request).startsWith("<b>Approval needed: run " + TOOL + "</b>\n")
+                .contains("<pre>  url: https://example.com</pre>")
+                .contains("Risk: NETWORK")
+                .containsPattern("Expires at \\d\\d:\\d\\d")
+                .endsWith("Reply /approve_" + id + " or /deny_" + id);
         assertThat(fixture.toolRuns()).isEmpty();
     }
 
-    @Test
-    void longArgumentsAreTruncatedAndSaySo() throws Exception {
-        fixture.close();
-        String longArguments = "{\"url\":\"https://example.com/" + "x".repeat(2_000) + "\"}";
-        fixture = new ChannelApprovalFixture(Duration.ofSeconds(30), longArguments);
-
-        String request = askAndAwaitRequest(CHAT);
-
-        assertThat(request).doesNotContain(longArguments)
-                .contains("(arguments truncated: showing 600 of " + longArguments.length() + " characters)");
-        assertThat(request.length()).isLessThan(1_000);
-    }
-
-    @Test
-    void approveRunsTheToolOnceAndNeitherCommandReachesTheModel() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"/approve_%s", "/approve %s", "/Approve_%s@JavaClawBot", "/approve@JavaClawBot %s"})
+    void approveRunsTheToolOnceAndNeitherCommandReachesTheModel(String command) {
         String id = shortId(askAndAwaitRequest(CHAT));
 
-        assertThat(command(CHAT, "/approve " + id)).isTrue();
+        assertThat(command(CHAT, command.formatted(id))).isTrue();
 
-        assertThat(next()).isEqualTo("Approved " + id + ": running " + TOOL + ".");
-        assertThat(next()).isEqualTo(ANSWER);
+        await(() -> chat.sent().contains(ANSWER));
         assertThat(fixture.toolRuns()).containsExactly(ARGUMENTS);
+        assertThat(fixture.modelSaw()).isNotEmpty().noneMatch(text -> text.contains("/approve"));
 
         // Used: a second answer changes nothing
-        assertThat(command(CHAT, "/approve " + id)).isTrue();
+        assertThat(command(CHAT, "/approve_" + id)).isTrue();
         assertThat(replies).singleElement().asString().contains("No approval " + id + " is waiting");
         assertThat(fixture.toolRuns()).hasSize(1);
-        assertThat(fixture.modelSaw()).isNotEmpty().noneMatch(text -> text.contains("/approve"));
     }
 
     @Test
-    void denyNeverRunsTheToolAndTheModelHearsWhy() throws Exception {
+    void theOutcomeReplacesTheCommandsInTheOriginalMessageWhereTheChannelCanEdit() {
         String id = shortId(askAndAwaitRequest(CHAT));
 
-        assertThat(command(CHAT, "/deny " + id)).isTrue();
+        command(CHAT, "/approve_" + id);
 
-        assertThat(next()).isEqualTo("Denied " + id + ": " + TOOL + " was not run.");
-        assertThat(next()).startsWith("Not done: Tool '" + TOOL + "' was NOT run").contains("the user denied it");
+        await(() -> chat.sent().contains(ANSWER));
+        // Request, then the answer: no separate outcome message
+        assertThat(chat.sent()).hasSize(2);
+        assertThat(chat.edits()).singleElement().asString()
+                .startsWith("<b>Approval needed: run " + TOOL + "</b>")
+                .contains("✅ <b>Approved</b>: running " + TOOL)
+                .doesNotContain("/approve_").doesNotContain("Expires at");
+        assertThat(chat.formatted(0)).isEqualTo(chat.edits().getFirst());
+    }
+
+    @Test
+    void whereTheChannelCannotEditTheOutcomeIsAShortReply() {
+        chat = new RecordingChat(ApprovalFormat.WHATSAPP, false);
+        String id = shortId(askAndAwaitRequest(CHAT));
+
+        command(CHAT, "/deny_" + id);
+
+        await(() -> chat.sent().size() == 3);
+        assertThat(chat.edits()).isEmpty();
+        assertThat(chat.sent().get(1)).isEqualTo("❌ *Denied*: " + TOOL + " was not run. (" + id + ")");
+        assertThat(chat.sent().get(2)).startsWith("Not done: Tool '" + TOOL + "' was NOT run").contains("the user denied it");
         assertThat(fixture.toolRuns()).isEmpty();
         assertThat(fixture.modelSaw()).noneMatch(text -> text.contains("/deny"));
     }
@@ -94,43 +103,46 @@ class ChannelApprovalsTest {
     void anUnknownIdHasNoEffectAndGetsAReply() throws Exception {
         String id = shortId(askAndAwaitRequest(CHAT));
 
-        assertThat(command(CHAT, "/approve zzzzzz")).isTrue();
+        assertThat(command(CHAT, "/approve_zzzzzz")).isTrue();
 
         assertThat(replies).singleElement().asString().contains("No approval zzzzzz is waiting");
-        assertThat(sent.poll(300, TimeUnit.MILLISECONDS)).isNull();
+        Thread.sleep(200);
+        assertThat(chat.sent()).hasSize(1);
         assertThat(fixture.toolRuns()).isEmpty();
         assertThat(fixture.pending().pendingFor(CHAT)).isNotEmpty();
 
-        command(CHAT, "/deny " + id);
-        next();
+        command(CHAT, "/deny_" + id);
+        await(() -> chat.sent().size() == 2);
     }
 
     @Test
-    void anIdFromAnotherConversationHasNoEffectThereAndGetsAReply() throws Exception {
+    void anIdFromAnotherConversationHasNoEffectThereAndGetsAReply() {
         String id = shortId(askAndAwaitRequest(CHAT));
 
-        assertThat(command("discord-7", "/approve " + id)).isTrue();
+        assertThat(command("discord-7", "/approve_" + id)).isTrue();
 
         assertThat(replies).singleElement().asString().contains("No approval " + id + " is waiting in this chat");
         assertThat(fixture.toolRuns()).isEmpty();
         assertThat(fixture.pending().pendingFor(CHAT)).isNotEmpty();
 
         // Still answerable where it was asked
-        command(CHAT, "/approve " + id);
-        assertThat(next()).startsWith("Approved");
-        assertThat(next()).isEqualTo(ANSWER);
+        command(CHAT, "/approve_" + id);
+        await(() -> chat.sent().contains(ANSWER));
     }
 
     @Test
-    void anExpiredApprovalSaysSoAndCanNoLongerBeAnswered() throws Exception {
+    void anExpiredRequestIsEditedToSaySoAndCanNoLongerBeAnswered() {
         fixture.close();
         fixture = new ChannelApprovalFixture(Duration.ofSeconds(1), ARGUMENTS);
         String id = shortId(askAndAwaitRequest(CHAT));
 
-        assertThat(next()).isEqualTo("Expired " + id + ": " + TOOL + " was not run because nobody approved it within 1 second.");
-        assertThat(next()).startsWith("Not done:");
+        await(() -> !chat.edits().isEmpty());
+        assertThat(chat.edits().getFirst())
+                .contains("⌛ <b>Expired</b>: " + TOOL + " was not run because nobody approved it within 1 second.");
+        await(() -> chat.sent().size() == 2);
+        assertThat(chat.sent().get(1)).startsWith("Not done:");
 
-        assertThat(command(CHAT, "/approve " + id)).isTrue();
+        assertThat(command(CHAT, "/approve_" + id)).isTrue();
         assertThat(replies).singleElement().asString().contains("No approval " + id + " is waiting");
         assertThat(fixture.toolRuns()).isEmpty();
     }
@@ -142,17 +154,7 @@ class ChannelApprovalsTest {
         assertThat(replies).isEmpty();
 
         assertThat(command(CHAT, "/approve")).isTrue();
-        assertThat(replies).singleElement().asString().contains("/approve <id>");
-    }
-
-    @Test
-    void telegramsBotSuffixAndCapitalsAreUnderstood() throws Exception {
-        String id = shortId(askAndAwaitRequest(CHAT));
-
-        assertThat(command(CHAT, "/Approve@JavaClawBot " + id.toUpperCase())).isTrue();
-
-        assertThat(next()).startsWith("Approved " + id);
-        assertThat(next()).isEqualTo(ANSWER);
+        assertThat(replies).singleElement().asString().contains("/approve_<id>");
     }
 
     @Test
@@ -169,30 +171,26 @@ class ChannelApprovalsTest {
             }
         }, fixture.pending());
         try {
-            approvals.respond(CHAT, "hi", sent::add, failures::add);
+            approvals.respond(CHAT, "hi", chat, failures::add);
 
-            ChannelApprovalFixture.await(() -> !failures.isEmpty());
+            await(() -> !failures.isEmpty());
             assertThat(failures).singleElement().extracting(Throwable::getMessage).isEqualTo("provider down");
-            assertThat(sent).isEmpty();
+            assertThat(chat.sent()).isEmpty();
         } finally {
             approvals.close();
         }
     }
 
-    private String askAndAwaitRequest(String conversationId) throws InterruptedException {
-        fixture.approvals().respond(conversationId, "fetch example.com", sent::add, failures::add);
-        String request = next();
-        assertThat(request).as("approval request").contains("wants to run");
+    private String askAndAwaitRequest(String conversationId) {
+        fixture.approvals().respond(conversationId, "fetch example.com", chat, failures::add);
+        await(() -> !chat.sent().isEmpty() || !failures.isEmpty());
+        assertThat(failures).isEmpty();
+        String request = chat.sent().getFirst();
+        assertThat(request).as("approval request").contains("Approval needed");
         return request;
     }
 
     private boolean command(String conversationId, String text) {
         return fixture.approvals().handleCommand(conversationId, text, replies::add);
-    }
-
-    private String next() throws InterruptedException {
-        String message = sent.poll(10, TimeUnit.SECONDS);
-        assertThat(message).as("next message to the channel (failures: %s)", failures).isNotNull();
-        return message;
     }
 }

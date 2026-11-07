@@ -61,15 +61,19 @@ class WhatsAppApprovalTest {
     @Test
     void aToolCallIsApprovedInTheChatAndTheAnswerFollows() {
         receive(CHAT_JID, "fetch example.com");
-        await(() -> sent.stream().anyMatch(m -> m.contains("wants to run")));
+        await(() -> !sent.isEmpty());
         String request = sent.getFirst();
-        assertThat(request).contains(ChannelApprovalFixture.TOOL).contains(ARGUMENTS);
+        String id = shortId(request);
+        assertThat(request).startsWith("*Approval needed: run " + ChannelApprovalFixture.TOOL + "*")
+                .contains("```  url: https://example.com```")
+                .endsWith("Reply /approve_" + id + " or /deny_" + id);
         assertThat(fixture.toolRuns()).isEmpty();
 
-        receive(CHAT_JID, "/approve " + shortId(request));
+        receive(CHAT_JID, "/approve_" + id);
 
         await(() -> sent.contains(ANSWER));
-        assertThat(sent).anyMatch(m -> m.startsWith("Approved " + shortId(request)));
+        // wacli cannot edit, so the outcome is a short reply between the request and the answer
+        assertThat(sent).containsExactly(request, "✅ *Approved*: running " + ChannelApprovalFixture.TOOL + ". (" + id + ")", ANSWER);
         assertThat(fixture.toolRuns()).containsExactly(ARGUMENTS);
         assertThat(fixture.modelSaw()).noneMatch(text -> text.contains("/approve"));
     }
@@ -77,18 +81,18 @@ class WhatsAppApprovalTest {
     @Test
     void someoneElseCannotApprove() throws Exception {
         receive(CHAT_JID, "fetch example.com");
-        await(() -> sent.stream().anyMatch(m -> m.contains("wants to run")));
+        await(() -> !sent.isEmpty());
         String id = shortId(sent.getFirst());
 
-        receive("999@s.whatsapp.net", "/approve " + id);
+        receive("999@s.whatsapp.net", "/approve_" + id);
 
         Thread.sleep(300);
-        assertThat(sent).noneMatch(m -> m.startsWith("Approved"));
+        assertThat(sent).hasSize(1);
         assertThat(fixture.toolRuns()).isEmpty();
         assertThat(fixture.pending().pendingFor(CHAT_JID)).isNotEmpty();
 
         receive(CHAT_JID, "/deny " + id);
-        await(() -> sent.stream().anyMatch(m -> m.startsWith("Denied " + id)));
+        await(() -> sent.stream().anyMatch(m -> m.startsWith("❌ *Denied*")));
         assertThat(fixture.toolRuns()).isEmpty();
     }
 

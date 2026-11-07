@@ -1,5 +1,7 @@
 package ai.javaclaw.channels.whatsapp;
 
+import ai.javaclaw.channels.ApprovalChat;
+import ai.javaclaw.channels.ApprovalFormat;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
@@ -66,8 +68,31 @@ public class WhatsAppChannel implements Channel {
         }
         channelRegistry.publishMessageReceivedEvent(new WhatsAppChannelMessageReceivedEvent(getName(), message, fromJidId));
         // The turn runs in the background, so the single webhook worker can deliver an /approve it waits for
-        approvals.respond(fromJidId, message, reply,
+        approvals.respond(fromJidId, message, new WhatsAppChat(),
                 e -> LOGGER.error("Failed to handle WhatsApp message for chat '{}'", fromJidId, e));
+    }
+
+    /**
+     * The configured chat. Approval requests use WhatsApp's own markup; wacli cannot edit a sent
+     * message, so the outcome of a request arrives as a short reply.
+     */
+    private final class WhatsAppChat implements ApprovalChat {
+
+        @Override
+        public ApprovalFormat format() {
+            return ApprovalFormat.WHATSAPP;
+        }
+
+        @Override
+        public void send(String text) {
+            whatsApp.sendMessage(text);
+        }
+
+        @Override
+        public Object sendFormatted(String formatted) {
+            whatsApp.sendMessage(formatted);
+            return null;
+        }
     }
 
     static class WhatsAppChannelMessageReceivedEvent extends ChannelMessageReceivedEvent {

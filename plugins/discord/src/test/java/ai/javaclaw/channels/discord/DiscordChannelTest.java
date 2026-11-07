@@ -1,9 +1,8 @@
 package ai.javaclaw.channels.discord;
 
 import ai.javaclaw.agent.Agent;
-import ai.javaclaw.approval.PendingApprovals;
-import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
+import ai.javaclaw.testsupport.ChannelApprovalFixture;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.Mentions;
@@ -16,7 +15,6 @@ import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.requests.restaction.MessageCreateAction;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -107,7 +105,7 @@ class DiscordChannelTest {
     private DiscordChannel channel(String allowedUser) {
         // Turns run on the calling thread here, so each test sees the whole exchange when the handler returns
         return new DiscordChannel(allowedUser,
-                new ChannelApprovals(agent, new PendingApprovals(), Clock.systemUTC(), Runnable::run), new ChannelRegistry());
+                ChannelApprovalFixture.onCallingThread(agent), new ChannelRegistry());
     }
 
     private MessageReceivedEvent event(boolean authorIsBot,
