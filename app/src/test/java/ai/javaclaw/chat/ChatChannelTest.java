@@ -401,7 +401,7 @@ class ChatChannelTest {
         agentStreams(events -> {
             events.accept(new AgentEvent.ApprovalRequested(request));
             events.accept(new AgentEvent.ApprovalResolved("call-1", "call-1", "Write",
-                    new Denial(Denial.Reason.TIMEOUT, "nobody approved it within 2 minute(s)")));
+                    new Denial(Denial.Reason.TIMEOUT, "nobody approved it within 2 minutes")));
             events.accept(new AgentEvent.Done());
         });
 
@@ -421,7 +421,7 @@ class ChatChannelTest {
                 .containsEntry("details", Map.of("workingDirectory", "/srv/javaclaw"));
         assertThat(frames.get(1)).containsEntry("type", "approvalResolved")
                 .containsEntry("data", Map.of("approvalId", "call-1", "toolCallId", "call-1", "toolName", "Write",
-                        "outcome", "denied", "reason", "timeout", "detail", "nobody approved it within 2 minute(s)"));
+                        "outcome", "denied", "reason", "timeout", "detail", "nobody approved it within 2 minutes"));
     }
 
     @Test

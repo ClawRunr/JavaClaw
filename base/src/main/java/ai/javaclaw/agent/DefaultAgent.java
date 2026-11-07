@@ -53,6 +53,12 @@ public class DefaultAgent implements Agent {
     }
 
     @Override
+    public String answer(String conversationId, String question, HumanQuestionHandler questions,
+                         Consumer<AgentEvent> events) {
+        return ask(conversationId, question, events, questions).call().content();
+    }
+
+    @Override
     public <T> T prompt(String conversationId, String input, Class<T> result) {
         return prompt(conversationId, input, result, _ -> {});
     }

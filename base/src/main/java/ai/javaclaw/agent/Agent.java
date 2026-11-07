@@ -27,6 +27,17 @@ public interface Agent {
         respondTo(conversationId, question, events);
     }
 
+    /**
+     * Answers in one piece, like {@link #respondTo(String, String)}, for a caller that can put
+     * approval requests in front of the owner (a messaging channel): they arrive as
+     * {@link AgentEvent.ApprovalRequested} on {@code events}, and are asked only while
+     * {@code questions} says someone can answer.
+     */
+    default String answer(String conversationId, String question, HumanQuestionHandler questions,
+                          Consumer<AgentEvent> events) {
+        return respondTo(conversationId, question);
+    }
+
     <T> T prompt(String conversationId, String input, Class<T> result);
 
     /** Like {@link #prompt(String, String, Class)}, also reporting tool and approval events. */

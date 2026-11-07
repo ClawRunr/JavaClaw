@@ -24,6 +24,9 @@ dependencies {
 
     runtimeOnly 'com.h2database:h2'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    // ChannelApprovalFixture builds a real agent behind the approval gate for the channel plugins' tests
+    testFixturesImplementation(platform(libs.bom.spring.ai))
+    testFixturesImplementation 'org.springframework.ai:spring-ai-client-chat'
     testImplementation 'org.awaitility:awaitility'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 }

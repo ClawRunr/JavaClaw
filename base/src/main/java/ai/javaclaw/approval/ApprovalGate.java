@@ -268,6 +268,10 @@ public class ApprovalGate {
 
     private static String format(Duration duration) {
         long seconds = duration.toSeconds();
-        return seconds % 60 == 0 ? (seconds / 60) + " minute(s)" : seconds + " seconds";
+        if (seconds >= 60 && seconds % 60 == 0) {
+            long minutes = seconds / 60;
+            return minutes + (minutes == 1 ? " minute" : " minutes");
+        }
+        return seconds + (seconds == 1 ? " second" : " seconds");
     }
 }
