@@ -354,21 +354,38 @@ Rules match tool names exactly and are evaluated in the order deny, ask, allow; 
 Some calls **always ask, whatever the rules say**, because they could turn the approval gate off or widen what the agent can reach:
 - Adding or changing an MCP server (`addStdioMcpServer`, `addStreamableHttpMcpServer`).
 - Writes that target the configuration file holding `agent.approval.*`, or any `application*.yaml|yml|properties` file.
+- Writes into `workspace/conversations/`, the chat history the agent's memory is replayed from.
 - Shell commands or subagent prompts that mention those files or `agent.approval`.
 
 The last check matches text: it is a tripwire for mistakes and casual prompt injection, not a sandbox, because a shell command can still build a file name at run time. That is why shell tools and subagents (`Task`) ask by default. When nobody can be asked, a protected action is always denied, even with `ask-fallback: allow`.
 
 **Who can be asked.** The request is asked where the conversation is:
 - **Web chat:** an approval card with **Allow once** and **Deny**, while at least one browser tab is showing that conversation. If the last tab disconnects while a request is waiting, the request is denied immediately. Waiting requests come back when you reconnect or switch back to the conversation.
-- **Telegram, Discord, WhatsApp and Teams:** a message in the same chat, for example:
+- **Telegram, Discord, WhatsApp and Teams:** a message in the same chat that says in plain words what the agent wants to do, for example:
 
   ```
-  JavaClaw wants to run WebFetch: {"url":"https://example.com"}
-  Risk: NETWORK
-  Reply /approve a1b2c3 or /deny a1b2c3 (expires in 2 minutes).
+  Approval needed: write a file
+  Path: workspace/notes/todo.md
+  Size: 1.2 KB → 340 B
+  Content:
+    - buy milk
+    - call the bank
+  (+4 more lines)
+  Risk: WRITE
+  ⚠️ Overwrites an existing file
+  Expires at 12:05
+  Reply /approve_a1b2c3 or /deny_a1b2c3
   ```
 
-  Reply `/approve <id>` or `/deny <id>`; these replies never reach the model. JavaClaw then confirms the outcome in one short message, also when the request expires. Very long arguments are cut short in the message, which says so. Only the user each channel already accepts can answer (Teams: personal chats only, as for any message). An unknown, expired, already used or other chat's id changes nothing and gets a short reply saying so.
+  The details depend on the tool:
+  - `Write` / `Edit`: the path, whether it is a new file or overwrites one (size before → after), and the content, or the old and new text for `Edit`.
+  - `WebFetch`: the URL. `WebSearch`: the query.
+  - `Task`: the subagent type and its prompt.
+  - MCP tools: the server and the tool's name there, then the arguments as `key: value` lines; any other tool shows its arguments that way too.
+
+  Paths inside the workspace are shown as `workspace/...`; a path outside it is shown in full, with a warning. Previews stop at 6 lines or 300 characters and say how much is left. Warnings (overwriting a file, a path outside the workspace, a protected action) get their own line. The expiry is a clock time in the instance's time zone.
+
+  Reply `/approve_<id>` or `/deny_<id>` (on Telegram, one tap on the command; `/approve <id>` works too). These replies never reach the model. Once the request is answered or expires, Telegram, Discord and Teams edit the request to show the outcome in place of the commands; WhatsApp, which can't edit messages, gets a short reply. Each channel's own formatting is used, and everything a tool call supplies is escaped for it. Only the user each channel already accepts can answer (Teams: personal chats only, as for any message). An unknown, expired, already used or other chat's id changes nothing and gets a short reply saying so.
 - **Everything else** (scheduled tasks and the Vaadin UI): nobody can be asked, so `ask-fallback` decides.
 
 **Only JavaClaw's own pages can answer in the browser.** Every WebSocket JavaClaw serves refuses a handshake from any other origin, and one without an `Origin` header, so another site open in the same browser cannot see or answer approval requests. Behind a reverse proxy, add the proxy's origin to `agent.web.allowed-origins` (see [Chat](#chat-built-in)).
