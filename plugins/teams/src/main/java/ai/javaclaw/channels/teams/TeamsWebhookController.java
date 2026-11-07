@@ -1,6 +1,6 @@
 package ai.javaclaw.channels.teams;
 
-import ai.javaclaw.agent.Agent;
+import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,8 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 
 @RestController
 @ConditionalOnProperty(prefix = "agent.channels.teams", name = "enabled", havingValue = "true")
@@ -24,23 +23,17 @@ public class TeamsWebhookController {
 
     private final TeamsProperties properties;
     private final ChannelRegistry channelRegistry;
-    private final Agent agent;
+    private final ChannelApprovals approvals;
     private final TeamsChannel channel;
     private final BotFrameworkJwtValidator jwtValidator;
-    private final Executor executor;
 
     public TeamsWebhookController(TeamsProperties properties, ChannelRegistry channelRegistry,
-                                  Agent agent, TeamsChannel channel, BotFrameworkJwtValidator jwtValidator) {
+                                  ChannelApprovals approvals, TeamsChannel channel, BotFrameworkJwtValidator jwtValidator) {
         this.properties = properties;
         this.channelRegistry = channelRegistry;
-        this.agent = agent;
+        this.approvals = approvals;
         this.channel = channel;
         this.jwtValidator = jwtValidator;
-        this.executor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "teams-webhook-worker");
-            t.setDaemon(true);
-            return t;
-        });
     }
 
     @PostMapping("/api/teams/webhook")
@@ -79,23 +72,22 @@ public class TeamsWebhookController {
         // message (from another conversation) arrives while the agent is still working on this one
         TeamsConversationReference reference =
                 new TeamsConversationReference(activity.serviceUrl(), teamsConversationId);
-        channel.updateConversationReference(reference);
+        String conversationId = getConversationId(teamsConversationId);
+        Consumer<String> reply = message -> channel.sendMessage(reference, message);
 
+        // /approve and /deny from the allowed user in a personal chat are answered here and never reach the model
+        if (approvals.handleCommand(conversationId, text, reply)) {
+            return ResponseEntity.ok().build();
+        }
+        channel.updateConversationReference(reference);
         channelRegistry.publishMessageReceivedEvent(
                 new TeamsChannelMessageReceivedEvent(channel.getName(), text, teamsConversationId));
-        executor.execute(() -> handleMessage(reference, text));
-        return ResponseEntity.ok().build();
-    }
-
-    private void handleMessage(TeamsConversationReference reference, String text) {
-        String conversationId = getConversationId(reference.conversationId());
-        try {
-            String response = agent.respondTo(conversationId, text);
-            channel.sendMessage(reference, response);
-        } catch (RuntimeException e) {
+        // Answered in the background: Teams expects the webhook to return quickly, and the turn may wait for an /approve
+        approvals.respond(conversationId, text, reply, e -> {
             LOGGER.error("Failed to handle Teams message for conversation '{}'", conversationId, e);
             sendErrorMessage(reference);
-        }
+        });
+        return ResponseEntity.ok().build();
     }
 
     /** Lets the user know the message was not handled, without exposing any error details. */
