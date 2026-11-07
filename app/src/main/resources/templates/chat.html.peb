@@ -328,6 +328,55 @@
 .ar-tool__section--output .ar-tool__pre {
     border-left-color: color-mix(in srgb, var(--bulma-success) 38%, transparent);
 }
+
+/* Refused calls: after --done so a later result frame does not turn the dot green. */
+.ar-tool--denied .ar-tool__dot {
+    animation: none;
+    opacity: 1;
+    background: var(--bulma-danger);
+}
+.ar-tool--awaiting .ar-tool__dot {
+    animation: none;
+    opacity: 1;
+    background: var(--bulma-warning);
+}
+
+/* Approval request: sits at the top of the tool card's body, or alone when the card is gone. */
+.ar-approval {
+    padding: .6rem .7rem .7rem;
+    border-top: 1px solid color-mix(in srgb, var(--bulma-warning) 30%, transparent);
+    background: color-mix(in srgb, var(--bulma-warning) 6%, transparent);
+}
+.ar-approval, .ar-approval * { white-space: normal; }
+.ar-approval__title {
+    display: flex; align-items: center; gap: .45rem; flex-wrap: wrap;
+    font-size: .78rem; font-weight: 600; color: #e6d7a8;
+}
+.ar-approval__tool {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #c8cee0;
+}
+.ar-approval__note {
+    margin-top: .35rem;
+    font-size: .72rem;
+    color: rgba(230, 215, 168, .8);
+}
+.ar-approval__details { margin-top: .45rem; }
+.ar-approval__row { display: flex; gap: .5rem; font-size: .72rem; margin-top: .2rem; }
+.ar-approval__key { flex-shrink: 0; min-width: 8.5rem; color: rgba(200, 212, 240, .45); }
+.ar-approval__value {
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #c8cee0;
+    white-space: pre-wrap !important;
+    word-break: break-word;
+}
+.ar-approval .ar-tool__pre { margin-top: .45rem; }
+.ar-approval__actions { display: flex; align-items: center; gap: .5rem; margin-top: .6rem; flex-wrap: wrap; }
+.ar-approval__expires { font-size: .68rem; color: rgba(200, 212, 240, .45); }
+.ar-approval__outcome { font-size: .75rem; font-weight: 600; margin-top: .45rem; }
+.ar-approval__outcome--allowed { color: var(--bulma-success); }
+.ar-approval__outcome--denied { color: var(--bulma-danger); }
 </style>
 {% endblock %}
 
@@ -412,8 +461,10 @@
 // JS handles only what htmx cannot: updating two separate DOM nodes from one WS event.
 (function () {
     const statusTag  = document.getElementById('status-tag');
+    var socket = null;   // htmx-ext-ws socket wrapper, used to send approval decisions
 
-    document.body.addEventListener('htmx:wsOpen', function () {
+    document.body.addEventListener('htmx:wsOpen', function (e) {
+        socket = e.detail && e.detail.socketWrapper ? e.detail.socketWrapper : null;
         statusTag.className = 'tag is-success is-light is-rounded';
         statusTag.textContent = 'Connected';
         var ta = document.getElementById('message-input');
@@ -478,6 +529,10 @@
             renderToolCall(id, frame.data);
         } else if (frame.type === 'toolResult') {
             renderToolResult(frame.data);
+        } else if (frame.type === 'approvalRequested') {
+            renderApprovalRequest(id, frame.data);
+        } else if (frame.type === 'approvalResolved') {
+            renderApprovalResolved(id, frame.data);
         } else if (frame.type === 'done') {
             clearTypingIndicator();
             endStream(id, 'ar-tool--unanswered', 'no result');
@@ -548,6 +603,144 @@
         card.querySelector('.ar-tool__body').appendChild(outputSection);
         wireCopy(outputSection);
         delete toolCards[data.id];
+    }
+
+    // --- Tool approvals ---------------------------------------------------
+    // Every value from the server is set with textContent; arguments are model output and may
+    // contain anything, including markup.
+    var approvals = {};   // approvalId -> { panel, card }
+
+    var DECISION_LABELS = { 'allow-once': 'Allow once', 'deny': 'Deny' };
+    var DETAIL_LABELS = {
+        workingDirectory: 'Working directory',
+        subagentType: 'Subagent type',
+        prompt: 'Subagent prompt',
+        runInBackground: 'Runs in background'
+    };
+    var REASON_LABELS = {
+        'rule': 'Blocked by an approval rule',
+        'user': 'Denied by you',
+        'timeout': 'Timed out',
+        'nobody-to-ask': 'Nobody could approve it'
+    };
+
+    function el(tag, className, text) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined && text !== null) node.textContent = text;
+        return node;
+    }
+
+    function renderApprovalRequest(conversationId, data) {
+        if (!data || !data.approvalId || approvals[data.approvalId]) return;
+        clearTypingIndicator();
+
+        var entry = data.toolCallId ? toolCards[data.toolCallId] : null;
+        var card = entry && entry.card.isConnected ? entry.card : null;
+        var standalone = !card;
+        if (standalone) {
+            // Shown again after a reload: the original card is gone, so the request stands alone.
+            card = el('details', 'ar-tool');
+            card.innerHTML = '<summary class="ar-tool__head"><span class="ar-tool__caret"></span>' +
+                '<span class="ar-tool__glyph">' + TOOL_ICON + '</span><span class="ar-tool__name"></span>' +
+                '<span class="ar-tool__meta"><span class="ar-tool__time"></span><span class="ar-tool__dot"></span></span>' +
+                '</summary><div class="ar-tool__body"></div>';
+            card.querySelector('.ar-tool__name').textContent = data.toolName || 'tool';
+            streamBubble(conversationId).appendChild(card);
+            delete streamTexts[conversationId];
+        }
+        card.open = true;
+        card.classList.add('ar-tool--awaiting');
+        card.querySelector('.ar-tool__time').textContent = 'needs approval';
+
+        var panel = el('div', 'ar-approval');
+        var title = el('div', 'ar-approval__title');
+        title.appendChild(el('span', null, 'Approval needed to run'));
+        title.appendChild(el('span', 'ar-approval__tool', data.toolName || 'tool'));
+        title.appendChild(el('span', 'tag is-warning is-light is-small', (data.risk || 'UNCLASSIFIED').replace('_', ' ')));
+        panel.appendChild(title);
+        if (data.protectedReason) {
+            panel.appendChild(el('div', 'ar-approval__note',
+                'Always asks, whatever the rules say: this call ' + data.protectedReason + '.'));
+        }
+
+        var details = data.details || {};
+        var keys = Object.keys(details);
+        if (keys.length) {
+            var list = el('div', 'ar-approval__details');
+            keys.forEach(function (key) {
+                var row = el('div', 'ar-approval__row');
+                row.appendChild(el('span', 'ar-approval__key', DETAIL_LABELS[key] || key));
+                row.appendChild(el('span', 'ar-approval__value', String(details[key])));
+                list.appendChild(row);
+            });
+            panel.appendChild(list);
+        }
+        // The exact arguments the tool will receive (also in the card's Input section when attached)
+        if (standalone) {
+            panel.appendChild(el('pre', 'ar-tool__pre', pretty(data.arguments)));
+        }
+
+        var actions = el('div', 'ar-approval__actions');
+        var buttons = [];
+        (data.decisions || []).forEach(function (decision) {
+            var button = el('button', 'button is-small ' + (decision === 'deny' ? 'is-danger is-light' : 'is-warning'),
+                DECISION_LABELS[decision] || decision);
+            button.type = 'button';
+            button.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!socket) { expires.textContent = 'Not connected \u2014 cannot send.'; return; }
+                buttons.forEach(function (b) { b.disabled = true; });
+                button.classList.add('is-loading');
+                socket.send(JSON.stringify({
+                    type: 'approvalDecision',
+                    conversationId: conversationId,
+                    approvalId: data.approvalId,
+                    argumentsHash: data.argumentsHash,
+                    decision: decision
+                }), panel);
+            });
+            buttons.push(button);
+            actions.appendChild(button);
+        });
+        var expires = el('span', 'ar-approval__expires',
+            data.expiresAt ? 'Denied automatically at ' + new Date(data.expiresAt).toLocaleTimeString() : '');
+        actions.appendChild(expires);
+        panel.appendChild(actions);
+
+        var body = card.querySelector('.ar-tool__body');
+        body.insertBefore(panel, body.firstChild);
+        approvals[data.approvalId] = { panel: panel, card: card };
+    }
+
+    function renderApprovalResolved(conversationId, data) {
+        if (!data) return;
+        var entry = data.approvalId ? approvals[data.approvalId] : null;
+        var card = entry ? entry.card : null;
+        if (!card && data.toolCallId && toolCards[data.toolCallId]) card = toolCards[data.toolCallId].card;
+        if (!card || !card.isConnected) return;
+
+        var allowed = data.outcome === 'allowed';
+        card.classList.remove('ar-tool--awaiting');
+        card.querySelector('.ar-tool__time').textContent = allowed ? 'approved' : 'not run';
+        if (!allowed) card.classList.add('ar-tool--denied');
+
+        var panel = entry ? entry.panel : null;
+        if (panel) {
+            var actions = panel.querySelector('.ar-approval__actions');
+            if (actions) actions.remove();
+        } else {
+            // Refused without asking (rule, nobody to ask): the outcome goes on the tool card
+            panel = el('div', 'ar-approval');
+            var body = card.querySelector('.ar-tool__body');
+            body.insertBefore(panel, body.firstChild);
+            card.open = true;
+        }
+        var text = allowed ? 'Allowed once.'
+            : (REASON_LABELS[data.reason] || 'Not run') + (data.detail ? ': ' + data.detail : '') + '.';
+        panel.appendChild(el('div', 'ar-approval__outcome ar-approval__outcome--' + (allowed ? 'allowed' : 'denied'), text));
+        if (data.approvalId) delete approvals[data.approvalId];
     }
 
     function section(label, extraClass) {

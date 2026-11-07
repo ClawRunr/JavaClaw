@@ -4,6 +4,7 @@ import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentEvent;
 
 import java.util.function.Consumer;
+import ai.javaclaw.approval.PendingApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.chat.ChatChannel;
 import org.junit.jupiter.api.Test;
@@ -19,12 +20,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
@@ -49,13 +52,15 @@ class ChatStreamingIntegrationTest {
     @Test
     void userMessageIsAnsweredWithMultipleChunkFramesBeforeDone() throws Exception {
         BlockingQueue<String> received = new LinkedBlockingQueue<>();
+        WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
+        headers.setOrigin("http://localhost:" + port);
         WebSocketSession session = new StandardWebSocketClient()
                 .execute(new TextWebSocketHandler() {
                     @Override
                     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
                         received.add(message.getPayload());
                     }
-                }, "ws://localhost:" + port + "/ws/chat")
+                }, headers, URI.create("ws://localhost:" + port + "/ws/chat"))
                 .get(5, TimeUnit.SECONDS);
 
         try {
@@ -103,6 +108,11 @@ class ChatStreamingIntegrationTest {
         @Bean
         ObjectMapper objectMapper() {
             return new ObjectMapper();
+        }
+
+        @Bean
+        PendingApprovals pendingApprovals() {
+            return new PendingApprovals();
         }
 
         @Bean

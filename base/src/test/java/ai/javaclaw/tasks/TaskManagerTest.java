@@ -71,7 +71,7 @@ class TaskManagerTest {
         when(taskRepositoryMock.save(any(Task.class))).thenReturn(saved);
         when(taskRepositoryMock.getTaskById("some-id")).thenReturn(saved);
         // The agent is called with the task's conversation id, not with the task id itself
-        when(agentMock.prompt(eq("task-some-id"), anyString(), any())).thenReturn(new TaskResult(Status.completed, "All mail was summarized!"));
+        when(agentMock.prompt(eq("task-some-id"), anyString(), any(), any())).thenReturn(new TaskResult(Status.completed, "All mail was summarized!"));
 
         taskManager.create("handle-email", "Process unread email messages");
 
