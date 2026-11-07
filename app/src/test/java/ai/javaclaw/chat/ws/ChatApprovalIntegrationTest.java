@@ -245,7 +245,7 @@ class ChatApprovalIntegrationTest {
     @Configuration(proxyBeanMethods = false)
     @ImportAutoConfiguration({TomcatServletWebServerAutoConfiguration.class,
             DispatcherServletAutoConfiguration.class, WebMvcAutoConfiguration.class})
-    @Import({WebSocketConfig.class, ChatWebSocketHandler.class, ChatChannel.class})
+    @Import({WebSocketOriginConfiguration.class, WebSocketConfig.class, ChatWebSocketHandler.class, ChatChannel.class})
     static class TestConfig {
 
         @Bean

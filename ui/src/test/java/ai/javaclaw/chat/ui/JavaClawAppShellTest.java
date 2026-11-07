@@ -8,13 +8,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JavaClawAppShellTest {
 
     /**
-     * The web chat's {@code /ws/chat} socket only accepts JavaClaw's own origin, because it can answer
-     * tool approvals. Vaadin opens a WebSocket of its own only for server push, which this UI does not
-     * use: it answers over ordinary requests that carry Vaadin's CSRF token. Turning push on would add
-     * an Atmosphere socket that needs the same origin check before it ships.
+     * Vaadin registers an Atmosphere WebSocket at {@code /ui/VAADIN/push} whether or not push is on;
+     * the app's {@code WebSocketOriginFilter} refuses handshakes to it from any other origin. The UI
+     * itself does not use push: it answers over ordinary requests carrying Vaadin's CSRF token, and
+     * cannot answer tool approvals. Turning push on would put that socket to use, so it should be a
+     * deliberate change that is checked against the origin filter, not a side effect.
      */
     @Test
-    void theVaadinUiOpensNoWebSocketOfItsOwn() {
+    void theVaadinUiDoesNotUseServerPush() {
         assertThat(JavaClawAppShell.class.getAnnotation(Push.class)).isNull();
     }
 }
