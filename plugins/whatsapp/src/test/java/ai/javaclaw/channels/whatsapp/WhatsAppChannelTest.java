@@ -1,6 +1,8 @@
 package ai.javaclaw.channels.whatsapp;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.approval.PendingApprovals;
+import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.channels.whatsapp.WhatsAppChannel.WhatsAppChannelMessageReceivedEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,9 +12,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -36,7 +41,9 @@ class WhatsAppChannelTest {
 
     @BeforeEach
     void setUp() {
-        channel = new WhatsAppChannel(whatsApp, channelRegistry, agent);
+        // Turns run on the calling thread here, so each test sees the whole exchange when onMessage returns
+        channel = new WhatsAppChannel(whatsApp, channelRegistry,
+                new ChannelApprovals(agent, new PendingApprovals(), Clock.systemUTC(), Runnable::run));
     }
 
     @Test
@@ -76,7 +83,7 @@ class WhatsAppChannelTest {
 
     @Test
     void answersWhatTheAgentReplies() {
-        when(agent.respondTo(ALLOWED_JID, "hello")).thenReturn("hi there");
+        when(agent.answer(eq(ALLOWED_JID), eq("hello"), any(), any())).thenReturn("hi there");
 
         channel.onMessage(ALLOWED_JID, "hello");
 
@@ -85,7 +92,7 @@ class WhatsAppChannelTest {
 
     @Test
     void publishesAnEventNamingTheChatAsTheConversation() {
-        when(agent.respondTo(ALLOWED_JID, "hello")).thenReturn("hi there");
+        when(agent.answer(eq(ALLOWED_JID), eq("hello"), any(), any())).thenReturn("hi there");
 
         channel.onMessage(ALLOWED_JID, "hello");
 
@@ -101,7 +108,7 @@ class WhatsAppChannelTest {
     void publishesTheEventBeforeAskingTheAgent() {
         // The agent turn takes seconds; the registry has to know which channel is live before then,
         // or a task finishing mid-turn would have its reply routed somewhere else.
-        when(agent.respondTo(ALLOWED_JID, "hello")).thenAnswer(invocation -> {
+        when(agent.answer(eq(ALLOWED_JID), eq("hello"), any(), any())).thenAnswer(invocation -> {
             verify(channelRegistry).publishMessageReceivedEvent(any());
             return "hi there";
         });
@@ -113,7 +120,7 @@ class WhatsAppChannelTest {
 
     @Test
     void swallowsAgentFailures() {
-        when(agent.respondTo(ALLOWED_JID, "hello")).thenThrow(new RuntimeException("boom"));
+        when(agent.answer(eq(ALLOWED_JID), eq("hello"), any(), any())).thenThrow(new RuntimeException("boom"));
 
         channel.onMessage(ALLOWED_JID, "hello");
 

@@ -1,6 +1,6 @@
 package ai.javaclaw.channels.whatsapp;
 
-import ai.javaclaw.agent.Agent;
+import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.cli.CliRunner;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,7 +29,7 @@ public class WhatsAppChannelAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "agent.channels.whatsapp", name = "enabled", havingValue = "true")
-    public WhatsAppChannel whatsAppChannel(WhatsApp whatsApp, ChannelRegistry channelRegistry, Agent agent) {
-        return new WhatsAppChannel(whatsApp, channelRegistry, agent);
+    public WhatsAppChannel whatsAppChannel(WhatsApp whatsApp, ChannelRegistry channelRegistry, ChannelApprovals approvals) {
+        return new WhatsAppChannel(whatsApp, channelRegistry, approvals);
     }
 }

@@ -1,13 +1,15 @@
 package ai.javaclaw.channels.whatsapp;
 
-import ai.javaclaw.agent.Agent;
 import ai.javaclaw.channels.Channel;
+import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.function.Consumer;
 
 /**
  * Puts the agent behind {@link WhatsApp}: it answers what arrives there, and it is where replies
@@ -21,12 +23,12 @@ public class WhatsAppChannel implements Channel {
 
     private final WhatsApp whatsApp;
     private final ChannelRegistry channelRegistry;
-    private final Agent agent;
+    private final ChannelApprovals approvals;
 
-    public WhatsAppChannel(WhatsApp whatsApp, ChannelRegistry channelRegistry, Agent agent) {
+    public WhatsAppChannel(WhatsApp whatsApp, ChannelRegistry channelRegistry, ChannelApprovals approvals) {
         this.whatsApp = whatsApp;
         this.channelRegistry = channelRegistry;
-        this.agent = agent;
+        this.approvals = approvals;
     }
 
     @Override
@@ -55,13 +57,17 @@ public class WhatsAppChannel implements Channel {
         whatsApp.sendMessage(message);
     }
 
+    /** Only messages from the configured chat get here; {@link WhatsApp} drops the rest. */
     void onMessage(String fromJidId, String message) {
-        channelRegistry.publishMessageReceivedEvent(new WhatsAppChannelMessageReceivedEvent(getName(), message, fromJidId));
-        try {
-            whatsApp.sendMessage(agent.respondTo(fromJidId, message));
-        } catch (RuntimeException e) {
-            LOGGER.error("Failed to handle WhatsApp message for chat '{}'", fromJidId, e);
+        Consumer<String> reply = whatsApp::sendMessage;
+        // /approve and /deny are answered here, on the webhook worker, and never reach the model
+        if (approvals.handleCommand(fromJidId, message, reply)) {
+            return;
         }
+        channelRegistry.publishMessageReceivedEvent(new WhatsAppChannelMessageReceivedEvent(getName(), message, fromJidId));
+        // The turn runs in the background, so the single webhook worker can deliver an /approve it waits for
+        approvals.respond(fromJidId, message, reply,
+                e -> LOGGER.error("Failed to handle WhatsApp message for chat '{}'", fromJidId, e));
     }
 
     static class WhatsAppChannelMessageReceivedEvent extends ChannelMessageReceivedEvent {
