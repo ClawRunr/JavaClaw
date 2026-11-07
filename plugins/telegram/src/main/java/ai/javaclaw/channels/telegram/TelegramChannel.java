@@ -55,7 +55,7 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
     TelegramChannel(String botToken, String allowedUsername, TelegramClient telegramClient, ChannelApprovals approvals,
                     ChannelRegistry channelRegistry) {
         this.botToken = botToken;
-        this.allowedUsername = normalizeUsername(allowedUsername);
+        this.allowedUsername = TelegramUsernames.normalize(allowedUsername);
         this.telegramClient = telegramClient;
         this.approvals = approvals;
         this.channelRegistry = channelRegistry;
@@ -218,21 +218,8 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
     }
 
     private boolean isAllowedUser(String userName) {
-        String normalizedUserName = normalizeUsername(userName);
+        String normalizedUserName = TelegramUsernames.normalize(userName);
         return normalizedUserName != null && normalizedUserName.equalsIgnoreCase(allowedUsername);
-    }
-
-    private static String normalizeUsername(String userName) {
-        if (userName == null) {
-            return null;
-        }
-
-        String normalizedUserName = userName.trim();
-        if (normalizedUserName.startsWith("@")) {
-            normalizedUserName = normalizedUserName.substring(1);
-        }
-
-        return normalizedUserName.isBlank() ? null : normalizedUserName;
     }
 
     private String getConversationId(Long chatId, Integer messageThreadId) {

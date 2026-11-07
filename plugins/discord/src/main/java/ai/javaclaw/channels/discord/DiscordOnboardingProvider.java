@@ -46,7 +46,7 @@ public class DiscordOnboardingProvider implements OnboardingProvider {
     @Override
     public String processStep(Map<String, String> formParams, Map<String, Object> session) {
         String token = formParams.getOrDefault("discordToken", "").trim();
-        String allowedUser = normalizeUserId(formParams.get("discordAllowedUser"));
+        String allowedUser = DiscordUserIds.normalize(formParams.get("discordAllowedUser"));
 
         if (token.isBlank()) {
             return "Enter the Discord bot token to continue.";
@@ -71,19 +71,5 @@ public class DiscordOnboardingProvider implements OnboardingProvider {
                     ALLOWED_USER_PROPERTY, allowedUser
             ));
         }
-    }
-
-    private static String normalizeUserId(String userId) {
-        if (userId == null) {
-            return null;
-        }
-        String normalized = userId.trim();
-        if (normalized.startsWith("<@") && normalized.endsWith(">")) {
-            normalized = normalized.substring(2, normalized.length() - 1);
-            if (normalized.startsWith("!")) {
-                normalized = normalized.substring(1);
-            }
-        }
-        return normalized.isBlank() ? null : normalized;
     }
 }

@@ -34,7 +34,7 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
     private volatile MessageChannel lastChannel;
 
     public DiscordChannel(String allowedUserId, ChannelApprovals approvals, ChannelRegistry channelRegistry) {
-        this.allowedUserId = normalizeUserId(allowedUserId);
+        this.allowedUserId = DiscordUserIds.normalize(allowedUserId);
         this.approvals = approvals;
         this.channelRegistry = channelRegistry;
         channelRegistry.registerChannel(this);
@@ -47,7 +47,7 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
             return;
         }
 
-        String userId = normalizeUserId(event.getAuthor().getId());
+        String userId = DiscordUserIds.normalize(event.getAuthor().getId());
         MessageChannel channel = event.getChannel();
         String content = normalizeText(event.getJDA(), event.getMessage(), event.isFromGuild());
 
@@ -157,19 +157,5 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
 
     private static String getConversationId(String channelId) {
         return "discord-" + channelId;
-    }
-
-    private static String normalizeUserId(String userId) {
-        if (userId == null) {
-            return null;
-        }
-        String normalized = userId.trim();
-        if (normalized.startsWith("<@") && normalized.endsWith(">")) {
-            normalized = normalized.substring(2, normalized.length() - 1);
-            if (normalized.startsWith("!")) {
-                normalized = normalized.substring(1);
-            }
-        }
-        return normalized.isBlank() ? null : normalized;
     }
 }
