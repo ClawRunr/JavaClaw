@@ -6,6 +6,14 @@ package ai.javaclaw.channels;
  */
 public interface ApprovalChat {
 
+    /**
+     * Whether the owner can be asked here. A chat other people can read, such as a group, says no,
+     * so calls that need approval are refused instead of being asked about in public.
+     */
+    default boolean canAsk() {
+        return true;
+    }
+
     /** The markup approval messages are written in for this channel. */
     ApprovalFormat format();
 

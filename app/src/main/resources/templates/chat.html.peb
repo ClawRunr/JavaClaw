@@ -361,16 +361,6 @@
     font-size: .72rem;
     color: rgba(230, 215, 168, .8);
 }
-.ar-approval__details { margin-top: .45rem; }
-.ar-approval__row { display: flex; gap: .5rem; font-size: .72rem; margin-top: .2rem; }
-.ar-approval__key { flex-shrink: 0; min-width: 8.5rem; color: rgba(200, 212, 240, .45); }
-.ar-approval__value {
-    min-width: 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #c8cee0;
-    white-space: pre-wrap !important;
-    word-break: break-word;
-}
 .ar-approval .ar-tool__pre { margin-top: .45rem; }
 .ar-approval__actions { display: flex; align-items: center; gap: .5rem; margin-top: .6rem; flex-wrap: wrap; }
 .ar-approval__expires { font-size: .68rem; color: rgba(200, 212, 240, .45); }
@@ -611,12 +601,6 @@
     var approvals = {};   // approvalId -> { panel, card }
 
     var DECISION_LABELS = { 'allow-once': 'Allow once', 'deny': 'Deny' };
-    var DETAIL_LABELS = {
-        workingDirectory: 'Working directory',
-        subagentType: 'Subagent type',
-        prompt: 'Subagent prompt',
-        runInBackground: 'Runs in background'
-    };
     var REASON_LABELS = {
         'rule': 'Blocked by an approval rule',
         'user': 'Denied by you',
@@ -632,7 +616,9 @@
     }
 
     function renderApprovalRequest(conversationId, data) {
-        if (!data || !data.approvalId || approvals[data.approvalId]) return;
+        // A card replayed after a reload is drawn again; one still on the page is not drawn twice
+        var existing = data && data.approvalId ? approvals[data.approvalId] : null;
+        if (!data || !data.approvalId || (existing && existing.card.isConnected)) return;
         clearTypingIndicator();
 
         var entry = data.toolCallId ? toolCards[data.toolCallId] : null;
@@ -657,29 +643,14 @@
         var title = el('div', 'ar-approval__title');
         title.appendChild(el('span', null, 'Approval needed to run'));
         title.appendChild(el('span', 'ar-approval__tool', data.toolName || 'tool'));
-        title.appendChild(el('span', 'tag is-warning is-light is-small', (data.risk || 'UNCLASSIFIED').replace('_', ' ')));
         panel.appendChild(title);
         if (data.protectedReason) {
             panel.appendChild(el('div', 'ar-approval__note',
                 'Always asks, whatever the rules say: this call ' + data.protectedReason + '.'));
         }
 
-        var details = data.details || {};
-        var keys = Object.keys(details);
-        if (keys.length) {
-            var list = el('div', 'ar-approval__details');
-            keys.forEach(function (key) {
-                var row = el('div', 'ar-approval__row');
-                row.appendChild(el('span', 'ar-approval__key', DETAIL_LABELS[key] || key));
-                row.appendChild(el('span', 'ar-approval__value', String(details[key])));
-                list.appendChild(row);
-            });
-            panel.appendChild(list);
-        }
-        // The exact arguments the tool will receive (also in the card's Input section when attached)
-        if (standalone) {
-            panel.appendChild(el('pre', 'ar-tool__pre', pretty(data.arguments)));
-        }
+        // The exact arguments the tool will receive, from the request itself
+        panel.appendChild(el('pre', 'ar-tool__pre', pretty(data.arguments)));
 
         var actions = el('div', 'ar-approval__actions');
         var buttons = [];

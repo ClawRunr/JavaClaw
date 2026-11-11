@@ -16,32 +16,34 @@ public final class ApprovalGateFixtures {
     /** Where tests pretend the runtime configuration lives. */
     public static final Path CONFIG_FILE = Path.of("app", "src", "main", "resources", "application.private.yaml");
 
-    /** Where tests pretend the conversation history lives; writes there always ask. */
-    public static final Path CONVERSATIONS_DIR = Path.of("workspace", "conversations");
+    /** Where tests pretend the workspace is. */
+    public static final Path WORKSPACE = Path.of("workspace");
 
-    /** Test tools, one per risk level, plus one nobody classified. */
-    public static final ToolRiskContributor TEST_TOOL_RISKS = () -> Map.of(
-            "readNotes", ToolRisk.READ_ONLY,
-            "writeNote", ToolRisk.WRITE,
-            "runScript", ToolRisk.EXECUTE,
-            "fetchUrl", ToolRisk.NETWORK);
+    /** The protected paths {@code application.yaml} ships with. */
+    public static final List<String> PROTECTED_PATHS = List.of(
+            "application*.yaml", "application*.yml", "application*.properties",
+            "workspace/conversations/", "workspace/AGENT.md", "workspace/INFO.md",
+            "workspace/skills/", "workspace/agents/");
+
+    /** {@code readNotes} and tool search run without asking; everything else asks. */
+    public static final ApprovalProperties DEFAULTS = rules(List.of("readNotes", "toolSearchTool"), List.of());
 
     private ApprovalGateFixtures() {
     }
 
     public static ApprovalGate defaultGate() {
-        return gate(ApprovalProperties.defaults(), new PendingApprovals());
+        return gate(DEFAULTS, new PendingApprovals());
     }
 
     public static ApprovalGate gate(ApprovalProperties properties, PendingApprovals pendingApprovals) {
         return new ApprovalGate(properties,
-                new ToolRiskRegistry(List.of(new DefaultToolRisks(), TEST_TOOL_RISKS)),
-                new ProtectedActions(CONFIG_FILE, Map.of(CONVERSATIONS_DIR, "workspace/conversations")),
+                new ProtectedPaths(CONFIG_FILE, properties.protectedPaths(), WORKSPACE.toAbsolutePath()),
                 pendingApprovals, Clock.systemUTC());
     }
 
-    public static ApprovalProperties rules(List<String> allow, List<String> ask, List<String> deny) {
-        return new ApprovalProperties(null, null, new ApprovalProperties.Rules(allow, ask, deny));
+    /** {@code allow} and {@code deny}, with the shipped protected paths. */
+    public static ApprovalProperties rules(List<String> allow, List<String> deny) {
+        return new ApprovalProperties(null, allow, deny, PROTECTED_PATHS);
     }
 
     /** A tool that records every input, and the tool context, it runs with. */

@@ -69,7 +69,9 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
         lastChannel = channel;
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), content));
         // The turn runs in the background, so JDA can still deliver an /approve it may wait for
-        approvals.respond(conversationId, content, new DiscordChat(channel), e -> {
+        // Approvals are asked only in a DM; in a server channel, calls that need one are refused
+        DiscordChat chat = new DiscordChat(channel, event.isFromType(ChannelType.PRIVATE));
+        approvals.respond(conversationId, content, chat, e -> {
             log.error("Failed to handle Discord message for conversation '{}'", conversationId, e);
             reply(channel, ERROR_MESSAGE);
         });
@@ -102,8 +104,10 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
      * The channel a turn came from. Approval requests are sent in Discord markdown with mentions
      * switched off, so nothing a tool call contains can ping anyone, and are edited to show their
      * outcome.
+     *
+     * @param canAsk whether this is a DM, the only place the owner is asked
      */
-    private record DiscordChat(MessageChannel channel) implements ApprovalChat {
+    private record DiscordChat(MessageChannel channel, boolean canAsk) implements ApprovalChat {
 
         private static final EnumSet<Message.MentionType> NO_MENTIONS = EnumSet.noneOf(Message.MentionType.class);
 

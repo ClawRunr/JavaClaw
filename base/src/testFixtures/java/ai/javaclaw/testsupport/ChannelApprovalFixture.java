@@ -4,12 +4,8 @@ import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.DefaultAgent;
 import ai.javaclaw.approval.ApprovalGate;
 import ai.javaclaw.approval.ApprovalProperties;
-import ai.javaclaw.approval.DefaultToolRisks;
 import ai.javaclaw.approval.PendingApprovals;
-import ai.javaclaw.approval.ProtectedActions;
-import ai.javaclaw.approval.ToolRisk;
-import ai.javaclaw.approval.ToolRiskContributor;
-import ai.javaclaw.approval.ToolRiskRegistry;
+import ai.javaclaw.approval.ProtectedPaths;
 import ai.javaclaw.channels.ApprovalMessages;
 import ai.javaclaw.channels.ChannelApprovals;
 import org.springframework.ai.chat.client.ChatClient;
@@ -32,8 +28,6 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 import java.util.regex.Matcher;
@@ -43,7 +37,7 @@ import java.util.regex.Pattern;
  * A real agent behind the real approval gate, for testing the text approval flow end to end
  * without a language model: the scripted model asks for {@value #TOOL} with {@link #ARGUMENTS}
  * once, then answers with the tool's result ({@code "Done: fetched"}) or the gate's refusal.
- * The tool is {@code NETWORK}, so it needs approval.
+ * The tool is not in {@code allow}, so it needs approval.
  */
 public final class ChannelApprovalFixture implements AutoCloseable {
 
@@ -68,10 +62,9 @@ public final class ChannelApprovalFixture implements AutoCloseable {
      * @param arguments what the model passes to {@value #TOOL}
      */
     public ChannelApprovalFixture(Duration timeout, String arguments) {
-        ToolRiskContributor fetchRisk = () -> Map.of(TOOL, ToolRisk.NETWORK);
-        ApprovalGate gate = new ApprovalGate(new ApprovalProperties(timeout, null, null),
-                new ToolRiskRegistry(List.of(new DefaultToolRisks(), fetchRisk)),
-                new ProtectedActions(Path.of("application.private.yaml")), pending, Clock.systemUTC());
+        ApprovalGate gate = new ApprovalGate(new ApprovalProperties(timeout, null, null, null),
+                new ProtectedPaths(Path.of("application.private.yaml"), List.of(), Path.of("workspace")),
+                pending, Clock.systemUTC());
         this.agent = new DefaultAgent(ChatClient.builder(new ScriptedModel(arguments))
                 .defaultTools(new FetchTool())
                 .defaultAdvisors(gate.deniedToolFilter(), ToolCallingAdvisor.builder()
@@ -88,7 +81,7 @@ public final class ChannelApprovalFixture implements AutoCloseable {
      */
     public static ChannelApprovals onCallingThread(Agent agent) {
         return new ChannelApprovals(agent, new PendingApprovals(),
-                new ApprovalMessages(Path.of("workspace"), _ -> Optional.empty(), Clock.systemDefaultZone()),
+                new ApprovalMessages(Clock.systemDefaultZone()),
                 Clock.systemDefaultZone(), Runnable::run);
     }
 

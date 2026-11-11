@@ -6,23 +6,16 @@ import ai.javaclaw.approval.ApprovalDecision;
 import ai.javaclaw.approval.ApprovalRequest;
 import ai.javaclaw.approval.Denial;
 import ai.javaclaw.approval.PendingApprovals;
-import ai.javaclaw.mcp.McpToolDirectory;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -80,20 +73,8 @@ public class ChannelApprovals {
     }
 
     @Autowired
-    public ChannelApprovals(Agent agent, PendingApprovals pendingApprovals,
-                            @Value("${agent.workspace:file:./workspace/}") Resource workspace,
-                            ObjectProvider<McpToolDirectory> mcpTools) throws IOException {
-        this(agent, pendingApprovals,
-                new ApprovalMessages(workspace.getFilePath(), tool -> Optional.ofNullable(mcpTools.getIfAvailable())
-                        .flatMap(directory -> directory.find(tool)), Clock.systemDefaultZone()),
-                Clock.systemDefaultZone(),
-                Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("channel-turn-", 0).factory()));
-    }
-
-    /** With the workspace at {@code ./workspace}, no MCP lookup and the system clock; for tests. */
     public ChannelApprovals(Agent agent, PendingApprovals pendingApprovals) {
-        this(agent, pendingApprovals, new ApprovalMessages(Path.of("workspace"), _ -> Optional.empty(),
-                        Clock.systemDefaultZone()), Clock.systemDefaultZone(),
+        this(agent, pendingApprovals, new ApprovalMessages(Clock.systemDefaultZone()), Clock.systemDefaultZone(),
                 Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("channel-turn-", 0).factory()));
     }
 
@@ -172,8 +153,8 @@ public class ChannelApprovals {
 
     private void runTurn(String conversationId, String text, ApprovalChat chat, Consumer<RuntimeException> onFailure) {
         try {
-            // The channel the turn came from can always be asked; the owner answers there
-            String answer = agent.answer(conversationId, text, _ -> true, event -> onEvent(event, chat));
+            // The owner answers in the chat the turn came from, unless others can read it
+            String answer = agent.answer(conversationId, text, _ -> chat.canAsk(), event -> onEvent(event, chat));
             chat.send(answer);
         } catch (RuntimeException e) {
             try {

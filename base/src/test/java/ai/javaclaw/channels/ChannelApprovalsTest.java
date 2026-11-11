@@ -43,9 +43,8 @@ class ChannelApprovalsTest {
 
         String id = shortId(request);
         assertThat(id).hasSize(6);
-        assertThat(request).startsWith("<b>Approval needed: run " + TOOL + "</b>\n")
+        assertThat(request).startsWith("<b>JavaClaw wants to run</b> <code>" + TOOL + "</code>\n")
                 .contains("<pre>  url: https://example.com</pre>")
-                .contains("Risk: NETWORK")
                 .containsPattern("Expires at \\d\\d:\\d\\d")
                 .endsWith("Reply /approve_" + id + " or /deny_" + id);
         assertThat(fixture.toolRuns()).isEmpty();
@@ -78,7 +77,7 @@ class ChannelApprovalsTest {
         // Request, then the answer: no separate outcome message
         assertThat(chat.sent()).hasSize(2);
         assertThat(chat.edits()).singleElement().asString()
-                .startsWith("<b>Approval needed: run " + TOOL + "</b>")
+                .startsWith("<b>JavaClaw wants to run</b> <code>" + TOOL + "</code>")
                 .contains("✅ <b>Approved</b>: running " + TOOL)
                 .doesNotContain("/approve_").doesNotContain("Expires at");
         assertThat(chat.formatted(0)).isEqualTo(chat.edits().getFirst());
@@ -186,7 +185,7 @@ class ChannelApprovalsTest {
         await(() -> !chat.sent().isEmpty() || !failures.isEmpty());
         assertThat(failures).isEmpty();
         String request = chat.sent().getFirst();
-        assertThat(request).as("approval request").contains("Approval needed");
+        assertThat(request).as("approval request").contains("JavaClaw wants to run");
         return request;
     }
 

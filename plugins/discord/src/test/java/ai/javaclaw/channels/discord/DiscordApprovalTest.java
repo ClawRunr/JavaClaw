@@ -58,7 +58,7 @@ class DiscordApprovalTest {
         await(() -> !sent.isEmpty());
         String request = sent.getFirst();
         String id = shortId(request);
-        assertThat(request).startsWith("**Approval needed: run " + ChannelApprovalFixture.TOOL + "**")
+        assertThat(request).startsWith("**JavaClaw wants to run** `` " + ChannelApprovalFixture.TOOL + " ``")
                 .contains("```\n  url: https://example.com\n```");
         assertThat(allowedMentions).singleElement().satisfies(mentions -> assertThat(mentions).isEmpty());
 
@@ -91,7 +91,24 @@ class DiscordApprovalTest {
         assertThat(fixture.toolRuns()).isEmpty();
     }
 
+    @Test
+    void aServerChannelGetsNoApprovalRequestAndTheCallIsDenied() {
+        channel.onMessageReceived(event("123", "fetch example.com", false));
+
+        await(() -> !sent.isEmpty());
+        assertThat(sent).singleElement().asString()
+                .startsWith("Not done: Tool ").contains("was NOT run")
+                .doesNotContain("/approve");
+        assertThat(fixture.toolRuns()).isEmpty();
+        assertThat(fixture.pending().pendingFor("discord-D1")).isEmpty();
+    }
+
     private MessageReceivedEvent event(String authorId, String content) {
+        return event(authorId, content, true);
+    }
+
+    /** @param direct a direct message; otherwise a message in a server channel that mentions the bot */
+    private MessageReceivedEvent event(String authorId, String content, boolean direct) {
         MessageReceivedEvent event = mock(MessageReceivedEvent.class);
         User author = mock(User.class);
         Message message = mock(Message.class);
@@ -100,11 +117,12 @@ class DiscordApprovalTest {
         SelfUser self = mock(SelfUser.class);
         when(event.getAuthor()).thenReturn(author);
         when(author.getId()).thenReturn(authorId);
-        when(event.isFromType(ChannelType.PRIVATE)).thenReturn(true);
-        when(event.isFromGuild()).thenReturn(false);
+        when(event.isFromType(ChannelType.PRIVATE)).thenReturn(direct);
+        when(event.isFromGuild()).thenReturn(!direct);
         when(event.getMessage()).thenReturn(message);
         when(message.getContentRaw()).thenReturn(content);
         when(message.getMentions()).thenReturn(mentions);
+        when(mentions.isMentioned(self)).thenReturn(!direct);
         when(event.getJDA()).thenReturn(jda);
         when(jda.getSelfUser()).thenReturn(self);
         when(event.getChannel()).thenReturn(dm);

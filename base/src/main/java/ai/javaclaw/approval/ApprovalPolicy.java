@@ -1,39 +1,32 @@
 package ai.javaclaw.approval;
 
-import java.util.Optional;
 import java.util.Set;
 
 /**
- * Applies {@code agent.approval.rules} to one call. Order: deny, then protected actions, then ask,
- * then allow — first match wins. With no match a {@link ToolRisk#READ_ONLY} tool runs and anything
- * else, including an unclassified tool, asks.
+ * Applies {@code agent.approval.allow} and {@code agent.approval.deny} to one call. Order: deny,
+ * then protected path, then allow; everything else asks.
  */
 public class ApprovalPolicy {
 
     public enum Verdict { RUN, ASK, DENY }
 
     private final Set<String> allow;
-    private final Set<String> ask;
     private final Set<String> deny;
 
-    public ApprovalPolicy(ApprovalProperties.Rules rules) {
-        this.allow = Set.copyOf(rules.allow());
-        this.ask = Set.copyOf(rules.ask());
-        this.deny = Set.copyOf(rules.deny());
+    public ApprovalPolicy(ApprovalProperties properties) {
+        this.allow = Set.copyOf(properties.allow());
+        this.deny = Set.copyOf(properties.deny());
     }
 
-    public Verdict evaluate(String toolName, Optional<ToolRisk> risk, boolean protectedAction) {
+    public Verdict evaluate(String toolName, boolean touchesProtectedPath) {
         if (deny.contains(toolName)) {
             return Verdict.DENY;
         }
-        // Protected actions sit above allow so no rule can switch the gate off
-        if (protectedAction || ask.contains(toolName)) {
+        // Above allow, so no allowed tool can change what keeps the gate in place
+        if (touchesProtectedPath) {
             return Verdict.ASK;
         }
-        if (allow.contains(toolName)) {
-            return Verdict.RUN;
-        }
-        return risk.equals(Optional.of(ToolRisk.READ_ONLY)) ? Verdict.RUN : Verdict.ASK;
+        return allow.contains(toolName) ? Verdict.RUN : Verdict.ASK;
     }
 
     /** Denied tools are never offered to the model. */

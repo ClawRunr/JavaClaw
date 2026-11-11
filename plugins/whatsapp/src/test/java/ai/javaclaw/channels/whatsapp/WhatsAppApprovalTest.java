@@ -64,7 +64,7 @@ class WhatsAppApprovalTest {
         await(() -> !sent.isEmpty());
         String request = sent.getFirst();
         String id = shortId(request);
-        assertThat(request).startsWith("*Approval needed: run " + ChannelApprovalFixture.TOOL + "*")
+        assertThat(request).startsWith("*JavaClaw wants to run* ```" + ChannelApprovalFixture.TOOL + "```")
                 .contains("```  url: https://example.com```")
                 .endsWith("Reply /approve_" + id + " or /deny_" + id);
         assertThat(fixture.toolRuns()).isEmpty();

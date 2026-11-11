@@ -325,72 +325,80 @@ Notes:
 
 ### Tool Approval
 
-Before the agent runs a tool that can change something, it pauses and asks you where the request came from: in the web chat, or in the Telegram, Discord, WhatsApp or Teams chat you wrote in. You see the tool, its risk, its exact arguments and, for file tools, the working directory. For a subagent you see the subagent type and the full prompt. You choose to allow it once or deny it. A denied call is not an error: the agent gets the denial and the reason as the tool's result and carries on without it.
+Before the agent runs a tool, it can pause and ask you where the request came from: in the web chat, or in the Telegram, Discord, WhatsApp or Teams chat you wrote in. You see the tool and its exact arguments, and you choose to allow it once or deny it. A denied call is not an error: the agent gets the denial and the reason as the tool's result and carries on without it.
 
-Every tool has a risk level: `READ_ONLY`, `WRITE`, `EXECUTE` or `NETWORK`. With no rules configured, `READ_ONLY` tools (for example `Read`, `Skill`, `CheckListTool`, `toolSearchTool`) run without asking. Everything else asks, including MCP tools and any other tool nobody has classified.
+Each call is decided in this order; the first match wins:
+
+1. **Deny:** a tool in `agent.approval.deny` never runs, and is not even offered to the model.
+2. **Protected path:** a call with any argument value that points into a protected path, or mentions a protected file name, always asks, even if the tool is in `allow`.
+3. **Allow:** a tool in `agent.approval.allow` runs without asking.
+4. **Ask:** everything else asks, including MCP tools and plugin tools.
+
+When nobody can be asked, a call that would ask is denied.
+
+The defaults live in `application.yaml`:
 
 ```yaml
 agent:
   approval:
-    timeout: 2m          # how long a request waits; at most 10m. Timing out counts as deny.
-    ask-fallback: deny   # deny | allow — used when nobody can be asked (see below)
-    rules:
-      allow: [WebFetch, WebSearch]   # run without asking
-      ask: [Read]                    # always ask, even if also allowed
-      deny: [Task]                   # never run; not even offered to the model
+    timeout: 2m   # how long a request waits; at most 10m. Timing out counts as deny.
+    allow: [Read, Skill, toolSearchTool, CheckListTool, listRecurringTasks, getText, waitForSelector,
+            closeBrowser, takeScreenshot, Glob, Grep, ListDirectory, BashOutput, TodoWrite, MemoryView]
+    deny: []
+    protected-paths:
+      - application*.yaml
+      - application*.yml
+      - application*.properties
+      - workspace/conversations/
+      - workspace/AGENT.md
+      - workspace/INFO.md
+      - workspace/skills/
+      - workspace/agents/
 ```
 
 | Property | Default | Description |
 |---|---|---|
-| `agent.approval.rules.allow` | empty | Tool names that run without asking. |
-| `agent.approval.rules.ask` | empty | Tool names that always ask. |
-| `agent.approval.rules.deny` | empty | Tool names that never run and are not offered to the model. |
+| `agent.approval.allow` | the list above | Tool names that run without asking, matched exactly. |
+| `agent.approval.deny` | empty | Tool names that never run and are not offered to the model. |
+| `agent.approval.protected-paths` | the list above | Paths and file names that always ask. The runtime config file (`application.private.yaml`) is always protected, even if you leave it out. |
 | `agent.approval.timeout` | `2m` | How long an approval waits for an answer before it counts as denied. Must be greater than zero and at most `10m`; other values stop the application from starting. |
-| `agent.approval.ask-fallback` | `deny` | What happens to a call that needs approval when nobody can be asked: `deny` or `allow`. Never applies to protected actions (below), which are always denied when nobody can be asked. |
 | `agent.web.allowed-origins` | empty | Extra origins allowed to open JavaClaw's WebSockets, for a reverse proxy (see [Chat](#chat-built-in)). |
 
-Rules match tool names exactly and are evaluated in the order deny, ask, allow; the first match wins. With no match, `READ_ONLY` tools run and everything else asks.
+A list you set in `application.private.yaml` replaces the default list instead of adding to it, so to allow one more tool, repeat the defaults you want to keep. `allow` and `deny` hold tool names only: no tool or argument names are built into JavaClaw's approval code.
 
-Some calls **always ask, whatever the rules say**, because they could turn the approval gate off or widen what the agent can reach:
-- Adding or changing an MCP server (`addStdioMcpServer`, `addStreamableHttpMcpServer`).
-- Writes that target the configuration file holding `agent.approval.*`, or any `application*.yaml|yml|properties` file.
-- Writes into `workspace/conversations/`, the chat history the agent's memory is replayed from.
-- Shell commands or subagent prompts that mention those files or `agent.approval`.
+**Protected paths.** These paths hold what keeps the gate in place (the configuration) and what the agent is told and remembers (its instructions, skills, subagents and conversation history). Every string value in a call's arguments is checked, at any depth and whatever the argument is called, in two ways:
+- **As a path.** Relative values resolve against the working directory, as the file tools resolve them, with `..` and symlinks resolved. So `Read` of `workspace/AGENT.md` asks even though `Read` is allowed.
+- **As text.** A value that mentions a protected file name or directory also asks, for example a shell command that names `application.yaml`.
 
-The last check matches text: it is a tripwire for mistakes and casual prompt injection, not a sandbox, because a shell command can still build a file name at run time. That is why shell tools and subagents (`Task`) ask by default. When nobody can be asked, a protected action is always denied, even with `ask-fallback: allow`.
+An entry without a `/` is a file name anywhere, where `*` matches any run of letters, digits, `.`, `_` and `-`. An entry ending in `/` covers everything inside that directory. Any other entry is one file. `workspace/` means the configured `agent.workspace`; other relative entries are relative to the working directory.
+
+The text check is a tripwire for mistakes and casual prompt injection, not a sandbox: a shell command can still build a file name at run time. That is why shell tools and subagents (`Task`) are not in `allow` by default.
 
 **Who can be asked.** The request is asked where the conversation is:
-- **Web chat:** an approval card with **Allow once** and **Deny**, while at least one browser tab is showing that conversation. If the last tab disconnects while a request is waiting, the request is denied immediately. Waiting requests come back when you reconnect or switch back to the conversation.
-- **Telegram, Discord, WhatsApp and Teams:** a message in the same chat that says in plain words what the agent wants to do, for example:
+- **Web chat:** an approval card with the request's arguments, **Allow once** and **Deny**, shown while at least one browser tab is showing that conversation. If the last tab disconnects while a request is waiting, the request is denied immediately. Waiting requests come back when you reconnect or switch back to the conversation.
+- **Telegram, Discord, WhatsApp and Teams:** a message in the same chat, for example:
 
   ```
-  Approval needed: write a file
-  Path: workspace/notes/todo.md
-  Size: 1.2 KB → 340 B
-  Content:
-    - buy milk
-    - call the bank
-  (+4 more lines)
-  Risk: WRITE
-  ⚠️ Overwrites an existing file
+  JavaClaw wants to run `Write`
+    filePath: workspace/notes/todo.md
+    content: - buy milk
+      - call the bank
   Expires at 12:05
   Reply /approve_a1b2c3 or /deny_a1b2c3
   ```
 
-  The details depend on the tool:
-  - `Write` / `Edit`: the path, whether it is a new file or overwrites one (size before → after), and the content, or the old and new text for `Edit`.
-  - `WebFetch`: the URL. `WebSearch`: the query.
-  - `Task`: the subagent type and its prompt.
-  - MCP tools: the server and the tool's name there, then the arguments as `key: value` lines; any other tool shows its arguments that way too.
+  The arguments are indented `key: value` lines, the same for every tool. A call that touches a protected path gets a line saying which path. The expiry is a clock time in the instance's time zone.
 
-  Paths inside the workspace are shown as `workspace/...`; a path outside it is shown in full, with a warning. Previews stop at 6 lines or 300 characters and say how much is left. Warnings (overwriting a file, a path outside the workspace, a protected action) get their own line. The expiry is a clock time in the instance's time zone.
+  Each message stays under the channel's limit after escaping: Telegram 4096, Discord 2000, and Teams and WhatsApp 4000 characters. Values are cut at 300 characters, and arguments that still don't fit are left out. When anything is cut, the message says "Not shown in full. Approve from the web chat to see everything."
 
-  Reply `/approve_<id>` or `/deny_<id>` (on Telegram, one tap on the command; `/approve <id>` works too). These replies never reach the model. Once the request is answered or expires, Telegram, Discord and Teams edit the request to show the outcome in place of the commands; WhatsApp, which can't edit messages, gets a short reply. Each channel's own formatting is used, and everything a tool call supplies is escaped for it. Only the user each channel already accepts can answer (Teams: personal chats only, as for any message). An unknown, expired, already used or other chat's id changes nothing and gets a short reply saying so.
-- **Everything else** (scheduled tasks and the Vaadin UI): nobody can be asked, so `ask-fallback` decides.
+  Reply `/approve_<id>` or `/deny_<id>` (on Telegram, one tap on the command; `/approve <id>` works too). These replies never reach the model. Once the request is answered or expires, Telegram, Discord and Teams edit the request to show the outcome in place of the commands; WhatsApp, which can't edit messages, gets a short reply. Each channel's own formatting is used, and everything a tool call supplies is escaped for it. Only the user each channel already accepts can answer. An unknown, expired, already used or other chat's id changes nothing and gets a short reply saying so.
+
+  Approvals are asked only where nobody else can read them: on Telegram in a private chat with the bot, on Discord in a DM, and on Teams in a personal chat. In a Telegram group or a Discord server channel, a call that needs approval is denied.
+- **Everything else** (scheduled tasks and the Vaadin UI): nobody can be asked, so a call that needs approval is denied.
 
 **Only JavaClaw's own pages can answer in the browser.** Every WebSocket JavaClaw serves refuses a handshake from any other origin, and one without an `Origin` header, so another site open in the same browser cannot see or answer approval requests. Behind a reverse proxy, add the proxy's origin to `agent.web.allowed-origins` (see [Chat](#chat-built-in)).
 
-**Scheduled tasks report blocked tools.** A task cannot ask anyone, so with the default `ask-fallback: deny`, any tool it needs that is not `READ_ONLY` or allowed by a rule is refused. The task then ends in `awaiting_human_input`, and its result lists each blocked tool and why, for example `Write: not run because it needs approval and nobody can be asked here`. To let tasks run unattended, allow the tools they need with `agent.approval.rules.allow`, or set `ask-fallback: allow`.
+**Scheduled tasks report blocked tools.** A task cannot ask anyone, so any tool it needs that is not in `allow`, or that touches a protected path, is refused. The task then ends in `awaiting_human_input`, and its result lists each blocked tool and why, for example `Write: not run because it needs approval and nobody can be asked here`. To let tasks run unattended, add the tools they need to `agent.approval.allow`.
 
 A blocked task is not picked up again on its own, and JavaClaw has no way yet to resume it: re-running its job is refused because the task is no longer `todo`. After allowing the tool, create the task again, or open the task's conversation (`task-…`) in the web chat and ask the agent to finish; there you can approve the tool directly. The task file keeps its `awaiting_human_input` status either way.
 

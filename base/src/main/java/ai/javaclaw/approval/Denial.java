@@ -10,7 +10,7 @@ package ai.javaclaw.approval;
 public record Denial(Reason reason, String detail) {
 
     public enum Reason {
-        /** An {@code agent.approval.rules.deny} rule matched. */
+        /** The tool is listed in {@code agent.approval.deny}. */
         RULE("rule"),
         /** The owner pressed deny. */
         USER("user"),

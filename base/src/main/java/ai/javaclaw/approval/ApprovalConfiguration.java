@@ -8,10 +8,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
 
 import java.io.IOException;
-import java.nio.file.Path;
 import java.time.Clock;
-import java.util.List;
-import java.util.Map;
 
 /** Wires the tool approval gate. See {@link ApprovalGate}. */
 @Configuration
@@ -19,29 +16,17 @@ import java.util.Map;
 public class ApprovalConfiguration {
 
     @Bean
-    DefaultToolRisks defaultToolRisks() {
-        return new DefaultToolRisks();
-    }
-
-    @Bean
-    ToolRiskRegistry toolRiskRegistry(List<ToolRiskContributor> contributors) {
-        return new ToolRiskRegistry(contributors);
-    }
-
-    @Bean
     PendingApprovals pendingApprovals() {
         return new PendingApprovals();
     }
 
+    /** @param workspace {@code agent.workspace}, whose default lives in {@code application.yaml} */
     @Bean
-    ApprovalGate approvalGate(ApprovalProperties properties, ToolRiskRegistry toolRiskRegistry,
-                              ConfigurationManager configurationManager, PendingApprovals pendingApprovals,
-                              @Value("${agent.workspace:file:./workspace/}") Resource workspace) throws IOException {
-        // The agent's memory is replayed from here: a rewritten history could put words in the owner's mouth
-        Map<Path, String> protectedDirectories = Map.of(
-                workspace.getFilePath().resolve("conversations"), "workspace/conversations");
-        return new ApprovalGate(properties, toolRiskRegistry,
-                new ProtectedActions(configurationManager.getConfigPath(), protectedDirectories),
-                pendingApprovals, Clock.systemUTC());
+    ApprovalGate approvalGate(ApprovalProperties properties, ConfigurationManager configurationManager,
+                              PendingApprovals pendingApprovals,
+                              @Value("${agent.workspace}") Resource workspace) throws IOException {
+        ProtectedPaths protectedPaths = new ProtectedPaths(configurationManager.getConfigPath(),
+                properties.protectedPaths(), workspace.getFilePath());
+        return new ApprovalGate(properties, protectedPaths, pendingApprovals, Clock.systemUTC());
     }
 }

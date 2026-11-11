@@ -10,7 +10,7 @@ package ai.javaclaw.channels;
 public enum ApprovalFormat {
 
     /** Telegram's HTML parse mode. */
-    TELEGRAM_HTML {
+    TELEGRAM_HTML(4096) {
         @Override
         public String text(String text) {
             return html(text);
@@ -33,7 +33,7 @@ public enum ApprovalFormat {
     },
 
     /** Discord markdown; mentions are switched off where the message is sent. */
-    DISCORD_MARKDOWN {
+    DISCORD_MARKDOWN(2000) {
         @Override
         public String text(String text) {
             return backslashEscaped(text);
@@ -60,7 +60,7 @@ public enum ApprovalFormat {
      * monospace, where WhatsApp applies no other formatting; plain text gets zero-width spaces after
      * its formatting characters as a best effort.
      */
-    WHATSAPP {
+    WHATSAPP(4000) {
         @Override
         public String text(String text) {
             return text.replaceAll("([*_~`])", "$1​");
@@ -89,7 +89,7 @@ public enum ApprovalFormat {
     },
 
     /** Teams' markdown, which also renders some HTML, so angle brackets are escaped as entities. */
-    TEAMS_MARKDOWN {
+    TEAMS_MARKDOWN(4000) {
         @Override
         public String text(String text) {
             return backslashEscaped(text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
@@ -117,6 +117,17 @@ public enum ApprovalFormat {
             return "  \n";
         }
     };
+
+    private final int maxLength;
+
+    ApprovalFormat(int maxLength) {
+        this.maxLength = maxLength;
+    }
+
+    /** The longest message the channel accepts, in characters after escaping. */
+    public int maxLength() {
+        return maxLength;
+    }
 
     /** Plain text, escaped so none of it is read as markup. */
     public abstract String text(String text);

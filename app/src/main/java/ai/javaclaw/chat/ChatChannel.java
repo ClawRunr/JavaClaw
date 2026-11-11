@@ -253,10 +253,8 @@ public class ChatChannel implements Channel, HumanQuestionHandler {
         data.put("toolCallId", request.toolCallId() == null ? "" : request.toolCallId());
         data.put("toolName", request.toolName());
         data.put("arguments", request.arguments());
-        data.put("risk", request.risk() == null ? "UNCLASSIFIED" : request.risk().name());
         data.put("argumentsHash", request.argumentsHash());
         data.put("decisions", request.decisions().stream().map(ApprovalDecision::wireValue).toList());
-        data.put("details", request.details());
         if (request.protectedReason() != null) {
             data.put("protectedReason", request.protectedReason());
         }

@@ -7,7 +7,6 @@ import ai.javaclaw.approval.ApprovalRequest;
 import ai.javaclaw.approval.ArgumentsHash;
 import ai.javaclaw.approval.Denial;
 import ai.javaclaw.approval.HumanQuestionHandler;
-import ai.javaclaw.approval.ToolRisk;
 import ai.javaclaw.approval.PendingApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -415,10 +414,9 @@ class ChatChannelTest {
                 .containsEntry("approvalId", "call-1")
                 .containsEntry("toolName", "Write")
                 .containsEntry("arguments", request.arguments())
-                .containsEntry("risk", "WRITE")
                 .containsEntry("argumentsHash", request.argumentsHash())
                 .containsEntry("decisions", List.of("allow-once", "deny"))
-                .containsEntry("details", Map.of("workingDirectory", "/srv/javaclaw"));
+                .doesNotContainKeys("risk", "details");
         assertThat(frames.get(1)).containsEntry("type", "approvalResolved")
                 .containsEntry("data", Map.of("approvalId", "call-1", "toolCallId", "call-1", "toolName", "Write",
                         "outcome", "denied", "reason", "timeout", "detail", "nobody approved it within 2 minutes"));
@@ -436,9 +434,9 @@ class ChatChannelTest {
 
     private static ApprovalRequest request(String id, String conversationId) {
         String arguments = "{\"filePath\":\"<img src=x onerror=alert(1)>\",\"content\":\"</pre><script>x()</script>\"}";
-        return new ApprovalRequest(id, id, conversationId, "Write", arguments, ToolRisk.WRITE,
+        return new ApprovalRequest(id, id, conversationId, "Write", arguments,
                 ArgumentsHash.of("Write", arguments), List.of(ApprovalDecision.ALLOW_ONCE, ApprovalDecision.DENY),
-                Map.of("workingDirectory", "/srv/javaclaw"), null, Instant.now().plusSeconds(120));
+                null, Instant.now().plusSeconds(120));
     }
 
     @SuppressWarnings("unchecked")

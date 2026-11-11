@@ -70,7 +70,7 @@ class TeamsApprovalTest {
         await(() -> !sent.isEmpty());
         String request = sent.getFirst();
         String id = shortId(request);
-        assertThat(request).startsWith("**Approval needed: run " + ChannelApprovalFixture.TOOL + "**")
+        assertThat(request).startsWith("**JavaClaw wants to run** `` " + ChannelApprovalFixture.TOOL + " ``")
                 .contains("```\n  url: https://example.com\n```");
         assertThat(fixture.toolRuns()).isEmpty();
 

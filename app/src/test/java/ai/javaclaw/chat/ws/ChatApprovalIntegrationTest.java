@@ -4,12 +4,8 @@ import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.DefaultAgent;
 import ai.javaclaw.approval.ApprovalGate;
 import ai.javaclaw.approval.ApprovalProperties;
-import ai.javaclaw.approval.DefaultToolRisks;
 import ai.javaclaw.approval.PendingApprovals;
-import ai.javaclaw.approval.ProtectedActions;
-import ai.javaclaw.approval.ToolRisk;
-import ai.javaclaw.approval.ToolRiskContributor;
-import ai.javaclaw.approval.ToolRiskRegistry;
+import ai.javaclaw.approval.ProtectedPaths;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.chat.ChatChannel;
 import org.junit.jupiter.api.AfterEach;
@@ -270,10 +266,9 @@ class ChatApprovalIntegrationTest {
 
         @Bean
         Agent agent(PendingApprovals pendingApprovals) {
-            ToolRiskContributor noteRisk = () -> Map.of("writeNote", ToolRisk.WRITE);
             ApprovalGate gate = new ApprovalGate(ApprovalProperties.defaults(),
-                    new ToolRiskRegistry(List.of(new DefaultToolRisks(), noteRisk)),
-                    new ProtectedActions(Path.of("application.private.yaml")), pendingApprovals, Clock.systemUTC());
+                    new ProtectedPaths(Path.of("application.private.yaml"), List.of(), Path.of("workspace")),
+                    pendingApprovals, Clock.systemUTC());
             return new DefaultAgent(ChatClient.builder(new NoteModel())
                     .defaultTools(new WriteNoteTool())
                     .defaultAdvisors(gate.deniedToolFilter(), ToolCallingAdvisor.builder()

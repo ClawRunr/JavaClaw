@@ -6,10 +6,8 @@ import ai.javaclaw.approval.ApprovalListener;
 import ai.javaclaw.approval.ApprovalProperties;
 import ai.javaclaw.approval.ApprovalRequest;
 import ai.javaclaw.approval.ApprovalTurn;
-import ai.javaclaw.approval.DefaultToolRisks;
 import ai.javaclaw.approval.PendingApprovals;
-import ai.javaclaw.approval.ProtectedActions;
-import ai.javaclaw.approval.ToolRiskRegistry;
+import ai.javaclaw.approval.ProtectedPaths;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
@@ -194,8 +192,8 @@ class ClaudeCodeApprovalGateTest {
 
     private ChatClient gatedClient(PendingApprovals pending) {
         ApprovalGate gate = new ApprovalGate(ApprovalProperties.defaults(),
-                new ToolRiskRegistry(List.of(new DefaultToolRisks())),
-                new ProtectedActions(dir.resolve("application.private.yaml")), pending, Clock.systemUTC());
+                new ProtectedPaths(dir.resolve("application.private.yaml"), List.of(), dir.resolve("workspace")),
+                pending, Clock.systemUTC());
         return ChatClient.builder(model())
                 .defaultAdvisors(gate.deniedToolFilter(), ToolCallingAdvisor.builder()
                         .toolCallingManager(gate.toolCallingManager(ToolCallingManager.builder().build()))

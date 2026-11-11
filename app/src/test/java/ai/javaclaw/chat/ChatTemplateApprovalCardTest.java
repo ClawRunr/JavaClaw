@@ -23,7 +23,7 @@ class ChatTemplateApprovalCardTest {
 
     /** Fields of the approval frames that carry model or user text. */
     static final List<String> UNTRUSTED_FIELDS = List.of(
-            "toolName", "arguments", "details", "protectedReason", "detail", "risk", "approvalId", "argumentsHash");
+            "toolName", "arguments", "protectedReason", "detail", "approvalId", "argumentsHash");
 
     static String approvalCode;
 
@@ -77,6 +77,20 @@ class ChatTemplateApprovalCardTest {
     @Test
     void argumentsAreShownInFullNotTruncated() {
         assertThat(approvalCode).contains("pretty(data.arguments)");
+    }
+
+    @Test
+    void theRequestsOwnArgumentsAreAlwaysInThePanel() {
+        assertThat(approvalCode)
+                .contains("panel.appendChild(el('pre', 'ar-tool__pre', pretty(data.arguments)));")
+                .doesNotContain("if (standalone) {\n            panel.appendChild");
+    }
+
+    @Test
+    void aReplayedRequestIsSkippedOnlyWhileItsCardIsStillOnThePage() {
+        assertThat(approvalCode)
+                .contains("(existing && existing.card.isConnected)) return;")
+                .doesNotContain("|| approvals[data.approvalId]) return;");
     }
 
     private static String lineAt(int index) {

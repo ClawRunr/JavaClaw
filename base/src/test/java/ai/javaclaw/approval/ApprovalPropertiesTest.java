@@ -17,33 +17,30 @@ class ApprovalPropertiesTest {
             .withUserConfiguration(PropertiesOnly.class);
 
     @Test
-    void defaultsAskForTwoMinutesAndDenyWhenNobodyCanBeAsked() {
+    void withoutConfigurationNothingIsAllowedOrDeniedAndTheTimeoutIsTwoMinutes() {
         contextRunner.run(context -> {
             ApprovalProperties properties = context.getBean(ApprovalProperties.class);
             assertThat(properties.timeout()).isEqualTo(Duration.ofMinutes(2));
-            assertThat(properties.askFallback()).isEqualTo(ApprovalProperties.AskFallback.DENY);
-            assertThat(properties.rules().allow()).isEmpty();
-            assertThat(properties.rules().ask()).isEmpty();
-            assertThat(properties.rules().deny()).isEmpty();
+            assertThat(properties.allow()).isEmpty();
+            assertThat(properties.deny()).isEmpty();
+            assertThat(properties.protectedPaths()).isEmpty();
         });
     }
 
     @Test
-    void bindsRulesFallbackAndTimeout() {
+    void bindsAllowDenyProtectedPathsAndTimeout() {
         contextRunner
                 .withPropertyValues(
                         "agent.approval.timeout=10m",
-                        "agent.approval.ask-fallback=allow",
-                        "agent.approval.rules.allow=Read,WebFetch",
-                        "agent.approval.rules.ask[0]=Write",
-                        "agent.approval.rules.deny= Task ")
+                        "agent.approval.allow=Read,WebFetch",
+                        "agent.approval.deny[0]= Task ",
+                        "agent.approval.protected-paths=workspace/skills/,application*.yaml")
                 .run(context -> {
                     ApprovalProperties properties = context.getBean(ApprovalProperties.class);
                     assertThat(properties.timeout()).isEqualTo(Duration.ofMinutes(10));
-                    assertThat(properties.askFallback()).isEqualTo(ApprovalProperties.AskFallback.ALLOW);
-                    assertThat(properties.rules().allow()).containsExactly("Read", "WebFetch");
-                    assertThat(properties.rules().ask()).containsExactly("Write");
-                    assertThat(properties.rules().deny()).containsExactly("Task");
+                    assertThat(properties.allow()).containsExactly("Read", "WebFetch");
+                    assertThat(properties.deny()).containsExactly("Task");
+                    assertThat(properties.protectedPaths()).containsExactly("workspace/skills/", "application*.yaml");
                 });
     }
 
@@ -55,13 +52,6 @@ class ApprovalPropertiesTest {
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure().rootCause().isInstanceOfAny(IllegalArgumentException.class,
                                 org.springframework.core.convert.ConversionFailedException.class));
-    }
-
-    @Test
-    void anUnknownFallbackFailsAtStartup() {
-        contextRunner
-                .withPropertyValues("agent.approval.ask-fallback=maybe")
-                .run(context -> assertThat(context).hasFailed());
     }
 
     @Configuration(proxyBeanMethods = false)

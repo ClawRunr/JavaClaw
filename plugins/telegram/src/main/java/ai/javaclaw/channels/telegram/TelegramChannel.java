@@ -98,7 +98,9 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
         }
         channelRegistry.publishMessageReceivedEvent(new TelegramChannelMessageReceivedEvent(getName(), messageText, messageChatId, messageThreadId));
         // The turn runs in the background, so this thread stays free to receive an /approve it may wait for
-        approvals.respond(conversationId, messageText, new TelegramChat(messageChatId, messageThreadId), e -> {
+        // Approvals are asked only in a private chat; in a group, calls that need one are refused
+        TelegramChat chat = new TelegramChat(messageChatId, messageThreadId, requestMessage.isUserMessage());
+        approvals.respond(conversationId, messageText, chat, e -> {
             LOGGER.error("Failed to handle Telegram message for conversation '{}'", conversationId, e);
             reply.accept(ERROR_MESSAGE);
         });
@@ -150,10 +152,17 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
 
         private final long chatId;
         private final Integer messageThreadId;
+        private final boolean privateChat;
 
-        TelegramChat(long chatId, Integer messageThreadId) {
+        TelegramChat(long chatId, Integer messageThreadId, boolean privateChat) {
             this.chatId = chatId;
             this.messageThreadId = messageThreadId;
+            this.privateChat = privateChat;
+        }
+
+        @Override
+        public boolean canAsk() {
+            return privateChat;
         }
 
         @Override

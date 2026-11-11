@@ -52,7 +52,7 @@ class TelegramApprovalTest {
         String id = shortId(request.getText());
         assertThat(request.getParseMode()).isEqualTo(ParseMode.HTML);
         assertThat(request.getText())
-                .startsWith("<b>Approval needed: run " + ChannelApprovalFixture.TOOL + "</b>")
+                .startsWith("<b>JavaClaw wants to run</b> <code>" + ChannelApprovalFixture.TOOL + "</code>")
                 .contains("<pre>  url: https://example.com</pre>")
                 // Plain text, not inside <code>, so Telegram makes it a tappable command
                 .endsWith("Reply /approve_" + id + " or /deny_" + id);
@@ -104,6 +104,18 @@ class TelegramApprovalTest {
         assertThat(fixture.toolRuns()).isEmpty();
     }
 
+    @Test
+    void aGroupChatGetsNoApprovalRequestAndTheCallIsDenied() {
+        channel.consume(update("owner", "fetch example.com", false));
+
+        await(() -> !sent.isEmpty());
+        assertThat(sent).singleElement().satisfies(message -> assertThat(message.getText())
+                .startsWith("Not done: Tool ").contains("was NOT run")
+                .doesNotContain("/approve"));
+        assertThat(fixture.toolRuns()).isEmpty();
+        assertThat(fixture.pending().pendingFor("telegram-42")).isEmpty();
+    }
+
     private TelegramChannel channel() {
         TelegramClient client = mock(TelegramClient.class);
         try {
@@ -125,6 +137,11 @@ class TelegramApprovalTest {
     }
 
     private static Update update(String username, String text) {
+        return update(username, text, true);
+    }
+
+    /** @param privateChat a one-to-one chat with the bot; otherwise a group */
+    private static Update update(String username, String text, boolean privateChat) {
         Update update = mock(Update.class);
         Message message = mock(Message.class);
         User user = mock(User.class);
@@ -133,6 +150,7 @@ class TelegramApprovalTest {
         when(message.hasText()).thenReturn(true);
         when(message.getText()).thenReturn(text);
         when(message.getChatId()).thenReturn(42L);
+        when(message.isUserMessage()).thenReturn(privateChat);
         when(message.getMessageThreadId()).thenReturn(null);
         when(message.getFrom()).thenReturn(user);
         when(user.getUserName()).thenReturn(username);

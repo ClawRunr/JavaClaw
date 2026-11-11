@@ -63,7 +63,7 @@ class DefaultAgentApprovalTest {
 
     @Test
     void toolCallApprovalRequestedAllowToolRunsAnswer() {
-        DefaultAgent agent = agent(ApprovalProperties.defaults(), plainAdvisor(ApprovalProperties.defaults()),
+        DefaultAgent agent = agent(ApprovalGateFixtures.DEFAULTS, plainAdvisor(ApprovalGateFixtures.DEFAULTS),
                 new NoteModel(true, this::callWriteNote));
 
         CompletableFuture<Void> turn = CompletableFuture.runAsync(() ->
@@ -89,7 +89,7 @@ class DefaultAgentApprovalTest {
 
     @Test
     void aDeniedCallReachesTheModelAsTheToolResultAndTheConversationCarriesOn() {
-        DefaultAgent agent = agent(ApprovalProperties.defaults(), plainAdvisor(ApprovalProperties.defaults()),
+        DefaultAgent agent = agent(ApprovalGateFixtures.DEFAULTS, plainAdvisor(ApprovalGateFixtures.DEFAULTS),
                 new NoteModel(false, this::callWriteNote));
 
         CompletableFuture<Void> turn = CompletableFuture.runAsync(() ->
@@ -107,7 +107,7 @@ class DefaultAgentApprovalTest {
 
     @Test
     void aScheduledTaskCannotAskSoItsCallIsRefusedWithTheReason() {
-        DefaultAgent agent = agent(ApprovalProperties.defaults(), plainAdvisor(ApprovalProperties.defaults()),
+        DefaultAgent agent = agent(ApprovalGateFixtures.DEFAULTS, plainAdvisor(ApprovalGateFixtures.DEFAULTS),
                 new NoteModel(false, this::callWriteNote));
 
         Answer answer = agent.prompt("task-1", "Note: buy milk", Answer.class, events::add);
@@ -121,7 +121,7 @@ class DefaultAgentApprovalTest {
 
     @Test
     void deniedToolsAreNotSentToTheModel() {
-        ApprovalProperties denyWrite = ApprovalGateFixtures.rules(List.of(), List.of(), List.of("writeNote"));
+        ApprovalProperties denyWrite = ApprovalGateFixtures.rules(List.of("readNotes"), List.of("writeNote"));
         DefaultAgent agent = agent(denyWrite, plainAdvisor(denyWrite), new NoteModel(true, _ -> null));
 
         agent.respondTo("web", "hello", events::add, _ -> true);
@@ -132,7 +132,7 @@ class DefaultAgentApprovalTest {
 
     @Test
     void toolsFoundThroughToolSearchAreGated() throws Exception {
-        ApprovalProperties defaults = ApprovalProperties.defaults();
+        ApprovalProperties defaults = ApprovalGateFixtures.DEFAULTS;
         toolIndex = new LuceneToolIndex(0.0f);
         ApprovalGate gate = ApprovalGateFixtures.gate(defaults, pending);
         ToolSearchToolCallingAdvisor searchAdvisor = ToolSearchToolCallingAdvisor.builder()

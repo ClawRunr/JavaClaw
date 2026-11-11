@@ -11,13 +11,18 @@ import java.util.Objects;
  * wait. Invalid values fail binding, so the application refuses to start rather than running with
  * an approval setup the owner did not intend.
  *
- * @param timeout     how long a pending approval waits for the owner before it counts as denied;
- *                    more than zero and at most {@link #MAX_TIMEOUT}
- * @param askFallback what happens to a call that needs approval when nobody can be asked
- * @param rules       tool-name rules, evaluated deny, then ask, then allow
+ * <p>The defaults live in {@code application.yaml}, not here: without configuration nothing is
+ * allowed, nothing is denied and only the runtime configuration file is protected.
+ *
+ * @param timeout        how long a pending approval waits for the owner before it counts as
+ *                       denied; more than zero and at most {@link #MAX_TIMEOUT}
+ * @param allow          tool names that run without asking
+ * @param deny           tool names that never run and are not offered to the model
+ * @param protectedPaths paths and file names a call always asks about, whatever {@code allow}
+ *                       says; see {@link ProtectedPaths}
  */
 @ConfigurationProperties("agent.approval")
-public record ApprovalProperties(Duration timeout, AskFallback askFallback, Rules rules) {
+public record ApprovalProperties(Duration timeout, List<String> allow, List<String> deny, List<String> protectedPaths) {
 
     public static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(2);
 
@@ -37,43 +42,21 @@ public record ApprovalProperties(Duration timeout, AskFallback askFallback, Rule
             throw new IllegalArgumentException("agent.approval.timeout must be at most " + MAX_TIMEOUT
                     + ", but was " + timeout);
         }
-        askFallback = askFallback == null ? AskFallback.DENY : askFallback;
-        rules = rules == null ? Rules.NONE : rules;
+        allow = clean(allow);
+        deny = clean(deny);
+        protectedPaths = clean(protectedPaths);
     }
 
-    /** Defaults: two-minute timeout, deny when nobody can be asked, no rules. */
+    /** Two-minute timeout, nothing allowed, nothing denied, no protected paths beyond the config file. */
     public static ApprovalProperties defaults() {
-        return new ApprovalProperties(null, null, null);
+        return new ApprovalProperties(null, null, null, null);
     }
 
-    /** What a call that needs approval does when nobody can be asked. */
-    public enum AskFallback {
-        /** Refuse it; the model is told why. */
-        DENY,
-        /** Run it anyway — for owners who want scheduled tasks to keep working unattended. */
-        ALLOW
-    }
-
-    /**
-     * Tool names, matched exactly. A name in {@code deny} is never run and never offered to the
-     * model; {@code ask} always asks; {@code allow} runs without asking.
-     */
-    public record Rules(List<String> allow, List<String> ask, List<String> deny) {
-
-        public static final Rules NONE = new Rules(null, null, null);
-
-        public Rules {
-            allow = clean(allow);
-            ask = clean(ask);
-            deny = clean(deny);
-        }
-
-        private static List<String> clean(List<String> names) {
-            return names == null ? List.of() : names.stream()
-                    .filter(Objects::nonNull)
-                    .map(String::trim)
-                    .filter(name -> !name.isEmpty())
-                    .toList();
-        }
+    private static List<String> clean(List<String> values) {
+        return values == null ? List.of() : values.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .toList();
     }
 }

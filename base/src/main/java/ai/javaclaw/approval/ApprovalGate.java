@@ -13,21 +13,17 @@ import org.springframework.util.StringUtils;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import static ai.javaclaw.utils.JsonObjects.parseObject;
-
 /**
- * Decides, call by call, whether a tool the model asked for may run: by rule, by protected action,
- * or by asking the owner and waiting for the answer.
+ * Decides, call by call, whether a tool the model asked for may run: by {@code agent.approval.deny}
+ * and {@code allow}, by protected path, or by asking the owner and waiting for the answer. A call
+ * that needs approval when nobody can be asked is refused.
  * <p>
  * Every tool call of the main agent passes through here: {@link #toolCallingManager} wraps the
  * {@link ToolCallingManager} of both tool-calling advisors, so static, MCP, plugin and
@@ -45,24 +41,19 @@ public class ApprovalGate {
 
     private static final Logger log = LoggerFactory.getLogger(ApprovalGate.class);
 
-    /** Tools whose card should show the directory relative paths resolve against. */
-    private static final Set<String> FILE_TOOLS = Set.of("Read", "Write", "Edit", "Glob", "Grep", "ListDirectory", "Bash");
-    private static final String SUBAGENT_TOOL = "Task";
     private static final List<ApprovalDecision> DECISIONS = List.of(ApprovalDecision.ALLOW_ONCE, ApprovalDecision.DENY);
 
     private final ApprovalProperties properties;
     private final ApprovalPolicy policy;
-    private final ToolRiskRegistry risks;
-    private final ProtectedActions protectedActions;
+    private final ProtectedPaths protectedPaths;
     private final PendingApprovals pendingApprovals;
     private final Clock clock;
 
-    public ApprovalGate(ApprovalProperties properties, ToolRiskRegistry risks, ProtectedActions protectedActions,
+    public ApprovalGate(ApprovalProperties properties, ProtectedPaths protectedPaths,
                         PendingApprovals pendingApprovals, Clock clock) {
         this.properties = properties;
-        this.policy = new ApprovalPolicy(properties.rules());
-        this.risks = risks;
-        this.protectedActions = protectedActions;
+        this.policy = new ApprovalPolicy(properties);
+        this.protectedPaths = protectedPaths;
         this.pendingApprovals = pendingApprovals;
         this.clock = clock;
     }
@@ -98,12 +89,11 @@ public class ApprovalGate {
     Optional<Denial> check(AssistantMessage.ToolCall call, ApprovalTurn turn) {
         String toolName = call.name();
         String arguments = StringUtils.hasText(call.arguments()) ? call.arguments() : "{}";
-        Optional<ToolRisk> risk = risks.riskOf(toolName);
-        Optional<String> protectedReason = protectedActions.reason(toolName, arguments, risk);
+        Optional<String> protectedReason = protectedPaths.reason(arguments);
 
-        ApprovalPolicy.Verdict verdict = policy.evaluate(toolName, risk, protectedReason.isPresent());
+        ApprovalPolicy.Verdict verdict = policy.evaluate(toolName, protectedReason.isPresent());
         if (verdict == ApprovalPolicy.Verdict.DENY) {
-            return deny(call, turn, null, new Denial(Denial.Reason.RULE, "it is blocked by the agent.approval.rules.deny rule"));
+            return deny(call, turn, null, new Denial(Denial.Reason.RULE, "it is blocked by agent.approval.deny"));
         }
         if (turn != null) {
             Optional<Denial> earlier = turn.earlierDenial(toolName);
@@ -116,33 +106,33 @@ public class ApprovalGate {
         if (verdict == ApprovalPolicy.Verdict.RUN) {
             return Optional.empty();
         }
-        return ask(call, turn, arguments, risk, protectedReason);
+        return ask(call, turn, arguments, protectedReason);
     }
 
     private Optional<Denial> ask(AssistantMessage.ToolCall call, ApprovalTurn turn, String arguments,
-                                 Optional<ToolRisk> risk, Optional<String> protectedReason) {
+                                 Optional<String> protectedReason) {
         if (turn == null || turn.questions().isEmpty()) {
-            return fallback(call, turn, protectedReason, "it needs approval and nobody can be asked here");
+            return deny(call, turn, null, new Denial(Denial.Reason.NOBODY_TO_ASK,
+                    "it needs approval and nobody can be asked here"));
         }
         boolean canAsk;
         try {
             canAsk = turn.questions().get().canAsk(turn.conversationId());
         } catch (RuntimeException e) {
             log.warn("Approval handler failed for conversation {}; refusing {}", turn.conversationId(), call.name(), e);
-            // A failing handler never runs the tool, whatever the fallback says
             return deny(call, turn, null, new Denial(Denial.Reason.NOBODY_TO_ASK,
                     "it needs approval and the approval prompt could not be shown"));
         }
         if (!canAsk) {
-            return fallback(call, turn, protectedReason,
-                    "it needs approval and no web chat client is connected to this conversation");
+            return deny(call, turn, null, new Denial(Denial.Reason.NOBODY_TO_ASK,
+                    "it needs approval and no web chat client is connected to this conversation"));
         }
 
         Duration timeout = properties.timeout();
         ApprovalRequest request = new ApprovalRequest(
-                approvalId(call), call.id(), turn.conversationId(), call.name(), arguments, risk.orElse(null),
-                ArgumentsHash.of(call.name(), arguments), DECISIONS, details(call.name(), arguments),
-                protectedReason.orElse(null), clock.instant().plus(timeout));
+                approvalId(call), call.id(), turn.conversationId(), call.name(), arguments,
+                ArgumentsHash.of(call.name(), arguments), DECISIONS, protectedReason.orElse(null),
+                clock.instant().plus(timeout));
 
         Pending entry = pendingApprovals.open(request);
         try {
@@ -191,23 +181,6 @@ public class ApprovalGate {
         }
     }
 
-    /**
-     * Nobody can be asked: {@code ask-fallback} decides, except that a protected action is always
-     * refused, since running it unasked could switch the gate off or widen what the agent can reach.
-     */
-    private Optional<Denial> fallback(AssistantMessage.ToolCall call, ApprovalTurn turn,
-                                      Optional<String> protectedReason, String detail) {
-        if (protectedReason.isPresent()) {
-            return deny(call, turn, null, new Denial(Denial.Reason.NOBODY_TO_ASK,
-                    detail + ", and it " + protectedReason.get() + ", which always needs approval"));
-        }
-        if (properties.askFallback() == ApprovalProperties.AskFallback.ALLOW) {
-            log.info("Running {} without approval: nobody can be asked and agent.approval.ask-fallback=allow", call.name());
-            return Optional.empty();
-        }
-        return deny(call, turn, null, new Denial(Denial.Reason.NOBODY_TO_ASK, detail));
-    }
-
     private Optional<Denial> deny(AssistantMessage.ToolCall call, ApprovalTurn turn, String approvalId, Denial denial) {
         log.info("Refused tool {}: {} ({})", call.name(), denial.detail(), denial.reason().wireValue());
         if (turn != null) {
@@ -232,29 +205,6 @@ public class ApprovalGate {
         // Some providers send blank or repeated ids; the approval key must be unique while pending
         String id = call.id();
         return StringUtils.hasText(id) && !pendingApprovals.isPending(id) ? id : UUID.randomUUID().toString();
-    }
-
-    /** Context the card shows next to the raw arguments. */
-    private static Map<String, String> details(String toolName, String arguments) {
-        Map<String, String> details = new LinkedHashMap<>();
-        if (FILE_TOOLS.contains(toolName)) {
-            details.put("workingDirectory", System.getProperty("user.dir"));
-        }
-        if (SUBAGENT_TOOL.equals(toolName)) {
-            Map<String, Object> args = parseObject(arguments);
-            putIfText(details, "subagentType", args.get("subagent_type"));
-            putIfText(details, "prompt", args.get("prompt"));
-            if (Boolean.TRUE.equals(args.get("run_in_background"))) {
-                details.put("runInBackground", "true");
-            }
-        }
-        return details;
-    }
-
-    private static void putIfText(Map<String, String> into, String key, Object value) {
-        if (value instanceof String text && !text.isBlank()) {
-            into.put(key, text);
-        }
     }
 
     private static String format(Duration duration) {
