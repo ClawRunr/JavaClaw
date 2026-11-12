@@ -7,9 +7,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static ai.javaclaw.testsupport.ChannelApprovalFixture.ANSWER;
@@ -35,7 +32,6 @@ class TeamsApprovalTest {
 
     final ChannelApprovalFixture fixture = new ChannelApprovalFixture();
     final List<String> sent = new CopyOnWriteArrayList<>();
-    final Map<String, String> edits = new ConcurrentHashMap<>();
     TeamsWebhookController controller;
 
     @BeforeEach
@@ -48,14 +44,8 @@ class TeamsApprovalTest {
         when(channel.getName()).thenReturn(TeamsChannel.CHANNEL_ID);
         doAnswer(invocation -> sent.add(invocation.getArgument(1, String.class)))
                 .when(channel).sendMessage(any(TeamsConversationReference.class), anyString());
-        when(channel.sendMarkdown(any(TeamsConversationReference.class), anyString())).thenAnswer(invocation -> {
-            sent.add(invocation.getArgument(1, String.class));
-            return Optional.of("activity-" + sent.size());
-        });
-        when(channel.updateMarkdown(any(TeamsConversationReference.class), anyString(), anyString())).thenAnswer(invocation -> {
-            edits.put(invocation.getArgument(1, String.class), invocation.getArgument(2, String.class));
-            return true;
-        });
+        doAnswer(invocation -> sent.add(invocation.getArgument(1, String.class)))
+                .when(channel).sendMarkdown(any(TeamsConversationReference.class), anyString());
         controller = new TeamsWebhookController(properties, new ChannelRegistry(), fixture.approvals(), channel, jwt);
     }
 
@@ -77,10 +67,8 @@ class TeamsApprovalTest {
         controller.webhook("Bearer t", activity(OWNER, "/approve_" + id, "personal"));
 
         await(() -> sent.contains(ANSWER));
-        // The request activity is updated in place with the outcome
-        assertThat(edits).containsOnlyKeys("activity-1");
-        assertThat(edits.get("activity-1")).contains("✅ **Approved**").doesNotContain("approve\\_");
-        assertThat(sent).hasSize(2);
+        assertThat(sent.get(1)).startsWith("✅ Approved");
+        assertThat(sent).hasSize(3);
         assertThat(fixture.toolRuns()).containsExactly(ARGUMENTS);
         assertThat(fixture.modelSaw()).noneMatch(text -> text.contains("/approve"));
     }
@@ -96,13 +84,13 @@ class TeamsApprovalTest {
         controller.webhook("Bearer t", activity(OWNER, "/approve_" + id, "groupChat"));
 
         Thread.sleep(300);
-        assertThat(edits).isEmpty();
+        assertThat(sent).hasSize(1);
         assertThat(fixture.toolRuns()).isEmpty();
         assertThat(fixture.pending().pendingFor("teams-conv-1")).isNotEmpty();
 
         controller.webhook("Bearer t", activity(OWNER, "/deny " + id, "personal"));
-        await(() -> !edits.isEmpty());
-        assertThat(edits.values()).singleElement().asString().contains("❌ **Denied**");
+        await(() -> sent.size() == 3);
+        assertThat(sent.get(1)).startsWith("❌ The user did not approve this action.");
         assertThat(fixture.toolRuns()).isEmpty();
     }
 

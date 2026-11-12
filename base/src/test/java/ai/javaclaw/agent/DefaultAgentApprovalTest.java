@@ -101,33 +101,21 @@ class DefaultAgentApprovalTest {
         assertThat(writeNote.runs()).isEmpty();
         assertThat(events).filteredOn(AgentEvent.Token.class::isInstance).singleElement()
                 .satisfies(token -> assertThat(((AgentEvent.Token) token).text())
-                        .startsWith("Noted: Tool 'writeNote' was NOT run: the user denied it"));
+                        .isEqualTo("Noted: The user did not approve this action."));
         assertThat(events.getLast()).isEqualTo(new AgentEvent.Done());
     }
 
     @Test
-    void aScheduledTaskCannotAskSoItsCallIsRefusedWithTheReason() {
+    void aScheduledTaskCannotAskSoItsCallIsRefused() {
         DefaultAgent agent = agent(ApprovalGateFixtures.DEFAULTS, plainAdvisor(ApprovalGateFixtures.DEFAULTS),
                 new NoteModel(false, this::callWriteNote));
 
         Answer answer = agent.prompt("task-1", "Note: buy milk", Answer.class, events::add);
 
         assertThat(writeNote.runs()).isEmpty();
-        assertThat(answer.text()).contains("nobody can be asked");
+        assertThat(answer.text()).contains("The user did not approve this action.");
         assertThat(events).filteredOn(AgentEvent.ApprovalResolved.class::isInstance).singleElement()
-                .satisfies(e -> assertThat(((AgentEvent.ApprovalResolved) e).denial().reason())
-                        .isEqualTo(Denial.Reason.NOBODY_TO_ASK));
-    }
-
-    @Test
-    void deniedToolsAreNotSentToTheModel() {
-        ApprovalProperties denyWrite = ApprovalGateFixtures.rules(List.of("readNotes"), List.of("writeNote"));
-        DefaultAgent agent = agent(denyWrite, plainAdvisor(denyWrite), new NoteModel(true, _ -> null));
-
-        agent.respondTo("web", "hello", events::add, _ -> true);
-
-        assertThat(offered).isNotEmpty().allSatisfy(names ->
-                assertThat(names).contains("readNotes").doesNotContain("writeNote"));
+                .satisfies(e -> assertThat(((AgentEvent.ApprovalResolved) e).denial()).isEqualTo(Denial.NOT_APPROVED));
     }
 
     @Test
@@ -160,7 +148,7 @@ class DefaultAgentApprovalTest {
 
     private DefaultAgent agent(ApprovalProperties properties, ToolCallingAdvisor toolAdvisor, ChatModel model) {
         ApprovalGate gate = ApprovalGateFixtures.gate(properties, pending);
-        List<Advisor> advisors = List.of(gate.deniedToolFilter(), toolAdvisor);
+        List<Advisor> advisors = List.of(toolAdvisor);
         return new DefaultAgent(ChatClient.builder(model)
                 .defaultTools(writeNote, readNotes)
                 .defaultAdvisors(advisors)

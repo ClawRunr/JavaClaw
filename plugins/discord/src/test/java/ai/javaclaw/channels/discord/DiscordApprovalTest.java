@@ -11,16 +11,12 @@ import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.entities.channel.unions.MessageChannelUnion;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.requests.restaction.MessageCreateAction;
-import net.dv8tion.jda.api.requests.restaction.MessageEditAction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static ai.javaclaw.testsupport.ChannelApprovalFixture.ANSWER;
 import static ai.javaclaw.testsupport.ChannelApprovalFixture.ARGUMENTS;
@@ -34,16 +30,14 @@ import static org.mockito.Mockito.when;
 
 /**
  * A tool call from a Discord turn is approved in the same channel: the request arrives in Discord
- * markdown with mentions off, {@code /approve_<id>} runs the tool, the request is edited to show the
- * outcome, and the answer follows. Real agent, real gate; only JDA is faked.
+ * markdown with mentions off, {@code /approve_<id>} runs the tool, a short outcome reply and the
+ * answer follow. Real agent, real gate; only JDA is faked.
  */
 class DiscordApprovalTest {
 
     final ChannelApprovalFixture fixture = new ChannelApprovalFixture();
     final List<String> sent = new CopyOnWriteArrayList<>();
-    final Map<String, String> edits = new ConcurrentHashMap<>();
     final List<Collection<Message.MentionType>> allowedMentions = new CopyOnWriteArrayList<>();
-    final AtomicInteger ids = new AtomicInteger();
     final MessageChannelUnion dm = messageChannel();
     final DiscordChannel channel = new DiscordChannel("123", fixture.approvals(), new ChannelRegistry());
 
@@ -53,7 +47,7 @@ class DiscordApprovalTest {
     }
 
     @Test
-    void aToolCallIsApprovedTheRequestIsEditedAndTheAnswerFollows() {
+    void aToolCallIsApprovedAndTheAnswerFollows() {
         channel.onMessageReceived(event("123", "fetch example.com"));
         await(() -> !sent.isEmpty());
         String request = sent.getFirst();
@@ -66,8 +60,8 @@ class DiscordApprovalTest {
 
         await(() -> sent.contains(ANSWER));
         assertThat(fixture.toolRuns()).containsExactly(ARGUMENTS);
-        assertThat(edits.values()).singleElement().asString().contains("✅ **Approved**").doesNotContain("approve\\_");
-        assertThat(sent).hasSize(2);
+        assertThat(sent).hasSize(3);
+        assertThat(sent.get(1)).isEqualTo("✅ Approved: running " + ChannelApprovalFixture.TOOL + ". \\(" + id + "\\)");
         assertThat(fixture.modelSaw()).noneMatch(text -> text.contains("/approve"));
     }
 
@@ -81,13 +75,13 @@ class DiscordApprovalTest {
 
         Thread.sleep(300);
         assertThat(sent).contains("I'm sorry, I don't accept instructions from you.");
-        assertThat(edits).isEmpty();
+        assertThat(sent).hasSize(2);
         assertThat(fixture.toolRuns()).isEmpty();
         assertThat(fixture.pending().pendingFor("discord-D1")).isNotEmpty();
 
         channel.onMessageReceived(event("123", "/deny " + id));
-        await(() -> !edits.isEmpty());
-        assertThat(edits.values()).singleElement().asString().contains("❌ **Denied**");
+        await(() -> sent.size() == 4);
+        assertThat(sent.get(2)).startsWith("❌ The user did not approve this action.");
         assertThat(fixture.toolRuns()).isEmpty();
     }
 
@@ -97,8 +91,7 @@ class DiscordApprovalTest {
 
         await(() -> !sent.isEmpty());
         assertThat(sent).singleElement().asString()
-                .startsWith("Not done: Tool ").contains("was NOT run")
-                .doesNotContain("/approve");
+                .isEqualTo("Not done: The user did not approve this action.");
         assertThat(fixture.toolRuns()).isEmpty();
         assertThat(fixture.pending().pendingFor("discord-D1")).isEmpty();
     }
@@ -140,15 +133,6 @@ class DiscordApprovalTest {
                 allowedMentions.add(mentions.getArgument(0, Collection.class));
                 return action;
             });
-            Message created = mock(Message.class);
-            when(created.getId()).thenReturn("m" + ids.incrementAndGet());
-            when(action.complete()).thenReturn(created);
-            return action;
-        });
-        when(channel.editMessageById(anyString(), anyString())).thenAnswer(invocation -> {
-            edits.put(invocation.getArgument(0, String.class), invocation.getArgument(1, String.class));
-            MessageEditAction action = mock(MessageEditAction.class);
-            when(action.setAllowedMentions(any())).thenReturn(action);
             return action;
         });
         return channel;

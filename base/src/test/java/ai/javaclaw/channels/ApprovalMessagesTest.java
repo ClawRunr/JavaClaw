@@ -65,15 +65,6 @@ class ApprovalMessagesTest {
     }
 
     @Test
-    void aProtectedPathIsCalledOut() {
-        String message = render(request("Read", json(Map.of("file_path", "workspace/AGENT.md")),
-                "touches a protected path (workspace/AGENT.md)"));
-
-        assertThat(message).contains("⚠️ Protected: it touches a protected path (workspace/AGENT.md), so it always needs approval\n"
-                + "Expires at");
-    }
-
-    @Test
     void aShortRequestIsShownInFullWithoutTheWarning() {
         assertThat(render(request("fetchPage", json(Map.of("url", "https://example.com")))))
                 .doesNotContain(NOT_SHOWN_IN_FULL);
@@ -116,17 +107,11 @@ class ApprovalMessagesTest {
         for (int i = 0; i < 60; i++) {
             args.put("arg" + i, worstCase(format).repeat(200));
         }
-        ApprovalRequest request = request("fetchPage", json(args), "touches a protected path (workspace/skills/)");
-
-        String asked = messages.request(request, "abc234", format);
-        String resolved = messages.resolvedRequest(request, new Denial(Denial.Reason.USER, "the user denied it"), format);
+        String asked = messages.request(request("fetchPage", json(args)), "abc234", format);
 
         assertThat(asked.length()).isLessThanOrEqualTo(format.maxLength());
-        assertThat(resolved.length()).isLessThanOrEqualTo(format.maxLength());
         assertThat(asked).contains(format.text(NOT_SHOWN_IN_FULL)).contains("arg0");
-        assertThat(asked.replace("\\", "")).contains("/approve_abc234").contains("/deny_abc234")
-                .contains("Protected: it touches a protected path");
-        assertThat(resolved).contains(format.text(NOT_SHOWN_IN_FULL));
+        assertThat(asked.replace("\\", "")).contains("/approve_abc234").contains("/deny_abc234");
     }
 
     @ParameterizedTest
@@ -184,14 +169,6 @@ class ApprovalMessagesTest {
                 .endsWith("Reply /approve_abc234 or /deny_abc234");
     }
 
-    @Test
-    void teamsEscapesMarkdownAndHtmlOutsideCode() {
-        String message = messages.request(request("Write", "{}", "touches <img src=x>"), "abc234",
-                ApprovalFormat.TEAMS_MARKDOWN);
-
-        assertThat(message).contains("touches &lt;img src=x&gt;").doesNotContain("<img");
-    }
-
     @ParameterizedTest
     @EnumSource(ApprovalFormat.class)
     void everyChannelShowsTheCommandsAndTheExpiry(ApprovalFormat format) {
@@ -206,25 +183,15 @@ class ApprovalMessagesTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void theResolvedRequestKeepsTheArgumentsAndReplacesTheCommandsWithTheOutcome() {
-        ApprovalRequest request = request("fetchPage", json(Map.of("url", "https://example.com")));
-
-        String approved = messages.resolvedRequest(request, null, ApprovalFormat.TELEGRAM_HTML);
-        String expired = messages.resolvedRequest(request,
-                new Denial(Denial.Reason.TIMEOUT, "nobody approved it within 2 minutes"), ApprovalFormat.TELEGRAM_HTML);
-
-        assertThat(approved).contains("<pre>  url: https://example.com</pre>")
-                .endsWith("✅ <b>Approved</b>: running fetchPage.")
-                .doesNotContain("/approve_").doesNotContain("Expires at");
-        assertThat(expired).endsWith("⌛ <b>Expired</b>: fetchPage was not run because nobody approved it within 2 minutes.");
-    }
-
-    @Test
-    void theOutcomeReplyNamesTheShortId() {
+    void theOutcomeIsOneShortLineWithTheShortId() {
         ApprovalRequest request = request("fetchPage", "{}");
 
-        assertThat(messages.outcomeReply(request, "abc234", new Denial(Denial.Reason.USER, "the user denied it"),
-                ApprovalFormat.TELEGRAM_HTML)).isEqualTo("❌ <b>Denied</b>: fetchPage was not run. (abc234)");
+        assertThat(messages.outcome(request, "abc234", null, ApprovalFormat.TELEGRAM_HTML))
+                .isEqualTo("✅ Approved: running fetchPage. (abc234)");
+        assertThat(messages.outcome(request, "abc234", Denial.NOT_APPROVED, ApprovalFormat.TELEGRAM_HTML))
+                .isEqualTo("❌ The user did not approve this action. (abc234)");
+        assertThat(messages.outcome(request, "abc234", Denial.TIMED_OUT, ApprovalFormat.TELEGRAM_HTML))
+                .isEqualTo("❌ No approval was given in time. (abc234)");
     }
 
     // -----------------------------------------------------------------------
@@ -234,12 +201,8 @@ class ApprovalMessagesTest {
     }
 
     private static ApprovalRequest request(String tool, String arguments) {
-        return request(tool, arguments, null);
-    }
-
-    private static ApprovalRequest request(String tool, String arguments, String protectedReason) {
         return new ApprovalRequest("call-1", "call-1", "telegram-42", tool, arguments, "hash",
-                List.of(ApprovalDecision.ALLOW_ONCE, ApprovalDecision.DENY), protectedReason, NOW.plusSeconds(300));
+                List.of(ApprovalDecision.ALLOW_ONCE, ApprovalDecision.DENY), NOW.plusSeconds(300));
     }
 
     private static String json(Map<String, ?> args) {

@@ -28,7 +28,7 @@ class ChannelApprovalsTest {
     static final String CHAT = "telegram-42";
 
     ChannelApprovalFixture fixture = new ChannelApprovalFixture();
-    RecordingChat chat = new RecordingChat(ApprovalFormat.TELEGRAM_HTML, true);
+    RecordingChat chat = new RecordingChat(ApprovalFormat.TELEGRAM_HTML);
     final List<String> replies = new CopyOnWriteArrayList<>();
     final List<RuntimeException> failures = new CopyOnWriteArrayList<>();
 
@@ -68,32 +68,26 @@ class ChannelApprovalsTest {
     }
 
     @Test
-    void theOutcomeReplacesTheCommandsInTheOriginalMessageWhereTheChannelCanEdit() {
+    void theOutcomeIsAShortReply() {
         String id = shortId(askAndAwaitRequest(CHAT));
 
         command(CHAT, "/approve_" + id);
 
         await(() -> chat.sent().contains(ANSWER));
-        // Request, then the answer: no separate outcome message
-        assertThat(chat.sent()).hasSize(2);
-        assertThat(chat.edits()).singleElement().asString()
-                .startsWith("<b>JavaClaw wants to run</b> <code>" + TOOL + "</code>")
-                .contains("✅ <b>Approved</b>: running " + TOOL)
-                .doesNotContain("/approve_").doesNotContain("Expires at");
-        assertThat(chat.formatted(0)).isEqualTo(chat.edits().getFirst());
+        assertThat(chat.sent()).containsExactly(chat.sent().getFirst(),
+                "✅ Approved: running " + TOOL + ". (" + id + ")", ANSWER);
     }
 
     @Test
-    void whereTheChannelCannotEditTheOutcomeIsAShortReply() {
-        chat = new RecordingChat(ApprovalFormat.WHATSAPP, false);
+    void denyDoesNotRunTheTool() {
+        chat = new RecordingChat(ApprovalFormat.WHATSAPP);
         String id = shortId(askAndAwaitRequest(CHAT));
 
         command(CHAT, "/deny_" + id);
 
         await(() -> chat.sent().size() == 3);
-        assertThat(chat.edits()).isEmpty();
-        assertThat(chat.sent().get(1)).isEqualTo("❌ *Denied*: " + TOOL + " was not run. (" + id + ")");
-        assertThat(chat.sent().get(2)).startsWith("Not done: Tool '" + TOOL + "' was NOT run").contains("the user denied it");
+        assertThat(chat.sent().get(1)).isEqualTo("❌ The user did not approve this action. (" + id + ")");
+        assertThat(chat.sent().get(2)).isEqualTo("Not done: The user did not approve this action.");
         assertThat(fixture.toolRuns()).isEmpty();
         assertThat(fixture.modelSaw()).noneMatch(text -> text.contains("/deny"));
     }
@@ -111,7 +105,7 @@ class ChannelApprovalsTest {
         assertThat(fixture.pending().pendingFor(CHAT)).isNotEmpty();
 
         command(CHAT, "/deny_" + id);
-        await(() -> chat.sent().size() == 2);
+        await(() -> chat.sent().size() == 3);
     }
 
     @Test
@@ -130,16 +124,14 @@ class ChannelApprovalsTest {
     }
 
     @Test
-    void anExpiredRequestIsEditedToSaySoAndCanNoLongerBeAnswered() {
+    void anExpiredRequestIsNotRunAndCanNoLongerBeAnswered() {
         fixture.close();
         fixture = new ChannelApprovalFixture(Duration.ofSeconds(1), ARGUMENTS);
         String id = shortId(askAndAwaitRequest(CHAT));
 
-        await(() -> !chat.edits().isEmpty());
-        assertThat(chat.edits().getFirst())
-                .contains("⌛ <b>Expired</b>: " + TOOL + " was not run because nobody approved it within 1 second.");
-        await(() -> chat.sent().size() == 2);
-        assertThat(chat.sent().get(1)).startsWith("Not done:");
+        await(() -> chat.sent().size() == 3);
+        assertThat(chat.sent().get(1)).isEqualTo("❌ No approval was given in time. (" + id + ")");
+        assertThat(chat.sent().get(2)).isEqualTo("Not done: No approval was given in time.");
 
         assertThat(command(CHAT, "/approve_" + id)).isTrue();
         assertThat(replies).singleElement().asString().contains("No approval " + id + " is waiting");

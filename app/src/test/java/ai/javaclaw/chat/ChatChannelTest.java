@@ -357,8 +357,7 @@ class ChatChannelTest {
 
         assertThat(pending.answer()).isCompletedWithValueMatching(resolution ->
                 resolution instanceof PendingApprovals.Resolution.Cancelled(Denial denial)
-                        && denial.reason() == Denial.Reason.NOBODY_TO_ASK
-                        && denial.detail().contains("disconnected"));
+                        && denial == Denial.NOT_APPROVED);
         assertThat(elsewhere.answer()).isNotDone();
     }
 
@@ -400,7 +399,7 @@ class ChatChannelTest {
         agentStreams(events -> {
             events.accept(new AgentEvent.ApprovalRequested(request));
             events.accept(new AgentEvent.ApprovalResolved("call-1", "call-1", "Write",
-                    new Denial(Denial.Reason.TIMEOUT, "nobody approved it within 2 minutes")));
+                    Denial.TIMED_OUT));
             events.accept(new AgentEvent.Done());
         });
 
@@ -419,7 +418,7 @@ class ChatChannelTest {
                 .doesNotContainKeys("risk", "details");
         assertThat(frames.get(1)).containsEntry("type", "approvalResolved")
                 .containsEntry("data", Map.of("approvalId", "call-1", "toolCallId", "call-1", "toolName", "Write",
-                        "outcome", "denied", "reason", "timeout", "detail", "nobody approved it within 2 minutes"));
+                        "outcome", "denied", "detail", "No approval was given in time."));
     }
 
     @Test
@@ -436,7 +435,7 @@ class ChatChannelTest {
         String arguments = "{\"filePath\":\"<img src=x onerror=alert(1)>\",\"content\":\"</pre><script>x()</script>\"}";
         return new ApprovalRequest(id, id, conversationId, "Write", arguments,
                 ArgumentsHash.of("Write", arguments), List.of(ApprovalDecision.ALLOW_ONCE, ApprovalDecision.DENY),
-                null, Instant.now().plusSeconds(120));
+                Instant.now().plusSeconds(120));
     }
 
     @SuppressWarnings("unchecked")

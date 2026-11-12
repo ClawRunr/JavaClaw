@@ -17,30 +17,24 @@ class ApprovalPropertiesTest {
             .withUserConfiguration(PropertiesOnly.class);
 
     @Test
-    void withoutConfigurationNothingIsAllowedOrDeniedAndTheTimeoutIsTwoMinutes() {
+    void withoutConfigurationNothingIsAllowedAndTheTimeoutIsTwoMinutes() {
         contextRunner.run(context -> {
             ApprovalProperties properties = context.getBean(ApprovalProperties.class);
             assertThat(properties.timeout()).isEqualTo(Duration.ofMinutes(2));
             assertThat(properties.allow()).isEmpty();
-            assertThat(properties.deny()).isEmpty();
-            assertThat(properties.protectedPaths()).isEmpty();
         });
     }
 
     @Test
-    void bindsAllowDenyProtectedPathsAndTimeout() {
+    void bindsAllowAndTimeout() {
         contextRunner
                 .withPropertyValues(
                         "agent.approval.timeout=10m",
-                        "agent.approval.allow=Read,WebFetch",
-                        "agent.approval.deny[0]= Task ",
-                        "agent.approval.protected-paths=workspace/skills/,application*.yaml")
+                        "agent.approval.allow=Read, WebFetch")
                 .run(context -> {
                     ApprovalProperties properties = context.getBean(ApprovalProperties.class);
                     assertThat(properties.timeout()).isEqualTo(Duration.ofMinutes(10));
                     assertThat(properties.allow()).containsExactly("Read", "WebFetch");
-                    assertThat(properties.deny()).containsExactly("Task");
-                    assertThat(properties.protectedPaths()).containsExactly("workspace/skills/", "application*.yaml");
                 });
     }
 

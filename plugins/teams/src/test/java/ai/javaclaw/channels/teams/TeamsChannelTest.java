@@ -123,26 +123,21 @@ class TeamsChannelTest {
     }
 
     @Test
-    void markdownIsPostedAndTheReturnedActivityIsUpdatedInPlace() throws Exception {
+    void markdownIsPosted() throws Exception {
         when(tokenProvider.getToken()).thenReturn("tok-123");
         when(httpResponse.statusCode()).thenReturn(200);
-        when(httpResponse.body()).thenReturn("{\"id\":\"act-7\"}");
+        when(httpResponse.body()).thenReturn("{}");
         when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
         TeamsConversationReference reference = new TeamsConversationReference("https://smba.example/", "conv-1");
 
-        assertThat(channel.sendMarkdown(reference, "**Approval needed**")).contains("act-7");
-        assertThat(channel.updateMarkdown(reference, "act-7", "**Approved**")).isTrue();
+        channel.sendMarkdown(reference, "**Approval needed**");
 
         ArgumentCaptor<HttpRequest> requests = ArgumentCaptor.forClass(HttpRequest.class);
-        verify(httpClient, org.mockito.Mockito.times(2)).send(requests.capture(), any(HttpResponse.BodyHandler.class));
-        HttpRequest post = requests.getAllValues().get(0);
-        HttpRequest put = requests.getAllValues().get(1);
+        verify(httpClient).send(requests.capture(), any(HttpResponse.BodyHandler.class));
+        HttpRequest post = requests.getValue();
         assertThat(post.method()).isEqualTo("POST");
         assertThat(post.uri()).hasToString("https://smba.example/v3/conversations/conv-1/activities");
         assertThat(bodyOf(post)).contains("\"textFormat\":\"markdown\"").contains("**Approval needed**");
-        assertThat(put.method()).isEqualTo("PUT");
-        assertThat(put.uri()).hasToString("https://smba.example/v3/conversations/conv-1/activities/act-7");
-        assertThat(bodyOf(put)).contains("\"id\":\"act-7\"").contains("**Approved**");
     }
 
     @Test
@@ -153,8 +148,6 @@ class TeamsChannelTest {
 
         org.assertj.core.api.Assertions.assertThatIllegalStateException().isThrownBy(() ->
                 channel.sendMarkdown(new TeamsConversationReference("https://smba.example/", "conv-1"), "x"));
-        assertThat(channel.updateMarkdown(new TeamsConversationReference("https://smba.example/", "conv-1"), "a", "x"))
-                .isFalse();
     }
 
     private static String bodyOf(HttpRequest request) throws Exception {

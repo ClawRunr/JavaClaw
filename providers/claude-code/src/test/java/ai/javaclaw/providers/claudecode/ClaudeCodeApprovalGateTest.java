@@ -7,7 +7,6 @@ import ai.javaclaw.approval.ApprovalProperties;
 import ai.javaclaw.approval.ApprovalRequest;
 import ai.javaclaw.approval.ApprovalTurn;
 import ai.javaclaw.approval.PendingApprovals;
-import ai.javaclaw.approval.ProtectedPaths;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
@@ -131,7 +130,7 @@ class ClaudeCodeApprovalGateTest {
         assertThat(toolRuns).isEmpty();
         assertThat(calls()).hasSize(2);
         assertThat(String.join("\n", calls().get(1)))
-                .contains("toolu_fake_1").contains("was NOT run").doesNotContain("fixture contents");
+                .contains("toolu_fake_1").contains("The user did not approve this action.").doesNotContain("fixture contents");
     }
 
     @Test
@@ -174,7 +173,7 @@ class ClaudeCodeApprovalGateTest {
 
         assertThat(answer.get(30, TimeUnit.SECONDS)).endsWith(ANSWER);
         assertThat(toolRuns).isEmpty();
-        assertThat(String.join("\n", calls().get(1))).contains("was NOT run").contains("denied");
+        assertThat(String.join("\n", calls().get(1))).contains("The user did not approve this action.");
     }
 
     private static ApprovalTurn askingTurn(List<ApprovalRequest> requests) {
@@ -191,11 +190,9 @@ class ClaudeCodeApprovalGateTest {
     }
 
     private ChatClient gatedClient(PendingApprovals pending) {
-        ApprovalGate gate = new ApprovalGate(ApprovalProperties.defaults(),
-                new ProtectedPaths(dir.resolve("application.private.yaml"), List.of(), dir.resolve("workspace")),
-                pending, Clock.systemUTC());
+        ApprovalGate gate = new ApprovalGate(ApprovalProperties.defaults(), pending, Clock.systemUTC());
         return ChatClient.builder(model())
-                .defaultAdvisors(gate.deniedToolFilter(), ToolCallingAdvisor.builder()
+                .defaultAdvisors(ToolCallingAdvisor.builder()
                         .toolCallingManager(gate.toolCallingManager(ToolCallingManager.builder().build()))
                         .build())
                 .defaultTools(readFile)

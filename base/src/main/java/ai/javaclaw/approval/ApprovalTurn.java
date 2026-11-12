@@ -2,16 +2,11 @@ package ai.javaclaw.approval;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Approval state for one agent turn (one user message or one task run, across every round of the
  * tool loop). It rides to the gate in the request's tool context under {@link #TOOL_CONTEXT_KEY};
  * the gate removes it again before any tool sees the context.
- * <p>
- * Remembers which tools were denied, so a tool denied once is refused for the rest of the turn
- * without asking again.
- * </p>
  */
 public final class ApprovalTurn {
 
@@ -20,7 +15,6 @@ public final class ApprovalTurn {
     private final String conversationId;
     private final HumanQuestionHandler questions;
     private final ApprovalListener listener;
-    private final Map<String, Denial> deniedTools = new ConcurrentHashMap<>();
 
     /**
      * @param questions who can answer approvals for this turn, or {@code null} when nobody can
@@ -55,14 +49,6 @@ public final class ApprovalTurn {
 
     public ApprovalListener listener() {
         return listener;
-    }
-
-    Optional<Denial> earlierDenial(String toolName) {
-        return Optional.ofNullable(deniedTools.get(toolName));
-    }
-
-    void recordDenial(String toolName, Denial denial) {
-        deniedTools.putIfAbsent(toolName, denial);
     }
 
     /** Kept short: request logging prints the tool context. */

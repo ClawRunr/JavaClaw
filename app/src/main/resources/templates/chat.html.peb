@@ -356,11 +356,6 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #c8cee0;
 }
-.ar-approval__note {
-    margin-top: .35rem;
-    font-size: .72rem;
-    color: rgba(230, 215, 168, .8);
-}
 .ar-approval .ar-tool__pre { margin-top: .45rem; }
 .ar-approval__actions { display: flex; align-items: center; gap: .5rem; margin-top: .6rem; flex-wrap: wrap; }
 .ar-approval__expires { font-size: .68rem; color: rgba(200, 212, 240, .45); }
@@ -601,13 +596,6 @@
     var approvals = {};   // approvalId -> { panel, card }
 
     var DECISION_LABELS = { 'allow-once': 'Allow once', 'deny': 'Deny' };
-    var REASON_LABELS = {
-        'rule': 'Blocked by an approval rule',
-        'user': 'Denied by you',
-        'timeout': 'Timed out',
-        'nobody-to-ask': 'Nobody could approve it'
-    };
-
     function el(tag, className, text) {
         var node = document.createElement(tag);
         if (className) node.className = className;
@@ -644,10 +632,6 @@
         title.appendChild(el('span', null, 'Approval needed to run'));
         title.appendChild(el('span', 'ar-approval__tool', data.toolName || 'tool'));
         panel.appendChild(title);
-        if (data.protectedReason) {
-            panel.appendChild(el('div', 'ar-approval__note',
-                'Always asks, whatever the rules say: this call ' + data.protectedReason + '.'));
-        }
 
         // The exact arguments the tool will receive, from the request itself
         panel.appendChild(el('pre', 'ar-tool__pre', pretty(data.arguments)));
@@ -702,14 +686,13 @@
             var actions = panel.querySelector('.ar-approval__actions');
             if (actions) actions.remove();
         } else {
-            // Refused without asking (rule, nobody to ask): the outcome goes on the tool card
+            // Refused without asking (nobody to ask): the outcome goes on the tool card
             panel = el('div', 'ar-approval');
             var body = card.querySelector('.ar-tool__body');
             body.insertBefore(panel, body.firstChild);
             card.open = true;
         }
-        var text = allowed ? 'Allowed once.'
-            : (REASON_LABELS[data.reason] || 'Not run') + (data.detail ? ': ' + data.detail : '') + '.';
+        var text = allowed ? 'Allowed once.' : (data.detail || 'Not run.');
         panel.appendChild(el('div', 'ar-approval__outcome ar-approval__outcome--' + (allowed ? 'allowed' : 'denied'), text));
         if (data.approvalId) delete approvals[data.approvalId];
     }

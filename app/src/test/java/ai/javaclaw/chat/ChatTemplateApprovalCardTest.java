@@ -23,7 +23,7 @@ class ChatTemplateApprovalCardTest {
 
     /** Fields of the approval frames that carry model or user text. */
     static final List<String> UNTRUSTED_FIELDS = List.of(
-            "toolName", "arguments", "protectedReason", "detail", "approvalId", "argumentsHash");
+            "toolName", "arguments", "detail", "approvalId", "argumentsHash");
 
     static String approvalCode;
 

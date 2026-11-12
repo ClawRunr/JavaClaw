@@ -99,8 +99,7 @@ public class ChatChannel implements Channel, HumanQuestionHandler {
         String conversationId = viewing.remove(session);
         wsSession.compareAndSet(session, null);
         if (conversationId != null && !canAsk(conversationId)) {
-            int denied = pendingApprovals.cancelConversation(conversationId,
-                    new Denial(Denial.Reason.NOBODY_TO_ASK, "the web chat client disconnected before anyone answered"));
+            int denied = pendingApprovals.cancelConversation(conversationId, Denial.NOT_APPROVED);
             if (denied > 0) {
                 log.info("Denied {} pending approval(s) in conversation {}: last web client disconnected",
                         denied, conversationId);
@@ -255,9 +254,6 @@ public class ChatChannel implements Channel, HumanQuestionHandler {
         data.put("arguments", request.arguments());
         data.put("argumentsHash", request.argumentsHash());
         data.put("decisions", request.decisions().stream().map(ApprovalDecision::wireValue).toList());
-        if (request.protectedReason() != null) {
-            data.put("protectedReason", request.protectedReason());
-        }
         data.put("expiresAt", request.expiresAt().toEpochMilli());
         return data;
     }
@@ -271,8 +267,7 @@ public class ChatChannel implements Channel, HumanQuestionHandler {
         data.put("toolName", resolved.toolName());
         data.put("outcome", resolved.approved() ? "allowed" : "denied");
         if (!resolved.approved()) {
-            data.put("reason", resolved.denial().reason().wireValue());
-            data.put("detail", resolved.denial().detail());
+            data.put("detail", resolved.denial().message());
         }
         return data;
     }

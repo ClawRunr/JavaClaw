@@ -7,15 +7,14 @@ import java.util.List;
  * One tool call waiting for the owner. Everything a client needs to render the question is here,
  * and the decision it sends back must quote {@link #approvalId()} and {@link #argumentsHash()}.
  *
- * @param approvalId      single-use key; the tool call id when the model supplied a usable one
- * @param toolCallId      the model's id for the call (may be blank for some providers)
- * @param conversationId  the conversation whose turn is waiting
- * @param toolName        the tool the model wants to run
- * @param arguments       the exact JSON arguments the tool will receive
- * @param argumentsHash   SHA-256 of tool name plus canonical arguments ({@link ArgumentsHash})
- * @param decisions       the decisions a client may send back
- * @param protectedReason why this call always asks whatever {@code allow} says, or {@code null}
- * @param expiresAt       when the request times out and counts as denied
+ * @param approvalId     single-use key; the tool call id when the model supplied a usable one
+ * @param toolCallId     the model's id for the call (may be blank for some providers)
+ * @param conversationId the conversation whose turn is waiting
+ * @param toolName       the tool the model wants to run
+ * @param arguments      the exact JSON arguments the tool will receive
+ * @param argumentsHash  SHA-256 of tool name plus canonical arguments ({@link ArgumentsHash})
+ * @param decisions      the decisions a client may send back
+ * @param expiresAt      when the request times out and counts as denied
  */
 public record ApprovalRequest(
         String approvalId,
@@ -25,7 +24,6 @@ public record ApprovalRequest(
         String arguments,
         String argumentsHash,
         List<ApprovalDecision> decisions,
-        String protectedReason,
         Instant expiresAt) {
 
     public ApprovalRequest {

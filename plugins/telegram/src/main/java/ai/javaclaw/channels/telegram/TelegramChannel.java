@@ -15,7 +15,6 @@ import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
@@ -176,38 +175,19 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
         }
 
         @Override
-        public Object sendFormatted(String html) {
+        public void sendFormatted(String html) {
             try {
-                Message sent = telegramClient.execute(SendMessage.builder()
+                telegramClient.execute(SendMessage.builder()
                         .chatId(chatId)
                         .messageThreadId(messageThreadId)
                         .text(html)
                         .parseMode(ParseMode.HTML)
                         .build());
-                return sent == null ? null : sent.getMessageId();
             } catch (TelegramApiException e) {
                 throw new IllegalStateException("Could not send the approval request to Telegram", e);
             }
         }
 
-        @Override
-        public boolean edit(Object messageId, String html) {
-            if (!(messageId instanceof Integer id)) {
-                return false;
-            }
-            try {
-                telegramClient.execute(EditMessageText.builder()
-                        .chatId(chatId)
-                        .messageId(id)
-                        .text(html)
-                        .parseMode(ParseMode.HTML)
-                        .build());
-                return true;
-            } catch (TelegramApiException e) {
-                LOGGER.warn("Could not edit Telegram message {}: {}", id, e.getMessage());
-                return false;
-            }
-        }
     }
 
     private String convertMarkdownToTelegramHtml(String markdown) {

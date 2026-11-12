@@ -7,22 +7,16 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * {@code agent.approval.*}: which tool calls run, which are refused, and how long an approval may
- * wait. Invalid values fail binding, so the application refuses to start rather than running with
- * an approval setup the owner did not intend.
+ * {@code agent.approval.*}. Invalid values fail binding, so the application refuses to start
+ * rather than running with an approval setup the owner did not intend. The default {@code allow}
+ * list lives in {@code application.yaml}; without configuration every tool asks.
  *
- * <p>The defaults live in {@code application.yaml}, not here: without configuration nothing is
- * allowed, nothing is denied and only the runtime configuration file is protected.
- *
- * @param timeout        how long a pending approval waits for the owner before it counts as
- *                       denied; more than zero and at most {@link #MAX_TIMEOUT}
- * @param allow          tool names that run without asking
- * @param deny           tool names that never run and are not offered to the model
- * @param protectedPaths paths and file names a call always asks about, whatever {@code allow}
- *                       says; see {@link ProtectedPaths}
+ * @param timeout how long a pending approval waits before the call is denied; more than zero and
+ *                at most {@link #MAX_TIMEOUT}
+ * @param allow   tool names that run without asking
  */
 @ConfigurationProperties("agent.approval")
-public record ApprovalProperties(Duration timeout, List<String> allow, List<String> deny, List<String> protectedPaths) {
+public record ApprovalProperties(Duration timeout, List<String> allow) {
 
     public static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(2);
 
@@ -42,21 +36,12 @@ public record ApprovalProperties(Duration timeout, List<String> allow, List<Stri
             throw new IllegalArgumentException("agent.approval.timeout must be at most " + MAX_TIMEOUT
                     + ", but was " + timeout);
         }
-        allow = clean(allow);
-        deny = clean(deny);
-        protectedPaths = clean(protectedPaths);
+        allow = allow == null ? List.of() : allow.stream().filter(Objects::nonNull).map(String::trim)
+                .filter(name -> !name.isEmpty()).toList();
     }
 
-    /** Two-minute timeout, nothing allowed, nothing denied, no protected paths beyond the config file. */
+    /** Two-minute timeout, nothing allowed. */
     public static ApprovalProperties defaults() {
-        return new ApprovalProperties(null, null, null, null);
-    }
-
-    private static List<String> clean(List<String> values) {
-        return values == null ? List.of() : values.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(value -> !value.isEmpty())
-                .toList();
+        return new ApprovalProperties(null, null);
     }
 }

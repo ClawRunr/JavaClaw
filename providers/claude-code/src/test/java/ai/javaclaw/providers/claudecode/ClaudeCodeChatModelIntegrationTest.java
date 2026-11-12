@@ -7,7 +7,6 @@ import ai.javaclaw.approval.ApprovalProperties;
 import ai.javaclaw.approval.ApprovalRequest;
 import ai.javaclaw.approval.ApprovalTurn;
 import ai.javaclaw.approval.PendingApprovals;
-import ai.javaclaw.approval.ProtectedPaths;
 import ai.javaclaw.providers.claudecode.FakeAnthropicUpstream.Mode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -180,7 +179,7 @@ class ClaudeCodeChatModelIntegrationTest {
             assertThat(toolInvocations).isEmpty();
             assertThat(FakeAnthropicUpstream.blocks(upstream.bodies.get(1))).anySatisfy(block -> {
                 assertThat(block.get("type").stringValue()).isEqualTo("tool_result");
-                assertThat(block.get("content").toString()).contains("was NOT run");
+                assertThat(block.get("content").toString()).contains("The user did not approve this action.");
             });
         }
     }
@@ -223,9 +222,7 @@ class ClaudeCodeChatModelIntegrationTest {
     }
 
     private static ToolCallingAdvisor gatedToolCallingAdvisor(PendingApprovals pending) {
-        ApprovalGate gate = new ApprovalGate(ApprovalProperties.defaults(),
-                new ProtectedPaths(Path.of("application.private.yaml"), List.of(), Path.of("workspace")),
-                pending, Clock.systemUTC());
+        ApprovalGate gate = new ApprovalGate(ApprovalProperties.defaults(), pending, Clock.systemUTC());
         return ToolCallingAdvisor.builder()
                 .toolCallingManager(gate.toolCallingManager(ToolCallingManager.builder().build()))
                 .build();

@@ -89,12 +89,12 @@ class TaskHandlerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void aTaskWhoseToolWasBlockedReportsTheToolAndWhyAndWaitsForAHuman() {
+    void aTaskWhoseToolWasBlockedReportsTheToolAndWaitsForAHuman() {
         Task task = givenATodoTask("Write report");
         when(agentMock.prompt(anyString(), anyString(), eq(TaskResult.class), any())).thenAnswer(invocation -> {
             Consumer<AgentEvent> events = invocation.getArgument(3);
             events.accept(new AgentEvent.ApprovalResolved(null, "call-1", "Write",
-                    new Denial(Denial.Reason.NOBODY_TO_ASK, "it needs approval and nobody can be asked here")));
+                    Denial.NOT_APPROVED));
             return new TaskResult(Task.Status.completed, "I could not write the file.");
         });
 
@@ -103,8 +103,8 @@ class TaskHandlerTest {
         Task saved = taskRepository.getTaskById(task.getId());
         assertThat(saved.getStatus()).isEqualTo(Task.Status.awaiting_human_input);
         assertThat(saved.getDescription())
-                .contains("Blocked tool calls")
-                .contains("Write: not run because it needs approval and nobody can be asked here")
+                .contains("Not run, because a task cannot ask for approval")
+                .contains("- Write")
                 .contains("I could not write the file.");
     }
 

@@ -5,7 +5,6 @@ import ai.javaclaw.agent.DefaultAgent;
 import ai.javaclaw.approval.ApprovalGate;
 import ai.javaclaw.approval.ApprovalProperties;
 import ai.javaclaw.approval.PendingApprovals;
-import ai.javaclaw.approval.ProtectedPaths;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.chat.ChatChannel;
 import org.junit.jupiter.api.AfterEach;
@@ -44,7 +43,6 @@ import reactor.core.publisher.Flux;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
-import java.nio.file.Path;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
@@ -125,7 +123,7 @@ class ChatApprovalIntegrationTest {
                     "decision", "deny"));
 
             assertThat(data(frameOfType("approvalResolved")))
-                    .containsEntry("outcome", "denied").containsEntry("reason", "user");
+                    .containsEntry("outcome", "denied").containsEntry("detail", "The user did not approve this action.");
             frameOfType("done");
             assertThat(toolRuns).isEmpty();
         } finally {
@@ -266,12 +264,10 @@ class ChatApprovalIntegrationTest {
 
         @Bean
         Agent agent(PendingApprovals pendingApprovals) {
-            ApprovalGate gate = new ApprovalGate(ApprovalProperties.defaults(),
-                    new ProtectedPaths(Path.of("application.private.yaml"), List.of(), Path.of("workspace")),
-                    pendingApprovals, Clock.systemUTC());
+            ApprovalGate gate = new ApprovalGate(ApprovalProperties.defaults(), pendingApprovals, Clock.systemUTC());
             return new DefaultAgent(ChatClient.builder(new NoteModel())
                     .defaultTools(new WriteNoteTool())
-                    .defaultAdvisors(gate.deniedToolFilter(), ToolCallingAdvisor.builder()
+                    .defaultAdvisors(ToolCallingAdvisor.builder()
                             .toolCallingManager(gate.toolCallingManager(ToolCallingManager.builder().build()))
                             .build())
                     .build());

@@ -98,7 +98,7 @@ class ChatOriginIntegrationTest {
             assertThat(session.isOpen()).isTrue();
             Map<String, Object> request = startTurnAwaitingApproval(session, frames);
             send(session, decision(request, "deny"));
-            assertThat(data(frameOfType(frames, "approvalResolved"))).containsEntry("reason", "user");
+            assertThat(data(frameOfType(frames, "approvalResolved"))).containsEntry("detail", "The user did not approve this action.");
             frameOfType(frames, "done");
         } finally {
             session.close();

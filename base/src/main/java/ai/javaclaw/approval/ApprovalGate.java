@@ -5,7 +5,6 @@ import ai.javaclaw.approval.PendingApprovals.Pending;
 import ai.javaclaw.approval.PendingApprovals.Resolution;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.beans.factory.ObjectProvider;
@@ -15,15 +14,16 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Decides, call by call, whether a tool the model asked for may run: by {@code agent.approval.deny}
- * and {@code allow}, by protected path, or by asking the owner and waiting for the answer. A call
- * that needs approval when nobody can be asked is refused.
+ * Decides, call by call, whether a tool the model asked for may run: tools in
+ * {@code agent.approval.allow} run, every other call asks the owner and waits for the answer. A
+ * call is denied when the owner denies it, nobody answers in time, or nobody can be asked.
  * <p>
  * Every tool call of the main agent passes through here: {@link #toolCallingManager} wraps the
  * {@link ToolCallingManager} of both tool-calling advisors, so static, MCP, plugin and
@@ -43,17 +43,14 @@ public class ApprovalGate {
 
     private static final List<ApprovalDecision> DECISIONS = List.of(ApprovalDecision.ALLOW_ONCE, ApprovalDecision.DENY);
 
-    private final ApprovalProperties properties;
-    private final ApprovalPolicy policy;
-    private final ProtectedPaths protectedPaths;
+    private final Duration timeout;
+    private final Set<String> allow;
     private final PendingApprovals pendingApprovals;
     private final Clock clock;
 
-    public ApprovalGate(ApprovalProperties properties, ProtectedPaths protectedPaths,
-                        PendingApprovals pendingApprovals, Clock clock) {
-        this.properties = properties;
-        this.policy = new ApprovalPolicy(properties);
-        this.protectedPaths = protectedPaths;
+    public ApprovalGate(ApprovalProperties properties, PendingApprovals pendingApprovals, Clock clock) {
+        this.timeout = properties.timeout();
+        this.allow = Set.copyOf(properties.allow());
         this.pendingApprovals = pendingApprovals;
         this.clock = clock;
     }
@@ -71,15 +68,6 @@ public class ApprovalGate {
         return toolCallingManager(delegates.getIfUnique(() -> ToolCallingManager.builder().build()));
     }
 
-    /** Removes denied tools from the request before the model sees them; order it outside the tool loop. */
-    public Advisor deniedToolFilter() {
-        return new DeniedToolFilterAdvisor(policy);
-    }
-
-    boolean isOffered(String toolName) {
-        return policy.isOffered(toolName);
-    }
-
     /**
      * Decides one call, asking and waiting if needed.
      *
@@ -87,51 +75,31 @@ public class ApprovalGate {
      * @return why the call must not run, or empty when it may
      */
     Optional<Denial> check(AssistantMessage.ToolCall call, ApprovalTurn turn) {
-        String toolName = call.name();
-        String arguments = StringUtils.hasText(call.arguments()) ? call.arguments() : "{}";
-        Optional<String> protectedReason = protectedPaths.reason(arguments);
-
-        ApprovalPolicy.Verdict verdict = policy.evaluate(toolName, protectedReason.isPresent());
-        if (verdict == ApprovalPolicy.Verdict.DENY) {
-            return deny(call, turn, null, new Denial(Denial.Reason.RULE, "it is blocked by agent.approval.deny"));
-        }
-        if (turn != null) {
-            Optional<Denial> earlier = turn.earlierDenial(toolName);
-            if (earlier.isPresent()) {
-                Denial denial = earlier.get();
-                return deny(call, turn, null, new Denial(denial.reason(),
-                        "it was already refused earlier in this turn (" + denial.detail() + ")"));
-            }
-        }
-        if (verdict == ApprovalPolicy.Verdict.RUN) {
+        if (allow.contains(call.name())) {
             return Optional.empty();
         }
-        return ask(call, turn, arguments, protectedReason);
+        String arguments = StringUtils.hasText(call.arguments()) ? call.arguments() : "{}";
+        return ask(call, turn, arguments);
     }
 
-    private Optional<Denial> ask(AssistantMessage.ToolCall call, ApprovalTurn turn, String arguments,
-                                 Optional<String> protectedReason) {
+    private Optional<Denial> ask(AssistantMessage.ToolCall call, ApprovalTurn turn, String arguments) {
         if (turn == null || turn.questions().isEmpty()) {
-            return deny(call, turn, null, new Denial(Denial.Reason.NOBODY_TO_ASK,
-                    "it needs approval and nobody can be asked here"));
+            return deny(call, turn, null, Denial.NOT_APPROVED);
         }
         boolean canAsk;
         try {
             canAsk = turn.questions().get().canAsk(turn.conversationId());
         } catch (RuntimeException e) {
             log.warn("Approval handler failed for conversation {}; refusing {}", turn.conversationId(), call.name(), e);
-            return deny(call, turn, null, new Denial(Denial.Reason.NOBODY_TO_ASK,
-                    "it needs approval and the approval prompt could not be shown"));
+            canAsk = false;
         }
         if (!canAsk) {
-            return deny(call, turn, null, new Denial(Denial.Reason.NOBODY_TO_ASK,
-                    "it needs approval and no web chat client is connected to this conversation"));
+            return deny(call, turn, null, Denial.NOT_APPROVED);
         }
 
-        Duration timeout = properties.timeout();
         ApprovalRequest request = new ApprovalRequest(
                 approvalId(call), call.id(), turn.conversationId(), call.name(), arguments,
-                ArgumentsHash.of(call.name(), arguments), DECISIONS, protectedReason.orElse(null),
+                ArgumentsHash.of(call.name(), arguments), DECISIONS,
                 clock.instant().plus(timeout));
 
         Pending entry = pendingApprovals.open(request);
@@ -140,13 +108,12 @@ public class ApprovalGate {
         } catch (RuntimeException e) {
             pendingApprovals.discard(entry);
             log.warn("Could not show approval {} for {}", request.approvalId(), call.name(), e);
-            return deny(call, turn, request.approvalId(), new Denial(Denial.Reason.NOBODY_TO_ASK,
-                    "it needs approval and the approval prompt could not be shown"));
+            return deny(call, turn, request.approvalId(), Denial.NOT_APPROVED);
         }
         log.info("Conversation {} waits up to {} for approval of {} ({})", turn.conversationId(), timeout,
                 call.name(), request.approvalId());
 
-        Resolution resolution = await(entry, timeout);
+        Resolution resolution = await(entry);
         return switch (resolution) {
             case Resolution.Decided(ApprovalDecision decision) when decision == ApprovalDecision.ALLOW_ONCE -> {
                 log.info("Conversation {}: {} approved once ({})", turn.conversationId(), call.name(), request.approvalId());
@@ -154,38 +121,31 @@ public class ApprovalGate {
                 yield Optional.empty();
             }
             case Resolution.Decided ignored ->
-                    deny(call, turn, request.approvalId(), new Denial(Denial.Reason.USER, "the user denied it"));
+                    deny(call, turn, request.approvalId(), Denial.NOT_APPROVED);
             case Resolution.Cancelled(Denial denial) -> deny(call, turn, request.approvalId(), denial);
         };
     }
 
-    private Resolution await(Pending entry, Duration timeout) {
-        Resolution timedOut = new Resolution.Cancelled(new Denial(Denial.Reason.TIMEOUT,
-                "nobody approved it within " + format(timeout)));
+    private Resolution await(Pending entry) {
         try {
             return entry.answer().get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             // A decision may land between the timeout and here; whoever completes first wins
-            entry.answer().complete(timedOut);
+            entry.answer().complete(new Resolution.Cancelled(Denial.TIMED_OUT));
             return entry.answer().join();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            entry.answer().complete(new Resolution.Cancelled(new Denial(Denial.Reason.NOBODY_TO_ASK,
-                    "the request was stopped before anyone answered")));
+            entry.answer().complete(new Resolution.Cancelled(Denial.NOT_APPROVED));
             return entry.answer().join();
         } catch (ExecutionException e) {
-            return new Resolution.Cancelled(new Denial(Denial.Reason.NOBODY_TO_ASK,
-                    "the approval prompt failed"));
+            return new Resolution.Cancelled(Denial.NOT_APPROVED);
         } finally {
             pendingApprovals.discard(entry);
         }
     }
 
     private Optional<Denial> deny(AssistantMessage.ToolCall call, ApprovalTurn turn, String approvalId, Denial denial) {
-        log.info("Refused tool {}: {} ({})", call.name(), denial.detail(), denial.reason().wireValue());
-        if (turn != null) {
-            turn.recordDenial(call.name(), denial);
-        }
+        log.info("Refused tool {} ({})", call.name(), denial);
         notify(turn, new ApprovalOutcome(approvalId, call.id(), call.name(), denial));
         return Optional.of(denial);
     }
@@ -207,12 +167,4 @@ public class ApprovalGate {
         return StringUtils.hasText(id) && !pendingApprovals.isPending(id) ? id : UUID.randomUUID().toString();
     }
 
-    private static String format(Duration duration) {
-        long seconds = duration.toSeconds();
-        if (seconds >= 60 && seconds % 60 == 0) {
-            long minutes = seconds / 60;
-            return minutes + (minutes == 1 ? " minute" : " minutes");
-        }
-        return seconds + (seconds == 1 ? " second" : " seconds");
-    }
 }

@@ -33,8 +33,7 @@ import java.util.regex.Pattern;
  * reaches the model; anything else goes to {@link #respond}, which runs the agent turn in the
  * background. When the turn needs approval, the chat gets a request written by
  * {@link ApprovalMessages} with a 6-character id, and the turn waits for the owner to answer. Once
- * it is answered or expires, the request is edited to show the outcome where the channel can edit
- * messages, or the outcome is sent as a reply.
+ * it is answered or expires, the outcome is sent as a short reply.
  *
  * <p>Turns run off the channel's receiving thread on purpose: every channel takes its messages one
  * at a time, so a turn waiting on that thread could never receive the command it waits for. Turns
@@ -68,8 +67,8 @@ public class ChannelApprovals {
     /** The last queued turn of each conversation, so the next one runs after it. */
     private final Map<String, CompletableFuture<Void>> lastTurn = new ConcurrentHashMap<>();
 
-    /** A request the owner was asked about, and the message it was asked in (null if it can't be edited). */
-    private record Asked(String shortId, ApprovalRequest request, ApprovalChat chat, Object message) {
+    /** A request the owner was asked about, and the chat it was asked in. */
+    private record Asked(String shortId, ApprovalRequest request, ApprovalChat chat) {
     }
 
     @Autowired
@@ -182,32 +181,23 @@ public class ChannelApprovals {
 
     private void ask(ApprovalRequest request, ApprovalChat chat) {
         // Registered before it is sent, so an answer arriving right away finds it
-        Asked placeholder;
+        Asked waiting;
         do {
-            placeholder = new Asked(newShortId(), request, chat, null);
-        } while (asked.putIfAbsent(placeholder.shortId(), placeholder) != null);
-        String shortId = placeholder.shortId();
-        Object message;
+            waiting = new Asked(newShortId(), request, chat);
+        } while (asked.putIfAbsent(waiting.shortId(), waiting) != null);
         try {
-            message = chat.sendFormatted(messages.request(request, shortId, chat.format()));
+            chat.sendFormatted(messages.request(request, waiting.shortId(), chat.format()));
         } catch (RuntimeException e) {
             // The gate then refuses the call: nobody saw the question
-            asked.remove(shortId, placeholder);
+            asked.remove(waiting.shortId(), waiting);
             throw e;
-        }
-        if (message != null) {
-            asked.replace(shortId, placeholder, new Asked(shortId, request, chat, message));
         }
     }
 
     private void tellOutcome(Asked waiting, Denial denial) {
         ApprovalChat chat = waiting.chat();
         try {
-            if (waiting.message() != null
-                    && chat.edit(waiting.message(), messages.resolvedRequest(waiting.request(), denial, chat.format()))) {
-                return;
-            }
-            chat.sendFormatted(messages.outcomeReply(waiting.request(), waiting.shortId(), denial, chat.format()));
+            chat.sendFormatted(messages.outcome(waiting.request(), waiting.shortId(), denial, chat.format()));
         } catch (RuntimeException e) {
             log.warn("Could not tell the outcome of approval {}", waiting.shortId(), e);
         }

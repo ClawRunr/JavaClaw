@@ -12,9 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import java.util.regex.Pattern;
@@ -74,18 +72,16 @@ public class TaskHandler {
 
     /**
      * A task cannot ask anyone to approve a tool call, so a blocked tool is the likeliest reason it
-     * did not get done. Say so plainly, naming each tool and why, instead of leaving the owner to
+     * did not get done. Say so plainly, naming each tool, instead of leaving the owner to
      * dig it out of the agent's own wording — and leave the task for a human rather than completed.
      */
     static TaskResult withBlockedTools(TaskResult result, List<AgentEvent.ApprovalResolved> blocked) {
         if (blocked.isEmpty()) {
             return result;
         }
-        Map<String, String> reasons = new LinkedHashMap<>();
-        blocked.forEach(b -> reasons.putIfAbsent(b.toolName(), b.denial().detail()));
-        String report = reasons.entrySet().stream()
-                .map(e -> "- %s: not run because %s".formatted(e.getKey(), e.getValue()))
-                .collect(Collectors.joining("\n", "Blocked tool calls (see agent.approval.* in the README):\n", ""));
+        String report = blocked.stream().map(AgentEvent.ApprovalResolved::toolName).distinct()
+                .map(tool -> "- " + tool)
+                .collect(Collectors.joining("\n", "Not run, because a task cannot ask for approval (see agent.approval.allow in the README):\n", ""));
         List<String> parts = new ArrayList<>();
         parts.add(report);
         if (result != null && result.feedback() != null && !result.feedback().isBlank()) {

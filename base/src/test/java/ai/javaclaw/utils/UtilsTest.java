@@ -47,16 +47,6 @@ class UtilsTest {
     }
 
     @Test
-    void realPathResolvesDotDotAndSymlinksAndKeepsTheMissingTail() throws Exception {
-        Path real = Files.createDirectories(dir.resolve("real"));
-        Path link = Files.createSymbolicLink(dir.resolve("link"), real);
-
-        assertThat(FilePaths.realPath(link.resolve("x/../new.txt")))
-                .isEqualTo(real.toRealPath().resolve("new.txt"));
-        assertThat(FilePaths.realPath(Path.of("relative/file.txt"))).isAbsolute();
-    }
-
-    @Test
     void ensureDirectoryCreatesMissingParentsAndFailsUncheckedWhenItCannot() throws Exception {
         Path nested = dir.resolve("a/b/c");
         assertThat(FilePaths.ensureDirectory(nested)).isEqualTo(nested).isDirectory();

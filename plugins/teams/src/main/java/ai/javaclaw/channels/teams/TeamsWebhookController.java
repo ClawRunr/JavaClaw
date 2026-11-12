@@ -93,8 +93,7 @@ public class TeamsWebhookController {
     }
 
     /**
-     * The personal chat a turn came from. Approval requests are sent in Teams markdown and updated
-     * in place to show their outcome.
+     * The personal chat a turn came from. Approval requests are sent in Teams markdown.
      */
     private record TeamsChat(TeamsChannel channel, TeamsConversationReference reference) implements ApprovalChat {
 
@@ -109,13 +108,8 @@ public class TeamsWebhookController {
         }
 
         @Override
-        public Object sendFormatted(String markdown) {
-            return channel.sendMarkdown(reference, markdown).orElse(null);
-        }
-
-        @Override
-        public boolean edit(Object activityId, String markdown) {
-            return activityId instanceof String id && channel.updateMarkdown(reference, id, markdown);
+        public void sendFormatted(String markdown) {
+            channel.sendMarkdown(reference, markdown);
         }
     }
 

@@ -39,12 +39,9 @@ class GatedToolCallingManager implements ToolCallingManager {
         this.gate = gate;
     }
 
-    /** Tool search indexes from this, so denied tools cannot be discovered either. */
     @Override
     public List<ToolDefinition> resolveToolDefinitions(ToolCallingChatOptions chatOptions) {
-        return delegate.resolveToolDefinitions(chatOptions).stream()
-                .filter(definition -> gate.isOffered(definition.name()))
-                .toList();
+        return delegate.resolveToolDefinitions(chatOptions);
     }
 
     @Override
@@ -92,7 +89,7 @@ class GatedToolCallingManager implements ToolCallingManager {
             Optional<Denial> denial = verdicts.get(i);
             if (denial.isPresent()) {
                 responses.add(new ToolResponseMessage.ToolResponse(call.id(), call.name(),
-                        denial.get().modelMessage(call.name())));
+                        denial.get().message()));
             } else if (executed.hasNext()) {
                 responses.add(executed.next());
             }

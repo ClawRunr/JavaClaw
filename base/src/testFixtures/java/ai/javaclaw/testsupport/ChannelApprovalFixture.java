@@ -5,7 +5,6 @@ import ai.javaclaw.agent.DefaultAgent;
 import ai.javaclaw.approval.ApprovalGate;
 import ai.javaclaw.approval.ApprovalProperties;
 import ai.javaclaw.approval.PendingApprovals;
-import ai.javaclaw.approval.ProtectedPaths;
 import ai.javaclaw.channels.ApprovalMessages;
 import ai.javaclaw.channels.ChannelApprovals;
 import org.springframework.ai.chat.client.ChatClient;
@@ -24,7 +23,6 @@ import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
@@ -62,12 +60,10 @@ public final class ChannelApprovalFixture implements AutoCloseable {
      * @param arguments what the model passes to {@value #TOOL}
      */
     public ChannelApprovalFixture(Duration timeout, String arguments) {
-        ApprovalGate gate = new ApprovalGate(new ApprovalProperties(timeout, null, null, null),
-                new ProtectedPaths(Path.of("application.private.yaml"), List.of(), Path.of("workspace")),
-                pending, Clock.systemUTC());
+        ApprovalGate gate = new ApprovalGate(new ApprovalProperties(timeout, null), pending, Clock.systemUTC());
         this.agent = new DefaultAgent(ChatClient.builder(new ScriptedModel(arguments))
                 .defaultTools(new FetchTool())
-                .defaultAdvisors(gate.deniedToolFilter(), ToolCallingAdvisor.builder()
+                .defaultAdvisors(ToolCallingAdvisor.builder()
                         .toolCallingManager(gate.toolCallingManager(ToolCallingManager.builder().build()))
                         .build())
                 .build());

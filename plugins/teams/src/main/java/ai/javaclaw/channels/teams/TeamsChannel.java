@@ -74,26 +74,12 @@ public class TeamsChannel implements Channel {
     /**
      * Sends a message written in Teams markdown.
      *
-     * @return the new activity's id, for {@link #updateMarkdown}; empty when Teams did not return one
      * @throws IllegalStateException when Teams did not accept the message
      */
-    public Optional<String> sendMarkdown(TeamsConversationReference reference, String markdown) {
-        String body = send(reference, "POST", activitiesUrl(reference),
+    public void sendMarkdown(TeamsConversationReference reference, String markdown) {
+        send(reference, "POST", activitiesUrl(reference),
                 Map.of("type", "message", "textFormat", "markdown", "text", markdown))
                 .orElseThrow(() -> new IllegalStateException("Teams did not accept the message"));
-        try {
-            String id = body.isBlank() ? "" : JSON.readTree(body).path("id").asString("");
-            return id.isBlank() ? Optional.empty() : Optional.of(id);
-        } catch (RuntimeException e) {
-            return Optional.empty();
-        }
-    }
-
-    /** Replaces an activity this bot sent. @return {@code false} when Teams refused or the call failed */
-    public boolean updateMarkdown(TeamsConversationReference reference, String activityId, String markdown) {
-        return send(reference, "PUT", activitiesUrl(reference) + "/" + activityId,
-                Map.of("type", "message", "id", activityId, "textFormat", "markdown", "text", markdown))
-                .isPresent();
     }
 
     private static String activitiesUrl(TeamsConversationReference reference) {

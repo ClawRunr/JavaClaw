@@ -116,7 +116,7 @@ public class MainChatClientProvider {
                         .build();
             }
 
-            builder.defaultAdvisors(new SimpleLoggerAdvisor(), approvalGate.deniedToolFilter())
+            builder.defaultAdvisors(new SimpleLoggerAdvisor())
                     .defaultSystem(p -> p.text(agentPrompt).param(AgentEnvironment.ENVIRONMENT_INFO_KEY, AgentEnvironment.info()))
                     .defaultTools((Object[]) mcpToolProvider.getToolCallbacks())
                     .defaultTools(SkillsTool.builder()

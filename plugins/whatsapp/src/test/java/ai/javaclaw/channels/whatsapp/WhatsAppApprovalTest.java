@@ -72,8 +72,8 @@ class WhatsAppApprovalTest {
         receive(CHAT_JID, "/approve_" + id);
 
         await(() -> sent.contains(ANSWER));
-        // wacli cannot edit, so the outcome is a short reply between the request and the answer
-        assertThat(sent).containsExactly(request, "✅ *Approved*: running " + ChannelApprovalFixture.TOOL + ". (" + id + ")", ANSWER);
+        // The outcome is a short reply between the request and the answer
+        assertThat(sent).containsExactly(request, "✅ Approved: running " + ChannelApprovalFixture.TOOL + ". (" + id + ")", ANSWER);
         assertThat(fixture.toolRuns()).containsExactly(ARGUMENTS);
         assertThat(fixture.modelSaw()).noneMatch(text -> text.contains("/approve"));
     }
@@ -92,7 +92,7 @@ class WhatsAppApprovalTest {
         assertThat(fixture.pending().pendingFor(CHAT_JID)).isNotEmpty();
 
         receive(CHAT_JID, "/deny " + id);
-        await(() -> sent.stream().anyMatch(m -> m.startsWith("❌ *Denied*")));
+        await(() -> sent.stream().anyMatch(m -> m.startsWith("❌ The user did not approve this action.")));
         assertThat(fixture.toolRuns()).isEmpty();
     }
 

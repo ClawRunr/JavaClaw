@@ -122,24 +122,10 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
         }
 
         @Override
-        public Object sendFormatted(String markdown) {
-            Message sent = channel.sendMessage(markdown).setAllowedMentions(NO_MENTIONS).complete();
-            return sent == null ? null : sent.getId();
+        public void sendFormatted(String markdown) {
+            channel.sendMessage(markdown).setAllowedMentions(NO_MENTIONS).complete();
         }
 
-        @Override
-        public boolean edit(Object messageId, String markdown) {
-            if (!(messageId instanceof String id)) {
-                return false;
-            }
-            try {
-                channel.editMessageById(id, markdown).setAllowedMentions(NO_MENTIONS).complete();
-                return true;
-            } catch (RuntimeException e) {
-                log.warn("Could not edit Discord message {}: {}", id, e.getMessage());
-                return false;
-            }
-        }
     }
 
     private static void reply(MessageChannel channel, String text) {

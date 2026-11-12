@@ -89,9 +89,8 @@ public class WhatsAppChannel implements Channel {
         }
 
         @Override
-        public Object sendFormatted(String formatted) {
+        public void sendFormatted(String formatted) {
             whatsApp.sendMessage(formatted);
-            return null;
         }
     }
 

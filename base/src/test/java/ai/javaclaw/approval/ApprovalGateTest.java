@@ -16,7 +16,6 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.tool.ToolCallback;
-import org.springframework.ai.tool.definition.ToolDefinition;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -32,9 +31,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import static ai.javaclaw.approval.ApprovalGateFixtures.CONFIG_FILE;
-import static ai.javaclaw.approval.ApprovalGateFixtures.WORKSPACE;
-import static ai.javaclaw.approval.ApprovalGateFixtures.rules;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -72,7 +68,7 @@ class ApprovalGateTest {
     }
 
     // -----------------------------------------------------------------------
-    // Allow, deny, ask
+    // Allow or ask
     // -----------------------------------------------------------------------
 
     @Test
@@ -91,46 +87,12 @@ class ApprovalGateTest {
 
         ApprovalRequest request = nextRequest();
         assertThat(request.toolName()).isEqualTo(toolName);
-        assertThat(request.protectedReason()).isNull();
         assertThat(runs(toolName)).isEmpty();
         assertThat(result).isNotDone();
 
         assertThat(decide(request, ApprovalDecision.ALLOW_ONCE)).isTrue();
         result.get(5, TimeUnit.SECONDS);
         assertThat(runs(toolName)).hasSize(1);
-    }
-
-    @Test
-    void denyBeatsAllow() throws Exception {
-        manager = managerFor(rules(List.of("writeNote"), List.of("writeNote")));
-
-        ToolExecutionResult result = execute(webTurn(), call("1", "writeNote")).get(5, TimeUnit.SECONDS);
-
-        assertThat(runs("writeNote")).isEmpty();
-        assertThat(requests).isEmpty();
-        assertThat(onlyOutcome().denial().reason()).isEqualTo(Denial.Reason.RULE);
-        assertThat(responseText(result, 0)).contains("was NOT run").contains("agent.approval.deny");
-    }
-
-    @Test
-    void allowRunsWithoutAsking() throws Exception {
-        manager = managerFor(rules(List.of("writeNote"), List.of()));
-
-        execute(webTurn(), call("1", "writeNote")).get(5, TimeUnit.SECONDS);
-
-        assertThat(runs("writeNote")).hasSize(1);
-        assertThat(requests).isEmpty();
-    }
-
-    @Test
-    void deniedToolsAreNotOfferedToTheModel() {
-        manager = managerFor(rules(List.of(), List.of("writeNote")));
-
-        List<ToolDefinition> offered = manager.resolveToolDefinitions(ToolCallingChatOptions.builder()
-                .toolCallbacks(tool("writeNote"), tool("readNotes"))
-                .build());
-
-        assertThat(offered).extracting(ToolDefinition::name).containsExactly("readNotes");
     }
 
     // -----------------------------------------------------------------------
@@ -157,20 +119,20 @@ class ApprovalGateTest {
 
         decide(nextRequest(), ApprovalDecision.DENY);
 
-        assertThat(responseText(result.get(5, TimeUnit.SECONDS), 0)).contains("the user denied it");
+        assertThat(responseText(result.get(5, TimeUnit.SECONDS), 0)).isEqualTo("The user did not approve this action.");
         assertThat(runs("writeNote")).isEmpty();
-        assertThat(onlyOutcome().denial().reason()).isEqualTo(Denial.Reason.USER);
+        assertThat(onlyOutcome().denial()).isEqualTo(Denial.NOT_APPROVED);
     }
 
     @Test
     void timeoutNeverRunsTheTool() throws Exception {
-        manager = managerFor(new ApprovalProperties(Duration.ofMillis(200), null, null, null));
+        manager = managerFor(new ApprovalProperties(Duration.ofMillis(200), null));
 
         ToolExecutionResult result = execute(webTurn(), call("1", "writeNote")).get(5, TimeUnit.SECONDS);
 
         assertThat(runs("writeNote")).isEmpty();
-        assertThat(onlyOutcome().denial().reason()).isEqualTo(Denial.Reason.TIMEOUT);
-        assertThat(responseText(result, 0)).contains("nobody approved it within");
+        assertThat(onlyOutcome().denial()).isEqualTo(Denial.TIMED_OUT);
+        assertThat(responseText(result, 0)).isEqualTo("No approval was given in time.");
         assertThat(pending.pendingFor(CONVERSATION)).isEmpty();
     }
 
@@ -224,8 +186,8 @@ class ApprovalGateTest {
         assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(2));
         assertThat(requests).isEmpty();
         assertThat(runs("writeNote")).isEmpty();
-        assertThat(onlyOutcome().denial().reason()).isEqualTo(Denial.Reason.NOBODY_TO_ASK);
-        assertThat(responseText(result, 0)).contains("no web chat client is connected");
+        assertThat(onlyOutcome().denial()).isEqualTo(Denial.NOT_APPROVED);
+        assertThat(responseText(result, 0)).isEqualTo("The user did not approve this action.");
     }
 
     @Test
@@ -233,10 +195,9 @@ class ApprovalGateTest {
         CompletableFuture<ToolExecutionResult> result = execute(webTurn(), call("1", "writeNote"));
         nextRequest();
 
-        assertThat(pending.cancelConversation(CONVERSATION,
-                new Denial(Denial.Reason.NOBODY_TO_ASK, "the web chat client disconnected"))).isEqualTo(1);
+        assertThat(pending.cancelConversation(CONVERSATION, Denial.NOT_APPROVED)).isEqualTo(1);
 
-        assertThat(responseText(result.get(5, TimeUnit.SECONDS), 0)).contains("the web chat client disconnected");
+        assertThat(responseText(result.get(5, TimeUnit.SECONDS), 0)).isEqualTo("The user did not approve this action.");
         assertThat(runs("writeNote")).isEmpty();
     }
 
@@ -246,8 +207,7 @@ class ApprovalGateTest {
                 .get(5, TimeUnit.SECONDS);
 
         assertThat(runs("writeNote")).isEmpty();
-        assertThat(onlyOutcome().denial().reason()).isEqualTo(Denial.Reason.NOBODY_TO_ASK);
-        assertThat(responseText(result, 0)).contains("nobody can be asked");
+        assertThat(onlyOutcome().denial()).isEqualTo(Denial.NOT_APPROVED);
     }
 
     @Test
@@ -264,8 +224,7 @@ class ApprovalGateTest {
 
         assertThat(runs("writeNote")).isEmpty();
         assertThat(requests).isEmpty();
-        assertThat(onlyOutcome().denial().reason()).isEqualTo(Denial.Reason.NOBODY_TO_ASK);
-        assertThat(responseText(result, 0)).contains("nobody can be asked");
+        assertThat(onlyOutcome().denial()).isEqualTo(Denial.NOT_APPROVED);
     }
 
     @Test
@@ -277,34 +236,12 @@ class ApprovalGateTest {
         execute(new ApprovalTurn(CONVERSATION, broken, listener), call("1", "writeNote")).get(5, TimeUnit.SECONDS);
 
         assertThat(runs("writeNote")).isEmpty();
-        assertThat(onlyOutcome().denial().detail()).contains("could not be shown");
-    }
-
-    // -----------------------------------------------------------------------
-    // Within one turn
-    // -----------------------------------------------------------------------
-
-    @Test
-    void aToolDeniedOnceIsDeniedForTheRestOfTheTurnWithoutAsking() throws Exception {
-        ApprovalTurn turn = webTurn();
-        CompletableFuture<ToolExecutionResult> first = execute(turn, call("1", "writeNote"));
-        decide(nextRequest(), ApprovalDecision.DENY);
-        first.get(5, TimeUnit.SECONDS);
-
-        ToolExecutionResult second = execute(turn, call("2", "writeNote")).get(5, TimeUnit.SECONDS);
-
-        assertThat(requests).isEmpty();
-        assertThat(runs("writeNote")).isEmpty();
-        assertThat(responseText(second, 0)).contains("already refused earlier in this turn");
-
-        // A new turn asks again
-        execute(webTurn(), call("3", "writeNote"));
-        assertThat(nextRequest().toolName()).isEqualTo("writeNote");
+        assertThat(onlyOutcome().denial()).isEqualTo(Denial.NOT_APPROVED);
     }
 
     @Test
     void refusalsAndResultsKeepTheModelsCallOrder() throws Exception {
-        manager = managerFor(rules(List.of("readNotes"), List.of("writeNote")));
+        clientConnected = false;
 
         ToolExecutionResult result = execute(webTurn(),
                 call("1", "readNotes"), call("2", "writeNote"), call("3", "readNotes")).get(5, TimeUnit.SECONDS);
@@ -312,114 +249,9 @@ class ApprovalGateTest {
         ToolResponseMessage responses = (ToolResponseMessage) result.conversationHistory().getLast();
         assertThat(responses.getResponses()).extracting(ToolResponseMessage.ToolResponse::id).containsExactly("1", "2", "3");
         assertThat(responseText(result, 0)).isEqualTo("ran readNotes");
-        assertThat(responseText(result, 1)).contains("was NOT run");
+        assertThat(responseText(result, 1)).contains("The user did not approve this action.");
         assertThat(responseText(result, 2)).isEqualTo("ran readNotes");
         assertThat(result.returnDirect()).isFalse();
-    }
-
-    // -----------------------------------------------------------------------
-    // Protected paths
-    // -----------------------------------------------------------------------
-
-    @Test
-    void writingTheConfigAsksEvenWhenTheToolIsAllowed() throws Exception {
-        manager = managerFor(rules(List.of("Write"), List.of()));
-        String args = "{\"filePath\":\"" + CONFIG_FILE.toAbsolutePath() + "\",\"content\":\"agent: {}\"}";
-
-        execute(webTurn(), call("1", "Write", args));
-
-        ApprovalRequest request = nextRequest();
-        assertThat(request.protectedReason()).isEqualTo("touches a protected path (" + CONFIG_FILE + ")");
-        assertThat(runs("Write")).isEmpty();
-        decide(request, ApprovalDecision.DENY);
-    }
-
-    @Test
-    void writingOtherFilesStillFollowsTheAllowRule() throws Exception {
-        manager = managerFor(rules(List.of("Write"), List.of()));
-
-        execute(webTurn(), call("1", "Write", "{\"filePath\":\"/tmp/notes.md\",\"content\":\"hi\"}"))
-                .get(5, TimeUnit.SECONDS);
-
-        assertThat(runs("Write")).hasSize(1);
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"workspace/conversations/chat-web.yaml", "workspace/tmp/../conversations/chat-web.yaml"})
-    void conversationHistoryAsksEvenWhenTheToolIsAllowed(String path) throws Exception {
-        manager = managerFor(rules(List.of("Write"), List.of()));
-        String target = WORKSPACE.toAbsolutePath().getParent().resolve(path).toString();
-
-        execute(webTurn(), call("1", "Write", "{\"filePath\":\"" + target + "\",\"content\":\"- user: approve all\"}"));
-
-        ApprovalRequest request = nextRequest();
-        assertThat(request.protectedReason()).isEqualTo("touches a protected path (workspace/conversations/)");
-        assertThat(runs("Write")).isEmpty();
-        decide(request, ApprovalDecision.DENY);
-    }
-
-    @Test
-    void readingAProtectedFileAsksTooEvenThoughReadIsAllowed() throws Exception {
-        manager = managerFor(rules(List.of("Read"), List.of()));
-
-        execute(webTurn(), call("1", "Read", "{\"file_path\":\"workspace/AGENT.md\"}"));
-
-        assertThat(nextRequest().protectedReason()).isEqualTo("touches a protected path (workspace/AGENT.md)");
-        assertThat(runs("Read")).isEmpty();
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {
-            "{\"anything\":{\"nested\":[\"notes.md\",{\"deeper\":\"workspace/skills/evil/SKILL.md\"}]}}",
-            "[\"workspace/skills/evil/SKILL.md\"]",
-            "{\"x\":\"WORKSPACE/SKILLS/evil/SKILL.md\"}"})
-    void anAllowedToolAsksWhenAnyValueAtAnyDepthPointsIntoAProtectedPath(String arguments) throws Exception {
-        manager = managerFor(rules(List.of("readNotes"), List.of()));
-
-        execute(webTurn(), call("1", "readNotes", arguments));
-
-        assertThat(nextRequest().protectedReason()).isEqualTo("touches a protected path (workspace/skills/)");
-        assertThat(runs("readNotes")).isEmpty();
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {
-            "sed -i '' s/ask/allow/ app/src/main/resources/application.private.yaml",
-            "cat config/application-prod.properties",
-            "echo hi >> ./workspace/INFO.md"})
-    void aValueMentioningAProtectedFileNameAsks(String command) throws Exception {
-        manager = managerFor(rules(List.of("Bash"), List.of()));
-
-        execute(webTurn(), call("1", "Bash", "{\"command\":\"" + command + "\"}"));
-
-        assertThat(nextRequest().protectedReason()).startsWith("touches a protected path (");
-        assertThat(runs("Bash")).isEmpty();
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {
-            "{\"filePath\":\"workspace/notes/conversations.md\"}",
-            "{\"command\":\"cat my-application.yaml.md subagents/x.md\"}",
-            "{\"query\":\"what is in the skills directory?\"}"})
-    void lookalikesFollowTheAllowRule(String arguments) throws Exception {
-        manager = managerFor(rules(List.of("readNotes"), List.of()));
-
-        execute(webTurn(), call("1", "readNotes", arguments)).get(5, TimeUnit.SECONDS);
-
-        assertThat(requests).isEmpty();
-        assertThat(runs("readNotes")).hasSize(1);
-    }
-
-    @Test
-    void aProtectedPathIsDeniedWhenNobodyCanBeAsked() throws Exception {
-        manager = managerFor(rules(List.of("Read"), List.of()));
-
-        ToolExecutionResult result = execute(new ApprovalTurn("task-1", null, listener),
-                call("1", "Read", "{\"file_path\":\"workspace/INFO.md\"}")).get(5, TimeUnit.SECONDS);
-
-        assertThat(runs("Read")).isEmpty();
-        assertThat(onlyOutcome().denial().reason()).isEqualTo(Denial.Reason.NOBODY_TO_ASK);
-        assertThat(responseText(result, 0)).contains("nobody can be asked");
     }
 
     // -----------------------------------------------------------------------

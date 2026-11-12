@@ -34,11 +34,10 @@ agent:
   workspace: file:./workspace/
   skills:
     paths: classpath:/META-INF/skills
-  # Tool approval: deny -> protected path -> allow -> ask. A call that needs approval when nobody can be asked is denied.
-  # Lists replace each other, so an override of allow in application.private.yaml must repeat what it keeps.
+  # Tool approval: tools in allow run, every other call asks. Nobody to ask, or no answer in time: denied.
+  # Don't add tools that write or run commands to allow.
   approval:
     timeout: 2m
-    # Run without asking
     allow:
       - Read
       - Skill
@@ -55,19 +54,6 @@ agent:
       - BashOutput
       - TodoWrite
       - MemoryView
-    # Never run, and not offered to the model
-    deny: []
-    # Any call with an argument value pointing here, or mentioning one of these names, always asks.
-    # The runtime config file is always protected. "workspace/" means agent.workspace; a trailing "/" means everything inside.
-    protected-paths:
-      - application*.yaml
-      - application*.yml
-      - application*.properties
-      - workspace/conversations/
-      - workspace/AGENT.md
-      - workspace/INFO.md
-      - workspace/skills/
-      - workspace/agents/
 jobrunr:
   background-job-server:
     enabled: true
