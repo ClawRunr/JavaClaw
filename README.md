@@ -103,14 +103,6 @@ The `workspace/` directory is the agent's home:
 
 Available at [http://localhost:8080/chat](http://localhost:8080/chat). Uses WebSocket for real-time delivery and falls back to REST polling when no WebSocket session is active.
 
-JavaClaw's WebSockets (the chat's, and the push socket Vaadin registers for the `/ui` pages) only accept pages served by JavaClaw itself (the same scheme, host and port), because the chat can answer [tool approvals](#tool-approval). A handshake from another origin, or without an `Origin` header, is refused. If a reverse proxy serves JavaClaw under another address, list that origin in `agent.web.allowed-origins`:
-
-```yaml
-agent:
-  web:
-    allowed-origins: [https://claw.example.com]
-```
-
 ### Telegram
 
 Configure during onboarding or by setting:
@@ -293,7 +285,6 @@ Key properties in `application.yaml`:
 | `spring.ai.model.chat` | Active LLM provider/model |
 | `javaclaw.tools.dynamic-discovery.enabled` | Enable dynamic tool discovery (Tool Search Tool pattern) instead of exposing all tools up front |
 | `agent.approval.*` | Which tool calls need your approval, and how long a request waits. See [Tool Approval](#tool-approval) |
-| `agent.web.allowed-origins` | Extra browser origins (`scheme://host[:port]`) allowed to open JavaClaw's WebSockets, for a reverse proxy. Empty by default: only JavaClaw's own origin. Wildcards are refused at startup. |
 | `jobrunr.dashboard.port` | JobRunr dashboard port (default: `8081`) |
 | `jobrunr.background-job-server.worker-count` | Concurrent job workers (default: `1`) |
 
@@ -327,7 +318,7 @@ Notes:
 
 **What asks.** Every tool call asks for approval, except tools listed in `agent.approval.allow`. MCP and plugin tools ask too. If you deny it, nobody answers within `agent.approval.timeout` (default `2m`, at most `10m`), or nobody can be asked (scheduled tasks, Telegram groups, Discord server channels), the call is not run and the agent is told "The user did not approve this action." (or "No approval was given in time.").
 
-**Web chat.** An approval card shows the tool and its exact arguments, with **Allow once** and **Deny**. Only JavaClaw's own pages can open its WebSockets; behind a reverse proxy, add the proxy's origin to `agent.web.allowed-origins`.
+**Web chat.** An approval card shows the tool and its exact arguments, with **Allow once** and **Deny**.
 
 **Telegram, Discord, WhatsApp and Teams.** The request arrives in the same chat, cut to fit the channel's message limit:
 
