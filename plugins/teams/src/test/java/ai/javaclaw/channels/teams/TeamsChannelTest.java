@@ -121,4 +121,60 @@ class TeamsChannelTest {
 
         verifyNoInteractions(httpClient, tokenProvider);
     }
+
+    @Test
+    void markdownIsPosted() throws Exception {
+        when(tokenProvider.getToken()).thenReturn("tok-123");
+        when(httpResponse.statusCode()).thenReturn(200);
+        when(httpResponse.body()).thenReturn("{}");
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        TeamsConversationReference reference = new TeamsConversationReference("https://smba.example/", "conv-1");
+
+        channel.sendMarkdown(reference, "**Approval needed**");
+
+        ArgumentCaptor<HttpRequest> requests = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(requests.capture(), any(HttpResponse.BodyHandler.class));
+        HttpRequest post = requests.getValue();
+        assertThat(post.method()).isEqualTo("POST");
+        assertThat(post.uri()).hasToString("https://smba.example/v3/conversations/conv-1/activities");
+        assertThat(bodyOf(post)).contains("\"textFormat\":\"markdown\"").contains("**Approval needed**");
+    }
+
+    @Test
+    void aRefusedMarkdownMessageIsAnErrorSoTheApprovalIsNotLeftUnseen() throws Exception {
+        when(tokenProvider.getToken()).thenReturn("tok-123");
+        when(httpResponse.statusCode()).thenReturn(403);
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+
+        org.assertj.core.api.Assertions.assertThatIllegalStateException().isThrownBy(() ->
+                channel.sendMarkdown(new TeamsConversationReference("https://smba.example/", "conv-1"), "x"));
+    }
+
+    private static String bodyOf(HttpRequest request) throws Exception {
+        java.util.concurrent.CompletableFuture<String> body = new java.util.concurrent.CompletableFuture<>();
+        request.bodyPublisher().orElseThrow().subscribe(new java.util.concurrent.Flow.Subscriber<>() {
+            private final StringBuilder text = new StringBuilder();
+
+            @Override
+            public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) {
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(java.nio.ByteBuffer item) {
+                text.append(java.nio.charset.StandardCharsets.UTF_8.decode(item));
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                body.completeExceptionally(throwable);
+            }
+
+            @Override
+            public void onComplete() {
+                body.complete(text.toString());
+            }
+        });
+        return body.get(5, java.util.concurrent.TimeUnit.SECONDS);
+    }
 }

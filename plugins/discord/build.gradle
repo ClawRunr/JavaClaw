@@ -8,4 +8,5 @@ dependencies {
     implementation(libs.java.discord.api)
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation testFixtures(project(':base'))
 }

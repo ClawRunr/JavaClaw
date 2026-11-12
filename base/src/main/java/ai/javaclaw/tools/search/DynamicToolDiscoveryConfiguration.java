@@ -1,8 +1,11 @@
 package ai.javaclaw.tools.search;
 
+import ai.javaclaw.approval.ApprovalGate;
 import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
+import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.toolsearch.ToolIndex;
 import org.springframework.ai.tool.toolsearch.index.lucene.LuceneToolIndex;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -18,10 +21,14 @@ public class DynamicToolDiscoveryConfiguration {
         return new LuceneToolIndex(properties.luceneMinScoreThreshold());
     }
 
+    /** Discovered tools run through the same approval gate as every other tool. */
     @Bean
     public ToolSearchToolCallingAdvisor toolSearchToolCallingAdvisor(ToolIndex toolIndex,
-                                                                     DynamicToolDiscoveryProperties properties) {
+                                                                     DynamicToolDiscoveryProperties properties,
+                                                                     ApprovalGate approvalGate,
+                                                                     ObjectProvider<ToolCallingManager> toolCallingManagers) {
         return ToolSearchToolCallingAdvisor.builder()
+                .toolCallingManager(approvalGate.toolCallingManager(toolCallingManagers))
                 .toolIndex(toolIndex)
                 .maxResults(properties.maxResults())
                 .build();

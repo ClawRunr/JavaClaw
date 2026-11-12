@@ -34,6 +34,26 @@ agent:
   workspace: file:./workspace/
   skills:
     paths: classpath:/META-INF/skills
+  # Tool approval: tools in allow run, every other call asks. Nobody to ask, or no answer in time: denied.
+  # Don't add tools that write or run commands to allow.
+  approval:
+    timeout: 2m
+    allow:
+      - Read
+      - Skill
+      - toolSearchTool
+      - CheckListTool
+      - listRecurringTasks
+      - getText
+      - waitForSelector
+      - closeBrowser
+      - takeScreenshot
+      - Glob
+      - Grep
+      - ListDirectory
+      - BashOutput
+      - TodoWrite
+      - MemoryView
 jobrunr:
   background-job-server:
     enabled: true

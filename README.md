@@ -284,6 +284,7 @@ Key properties in `application.yaml`:
 | `agent.skills.paths` | Classpath resource roots to scan for skills (e.g. `classpath:/META-INF/skills`) |
 | `spring.ai.model.chat` | Active LLM provider/model |
 | `javaclaw.tools.dynamic-discovery.enabled` | Enable dynamic tool discovery (Tool Search Tool pattern) instead of exposing all tools up front |
+| `agent.approval.*` | Which tool calls need your approval, and how long a request waits. See [Tool Approval](#tool-approval) |
 | `jobrunr.dashboard.port` | JobRunr dashboard port (default: `8081`) |
 | `jobrunr.background-job-server.worker-count` | Concurrent job workers (default: `1`) |
 
@@ -312,6 +313,36 @@ Flag behavior:
 Notes:
 - Tool search quality depends on `@Tool(description = "...")`. Keep descriptions specific and disambiguating.
 - Tuning: raise `lucene-min-score-threshold` to be stricter; lower it if tools are not found. Adjust `max-results` to control how many tools get surfaced.
+
+### Tool Approval
+
+**What asks.** Every tool call asks for approval, except tools listed in `agent.approval.allow`. MCP and plugin tools ask too. If you deny it, nobody answers within `agent.approval.timeout` (default `2m`, at most `10m`), or nobody can be asked (scheduled tasks, Telegram groups, Discord server channels), the call is not run and the agent is told "The user did not approve this action." (or "No approval was given in time.").
+
+**Web chat.** An approval card shows the tool and its exact arguments, with **Allow once** and **Deny**.
+
+**Telegram, Discord, WhatsApp and Teams.** The request arrives in the same chat, cut to fit the channel's message limit:
+
+```
+JavaClaw wants to run `Write`
+  filePath: workspace/notes/todo.md
+  content: - buy milk
+Expires at 12:05
+Reply /approve_a1b2c3 or /deny_a1b2c3
+```
+
+Reply `/approve_<id>` or `/deny_<id>`; the outcome comes back as a short reply. Approvals are asked only in private chats and DMs.
+
+**The `allow` list** lives in `application.yaml`. A list set in `application.private.yaml` replaces it, so repeat the tools you want to keep:
+
+```yaml
+agent:
+  approval:
+    timeout: 2m
+    allow: [Read, Skill, toolSearchTool, CheckListTool, listRecurringTasks, getText, waitForSelector,
+            closeBrowser, takeScreenshot, Glob, Grep, ListDirectory, BashOutput, TodoWrite, MemoryView]
+```
+
+Don't add tools that write or run commands to `allow`.
 
 ## Running Tests
 

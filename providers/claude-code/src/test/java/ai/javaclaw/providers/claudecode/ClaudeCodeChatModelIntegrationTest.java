@@ -1,6 +1,14 @@
 package ai.javaclaw.providers.claudecode;
 
+import ai.javaclaw.approval.ApprovalDecision;
+import ai.javaclaw.approval.ApprovalGate;
+import ai.javaclaw.approval.ApprovalListener;
+import ai.javaclaw.approval.ApprovalProperties;
+import ai.javaclaw.approval.ApprovalRequest;
+import ai.javaclaw.approval.ApprovalTurn;
+import ai.javaclaw.approval.PendingApprovals;
 import ai.javaclaw.providers.claudecode.FakeAnthropicUpstream.Mode;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
@@ -13,12 +21,14 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.function.FunctionToolCallback;
 import reactor.core.Disposable;
 import tools.jackson.databind.JsonNode;
 
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -60,6 +70,18 @@ class ClaudeCodeChatModelIntegrationTest {
                 .description("Read a fixture file")
                 .inputType(ReadFile.class)
                 .build();
+    }
+
+    /**
+     * The CLI can still be writing its logs into {@link #home} for a moment after its answer has
+     * been read; let it exit before JUnit deletes the directory.
+     */
+    @AfterEach
+    void awaitClaudeExit() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (ProcessHandle.current().descendants().anyMatch(ProcessHandle::isAlive) && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+        }
     }
 
     @Test
@@ -140,6 +162,70 @@ class ClaudeCodeChatModelIntegrationTest {
             assertThat(toolInvocations).containsExactly("fixture.txt");
             assertThat(upstream.requests()).isEqualTo(2);
         }
+    }
+
+    @Test
+    void toolCallsFromClaudeCodeGoThroughTheApprovalGate() throws Exception {
+        try (FakeAnthropicUpstream upstream = new FakeAnthropicUpstream(Mode.TOOL, Mode.TEXT)) {
+            ChatClient client = ChatClient.builder(model(upstream))
+                    .defaultAdvisors(gatedToolCallingAdvisor(new PendingApprovals()))
+                    .defaultTools(readFile)
+                    .build();
+
+            // No turn that can ask: read_file is unclassified, so it needs approval and is refused
+            String answer = client.prompt("Read the fixture").call().content();
+
+            assertThat(answer).isEqualTo(FakeAnthropicUpstream.TEXT);
+            assertThat(toolInvocations).isEmpty();
+            assertThat(FakeAnthropicUpstream.blocks(upstream.bodies.get(1))).anySatisfy(block -> {
+                assertThat(block.get("type").stringValue()).isEqualTo("tool_result");
+                assertThat(block.get("content").toString()).contains("The user did not approve this action.");
+            });
+        }
+    }
+
+    @Test
+    void aClaudeCodeToolCallRunsOnlyOnceApproved() throws Exception {
+        try (FakeAnthropicUpstream upstream = new FakeAnthropicUpstream(Mode.TOOL, Mode.TEXT)) {
+            PendingApprovals pending = new PendingApprovals();
+            List<ApprovalRequest> requests = new CopyOnWriteArrayList<>();
+            ApprovalTurn turn = new ApprovalTurn("web", _ -> true, new ApprovalListener() {
+                @Override
+                public void requested(ApprovalRequest request) {
+                    requests.add(request);
+                }
+
+                @Override
+                public void resolved(ApprovalOutcome outcome) {
+                }
+            });
+            ChatClient client = ChatClient.builder(model(upstream))
+                    .defaultAdvisors(gatedToolCallingAdvisor(pending))
+                    .defaultTools(readFile)
+                    .build();
+
+            var answer = java.util.concurrent.CompletableFuture.supplyAsync(() ->
+                    client.prompt("Read the fixture").toolContext(turn.toolContext()).call().content());
+            long deadline = System.currentTimeMillis() + 60_000;
+            while (requests.isEmpty() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(50);
+            }
+            assertThat(requests).singleElement().satisfies(r -> assertThat(r.toolName()).isEqualTo("read_file"));
+            assertThat(toolInvocations).isEmpty();
+
+            ApprovalRequest request = requests.getFirst();
+            assertThat(pending.decide("web", request.approvalId(), request.argumentsHash(), ApprovalDecision.ALLOW_ONCE)).isTrue();
+
+            assertThat(answer.get(60, TimeUnit.SECONDS)).isEqualTo(FakeAnthropicUpstream.TEXT);
+            assertThat(toolInvocations).containsExactly("fixture.txt");
+        }
+    }
+
+    private static ToolCallingAdvisor gatedToolCallingAdvisor(PendingApprovals pending) {
+        ApprovalGate gate = new ApprovalGate(ApprovalProperties.defaults(), pending, Clock.systemUTC());
+        return ToolCallingAdvisor.builder()
+                .toolCallingManager(gate.toolCallingManager(ToolCallingManager.builder().build()))
+                .build();
     }
 
     @Test

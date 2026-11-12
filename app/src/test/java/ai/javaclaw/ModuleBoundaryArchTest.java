@@ -14,7 +14,7 @@ import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.sli
 class ModuleBoundaryArchTest {
 
     private static final String[] CORE_PACKAGES = {
-            "ai.javaclaw.agent..", "ai.javaclaw.tasks..", "ai.javaclaw.configuration..", "ai.javaclaw.files.."
+            "ai.javaclaw.agent..", "ai.javaclaw.approval..", "ai.javaclaw.tasks..", "ai.javaclaw.configuration..", "ai.javaclaw.files.."
     };
 
     private static final String[] PLUGIN_PACKAGES = {

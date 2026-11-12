@@ -2,6 +2,11 @@ package ai.javaclaw.chat;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentEvent;
+import ai.javaclaw.approval.ApprovalDecision;
+import ai.javaclaw.approval.ApprovalRequest;
+import ai.javaclaw.approval.Denial;
+import ai.javaclaw.approval.HumanQuestionHandler;
+import ai.javaclaw.approval.PendingApprovals;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
@@ -24,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -31,26 +37,41 @@ import java.util.concurrent.atomic.AtomicReference;
  * GUI channel for the web chat interface.
  * Pushes messages directly to the active WebSocket session when connected,
  * falling back to an in-memory queue for REST polling.
+ * <p>
+ * Also the web chat's {@link HumanQuestionHandler}: it knows which conversation each connected
+ * client is looking at, so the approval gate only waits for an answer when a client that will
+ * actually see the request is there, and pending approvals are denied the moment the last such
+ * client goes away.
+ * </p>
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @ConditionalOnProperty(name = "javaclaw.chat.transport", havingValue = "spring-websocket", matchIfMissing = true)
-public class ChatChannel implements Channel {
+public class ChatChannel implements Channel, HumanQuestionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ChatChannel.class);
+
+    /** The conversation a freshly connected client shows; see {@link #conversationIds()}. */
+    static final String DEFAULT_CONVERSATION = "web";
 
     private final Agent agent;
     private final ChannelRegistry channelRegistry;
     private final ChatMemoryRepository chatMemoryRepository;
     private final ObjectMapper objectMapper;
+    private final PendingApprovals pendingApprovals;
     private final ConcurrentLinkedQueue<String> pendingMessages = new ConcurrentLinkedQueue<>();
+    /** The session frames and pushes go to: the most recently connected one. */
     private final AtomicReference<WebSocketSession> wsSession = new AtomicReference<>();
+    /** Every connected session and the conversation it is showing. */
+    private final Map<WebSocketSession, String> viewing = new ConcurrentHashMap<>();
 
-    public ChatChannel(Agent agent, ChannelRegistry channelRegistry, ChatMemoryRepository chatMemoryRepository, ObjectMapper objectMapper) {
+    public ChatChannel(Agent agent, ChannelRegistry channelRegistry, ChatMemoryRepository chatMemoryRepository,
+                       ObjectMapper objectMapper, PendingApprovals pendingApprovals) {
         this.agent = agent;
         this.channelRegistry = channelRegistry;
         this.chatMemoryRepository = chatMemoryRepository;
         this.objectMapper = objectMapper;
+        this.pendingApprovals = pendingApprovals;
         channelRegistry.registerChannel(this);
         log.info("Started Web Chat channel");
     }
@@ -61,17 +82,68 @@ public class ChatChannel implements Channel {
     }
 
     /**
-     * Called by the WebSocket handler when a client connects.
+     * Called by the WebSocket handler when a client connects. It starts out showing the
+     * {@value #DEFAULT_CONVERSATION} conversation.
      */
     public void setWsSession(WebSocketSession session) {
+        viewing.put(session, DEFAULT_CONVERSATION);
         wsSession.set(session);
     }
 
     /**
-     * Called by the WebSocket handler when the client disconnects.
+     * Called by the WebSocket handler when the client disconnects. If no remaining client can answer
+     * approvals for the conversation it was showing, those approvals are denied now rather than
+     * left to time out.
      */
     public void clearWsSession(WebSocketSession session) {
+        String conversationId = viewing.remove(session);
         wsSession.compareAndSet(session, null);
+        if (conversationId != null && !canAsk(conversationId)) {
+            int denied = pendingApprovals.cancelConversation(conversationId, Denial.NOT_APPROVED);
+            if (denied > 0) {
+                log.info("Denied {} pending approval(s) in conversation {}: last web client disconnected",
+                        denied, conversationId);
+            }
+        }
+    }
+
+    /** Called when a client switches to another conversation in the selector. */
+    public void viewConversation(WebSocketSession session, String conversationId) {
+        viewing.replace(session, conversationId);
+    }
+
+    /** True when the session frames go to is open and showing this conversation. */
+    @Override
+    public boolean canAsk(String conversationId) {
+        WebSocketSession session = wsSession.get();
+        return session != null && session.isOpen() && conversationId.equals(viewing.get(session));
+    }
+
+    /**
+     * Shows a (re)connected client the approvals still waiting in the conversation it is showing —
+     * the card that was on screen is gone after a reload.
+     */
+    public void replayPendingApprovals(WebSocketSession session) {
+        String conversationId = viewing.get(session);
+        if (conversationId == null || session != wsSession.get()) {
+            return;
+        }
+        pendingApprovals.pendingFor(conversationId).forEach(request ->
+                sendFrame(frame(StreamFrameType.APPROVAL_REQUESTED, conversationId, approvalRequestData(request))));
+    }
+
+    /**
+     * Applies a decision a client sent. Only the conversation that client is showing can be
+     * answered; a decision that does not match a pending request exactly is ignored.
+     */
+    public boolean decide(WebSocketSession session, String approvalId, String argumentsHash, String decision) {
+        String conversationId = viewing.get(session);
+        if (conversationId == null) {
+            return false;
+        }
+        return ApprovalDecision.fromWireValue(decision)
+                .map(d -> pendingApprovals.decide(conversationId, approvalId, argumentsHash, d))
+                .orElse(false);
     }
 
     /**
@@ -81,7 +153,7 @@ public class ChatChannel implements Channel {
     public void sendHtml(String... html) throws IOException {
         WebSocketSession session = wsSession.get();
         if (session != null && session.isOpen()) {
-            session.sendMessage(new TextMessage(String.join(System.lineSeparator(), html)));
+            send(session, new TextMessage(String.join(System.lineSeparator(), html)));
         }
     }
 
@@ -116,9 +188,9 @@ public class ChatChannel implements Channel {
      */
     public List<String> conversationIds() {
         List<String> result = new ArrayList<>();
-        result.add("web");
+        result.add(DEFAULT_CONVERSATION);
         chatMemoryRepository.findConversationIds().stream()
-                .filter(id -> !id.equals("web"))
+                .filter(id -> !id.equals(DEFAULT_CONVERSATION))
                 .forEach(result::add);
         return result;
     }
@@ -143,7 +215,8 @@ public class ChatChannel implements Channel {
     /**
      * Handles a chat message from the web UI for the given conversationId.
      * The response is streamed to the WebSocket session as JSON frames
-     * ({@code chunk}/{@code toolCall}/{@code toolResult}/{@code done}/{@code error}).
+     * ({@code chunk}/{@code toolCall}/{@code toolResult}/{@code approvalRequested}/
+     * {@code approvalResolved}/{@code done}/{@code error}).
      */
     public void chat(String conversationId, String message) {
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), message));
@@ -154,10 +227,14 @@ public class ChatChannel implements Channel {
                     toolData(c.id(), c.name(), "input", c.input()));
             case AgentEvent.ToolResult r -> frame(StreamFrameType.TOOL_RESULT, conversationId,
                     toolData(r.id(), r.name(), "output", r.output()));
+            case AgentEvent.ApprovalRequested a -> frame(StreamFrameType.APPROVAL_REQUESTED, conversationId,
+                    approvalRequestData(a.request()));
+            case AgentEvent.ApprovalResolved a -> frame(StreamFrameType.APPROVAL_RESOLVED, conversationId,
+                    approvalResolvedData(a));
             case AgentEvent.Done ignored -> frame(StreamFrameType.DONE, conversationId, null);
             case AgentEvent.Failed f -> frame(StreamFrameType.ERROR, conversationId,
                     f.message() == null ? "Unknown error" : f.message());
-        }));
+        }), this);
     }
 
     private static Map<String, Object> toolData(String id, String name, String payloadKey, String payload) {
@@ -165,6 +242,33 @@ public class ChatChannel implements Channel {
         data.put("id", id);
         data.put("name", name);
         data.put(payloadKey, payload == null ? "" : payload);
+        return data;
+    }
+
+    /** Everything the card needs; {@code decisions} are the buttons it may show. */
+    static Map<String, Object> approvalRequestData(ApprovalRequest request) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("approvalId", request.approvalId());
+        data.put("toolCallId", request.toolCallId() == null ? "" : request.toolCallId());
+        data.put("toolName", request.toolName());
+        data.put("arguments", request.arguments());
+        data.put("argumentsHash", request.argumentsHash());
+        data.put("decisions", request.decisions().stream().map(ApprovalDecision::wireValue).toList());
+        data.put("expiresAt", request.expiresAt().toEpochMilli());
+        return data;
+    }
+
+    private static Map<String, Object> approvalResolvedData(AgentEvent.ApprovalResolved resolved) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        if (resolved.approvalId() != null) {
+            data.put("approvalId", resolved.approvalId());
+        }
+        data.put("toolCallId", resolved.toolCallId() == null ? "" : resolved.toolCallId());
+        data.put("toolName", resolved.toolName());
+        data.put("outcome", resolved.approved() ? "allowed" : "denied");
+        if (!resolved.approved()) {
+            data.put("detail", resolved.denial().message());
+        }
         return data;
     }
 
@@ -180,9 +284,19 @@ public class ChatChannel implements Channel {
         WebSocketSession session = wsSession.get();
         if (session == null || !session.isOpen()) return;
         try {
-            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(frame)));
+            send(session, new TextMessage(objectMapper.writeValueAsString(frame)));
         } catch (IOException e) {
             log.warn("WS push failed, dropping stream frame: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Frames come from the agent's thread, HTML from the socket's own thread and background pushes
+     * from task threads; a WebSocket session must not be written to by two of them at once.
+     */
+    private static void send(WebSocketSession session, TextMessage message) throws IOException {
+        synchronized (session) {
+            session.sendMessage(message);
         }
     }
 

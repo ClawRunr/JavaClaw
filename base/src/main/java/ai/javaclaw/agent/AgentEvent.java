@@ -1,9 +1,13 @@
 package ai.javaclaw.agent;
 
+import ai.javaclaw.approval.ApprovalRequest;
+import ai.javaclaw.approval.Denial;
+
 /**
  * Something the agent produced while answering. Callers that render progress consume these as a
- * single stream; the sequence is zero or more {@link Token}/{@link ToolCall}/{@link ToolResult}
- * events, terminated by exactly one {@link Done} or {@link Failed}.
+ * single stream; the sequence is zero or more {@link Token}/{@link ToolCall}/{@link ToolResult}/
+ * {@link ApprovalRequested}/{@link ApprovalResolved} events, terminated by exactly one
+ * {@link Done} or {@link Failed}.
  */
 public sealed interface AgentEvent {
 
@@ -15,6 +19,23 @@ public sealed interface AgentEvent {
 
     /** A tool returned. {@code id} matches the {@link ToolCall} that started it. */
     record ToolResult(String id, String name, String output) implements AgentEvent {}
+
+    /**
+     * The agent is paused until the owner allows or denies this call (or it times out). A client
+     * shows the request and answers it with one of {@link ApprovalRequest#decisions()}.
+     */
+    record ApprovalRequested(ApprovalRequest request) implements AgentEvent {}
+
+    /**
+     * A call that needed a decision has one: approved after asking ({@code denial == null}), or not
+     * run, with the reason. Refusals without asking (rule, nobody to ask) have no {@code approvalId}.
+     */
+    record ApprovalResolved(String approvalId, String toolCallId, String toolName, Denial denial) implements AgentEvent {
+
+        public boolean approved() {
+            return denial == null;
+        }
+    }
 
     /** The answer is complete. Always the last event. */
     record Done() implements AgentEvent {}

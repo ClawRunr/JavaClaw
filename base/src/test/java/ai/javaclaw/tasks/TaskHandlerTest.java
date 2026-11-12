@@ -1,6 +1,8 @@
 package ai.javaclaw.tasks;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentEvent;
+import ai.javaclaw.approval.Denial;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.tasks.TaskHandler.TaskResult;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,9 +17,11 @@ import org.springframework.core.io.FileSystemResource;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -54,7 +58,7 @@ class TaskHandlerTest {
     @Test
     void callsTheAgentWithAConversationIdThatIsNotTheTaskFilePath() {
         Task task = givenATodoTask("Buy milk");
-        when(agentMock.prompt(anyString(), anyString(), eq(TaskResult.class)))
+        when(agentMock.prompt(anyString(), anyString(), eq(TaskResult.class), any()))
                 .thenReturn(new TaskResult(Task.Status.completed, "done"));
 
         taskHandler.executeTask(task.getId());
@@ -69,7 +73,7 @@ class TaskHandlerTest {
     @Test
     void derivesTheConversationIdFromTheTasksDateDirectoryAndFileName() {
         Task task = givenATodoTask("Buy milk");
-        when(agentMock.prompt(anyString(), anyString(), eq(TaskResult.class)))
+        when(agentMock.prompt(anyString(), anyString(), eq(TaskResult.class), any()))
                 .thenReturn(new TaskResult(Task.Status.completed, "done"));
 
         taskHandler.executeTask(task.getId());
@@ -80,10 +84,50 @@ class TaskHandlerTest {
         assertThat(conversationIdPassedToAgent()).isEqualTo("task-" + dateDirectory + "-" + fileName);
     }
 
+    // -----------------------------------------------------------------------
+    // Blocked tools
+    // -----------------------------------------------------------------------
+
+    @Test
+    void aTaskWhoseToolWasBlockedReportsTheToolAndWaitsForAHuman() {
+        Task task = givenATodoTask("Write report");
+        when(agentMock.prompt(anyString(), anyString(), eq(TaskResult.class), any())).thenAnswer(invocation -> {
+            Consumer<AgentEvent> events = invocation.getArgument(3);
+            events.accept(new AgentEvent.ApprovalResolved(null, "call-1", "Write",
+                    Denial.NOT_APPROVED));
+            return new TaskResult(Task.Status.completed, "I could not write the file.");
+        });
+
+        taskHandler.executeTask(task.getId());
+
+        Task saved = taskRepository.getTaskById(task.getId());
+        assertThat(saved.getStatus()).isEqualTo(Task.Status.awaiting_human_input);
+        assertThat(saved.getDescription())
+                .contains("Not run, because a task cannot ask for approval")
+                .contains("- Write")
+                .contains("I could not write the file.");
+    }
+
+    @Test
+    void approvedToolsLeaveTheAgentsResultAlone() {
+        Task task = givenATodoTask("Write report");
+        when(agentMock.prompt(anyString(), anyString(), eq(TaskResult.class), any())).thenAnswer(invocation -> {
+            Consumer<AgentEvent> events = invocation.getArgument(3);
+            events.accept(new AgentEvent.ApprovalResolved("call-1", "call-1", "Write", null));
+            return new TaskResult(Task.Status.completed, "done");
+        });
+
+        taskHandler.executeTask(task.getId());
+
+        Task saved = taskRepository.getTaskById(task.getId());
+        assertThat(saved.getStatus()).isEqualTo(Task.Status.completed);
+        assertThat(saved.getDescription()).endsWith("Agent feedback: done");
+    }
+
     private String conversationIdPassedToAgent() {
         ArgumentCaptor<String> conversationId = ArgumentCaptor.forClass(String.class);
         org.mockito.Mockito.verify(agentMock)
-                .prompt(conversationId.capture(), anyString(), eq(TaskResult.class));
+                .prompt(conversationId.capture(), anyString(), eq(TaskResult.class), any());
         return conversationId.getValue();
     }
 

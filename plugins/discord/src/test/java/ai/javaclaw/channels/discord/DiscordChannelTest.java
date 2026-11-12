@@ -2,6 +2,7 @@ package ai.javaclaw.channels.discord;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.channels.ChannelRegistry;
+import ai.javaclaw.testsupport.ChannelApprovalFixture;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.Mentions;
@@ -14,6 +15,8 @@ import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.requests.restaction.MessageCreateAction;
 import org.junit.jupiter.api.Test;
 
+
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -51,7 +54,7 @@ class DiscordChannelTest {
 
         channel.onMessageReceived(event(false, false, true, "999", "C1", "<@111> hello", channelMock));
 
-        verify(agent, never()).respondTo(anyString(), anyString());
+        verify(agent, never()).answer(anyString(), anyString(), any(), any());
         verify(channelMock).sendMessage("I'm sorry, I don't accept instructions from you.");
     }
 
@@ -59,11 +62,11 @@ class DiscordChannelTest {
     void processesDirectMessages() {
         DiscordChannel channel = channel("123");
         MessageChannelUnion channelMock = messageChannel("D1");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.answer(anyString(), anyString(), any(), any())).thenReturn("hi");
 
         channel.onMessageReceived(event(false, true, false, "123", "D1", "hello", channelMock));
 
-        verify(agent).respondTo(eq("discord-D1"), eq("hello"));
+        verify(agent).answer(eq("discord-D1"), eq("hello"), any(), any());
         verify(channelMock).sendMessage("hi");
     }
 
@@ -71,18 +74,18 @@ class DiscordChannelTest {
     void stripsMentionInGuildMessages() {
         DiscordChannel channel = channel("123");
         MessageChannelUnion channelMock = messageChannel("C1");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.answer(anyString(), anyString(), any(), any())).thenReturn("hi");
 
         channel.onMessageReceived(event(false, false, true, "123", "C1", "<@111> hello there", channelMock));
 
-        verify(agent).respondTo(eq("discord-C1"), eq("hello there"));
+        verify(agent).answer(eq("discord-C1"), eq("hello there"), any(), any());
     }
 
     @Test
     void sendMessageUsesLastKnownChannel() {
         DiscordChannel channel = channel("123");
         MessageChannelUnion channelMock = messageChannel("D1");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("ok");
+        when(agent.answer(anyString(), anyString(), any(), any())).thenReturn("ok");
         channel.onMessageReceived(event(false, true, false, "123", "D1", "hello", channelMock));
 
         channel.sendMessage("background update");
@@ -100,7 +103,9 @@ class DiscordChannelTest {
     }
 
     private DiscordChannel channel(String allowedUser) {
-        return new DiscordChannel(allowedUser, agent, new ChannelRegistry());
+        // Turns run on the calling thread here, so each test sees the whole exchange when the handler returns
+        return new DiscordChannel(allowedUser,
+                ChannelApprovalFixture.onCallingThread(agent), new ChannelRegistry());
     }
 
     private MessageReceivedEvent event(boolean authorIsBot,

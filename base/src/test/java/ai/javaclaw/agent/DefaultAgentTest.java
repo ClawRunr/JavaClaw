@@ -1,8 +1,11 @@
 package ai.javaclaw.agent;
 
+import ai.javaclaw.approval.ApprovalTurn;
+import ai.javaclaw.approval.HumanQuestionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
@@ -10,10 +13,12 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,8 +39,36 @@ class DefaultAgentTest {
     void setUp() {
         agent = new DefaultAgent(chatClient);
         when(chatClient.prompt("hello")).thenReturn(requestSpec);
+        when(requestSpec.toolContext(any(Map.class))).thenReturn(requestSpec);
         when(requestSpec.advisors(any(Consumer.class))).thenReturn(requestSpec);
         when(requestSpec.stream()).thenReturn(streamSpec);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void everyRequestCarriesTheTurnsApprovalStateToTheToolGate() {
+        when(streamSpec.content()).thenReturn(Flux.just("ok"));
+        HumanQuestionHandler questions = _ -> true;
+
+        agent.respondTo("web", "hello", events::add, questions);
+
+        ArgumentCaptor<Map<String, Object>> toolContext = ArgumentCaptor.forClass(Map.class);
+        verify(requestSpec).toolContext(toolContext.capture());
+        ApprovalTurn turn = ApprovalTurn.from(toolContext.getValue()).orElseThrow();
+        assertThat(turn.conversationId()).isEqualTo("web");
+        assertThat(turn.questions()).contains(questions);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aTurnWithoutAQuestionHandlerCannotAsk() {
+        when(streamSpec.content()).thenReturn(Flux.just("ok"));
+
+        agent.respondTo("web", "hello", events::add);
+
+        ArgumentCaptor<Map<String, Object>> toolContext = ArgumentCaptor.forClass(Map.class);
+        verify(requestSpec).toolContext(toolContext.capture());
+        assertThat(ApprovalTurn.from(toolContext.getValue()).orElseThrow().questions()).isEmpty();
     }
 
     @Test

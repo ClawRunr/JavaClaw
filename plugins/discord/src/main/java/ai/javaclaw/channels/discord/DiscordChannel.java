@@ -1,7 +1,9 @@
 package ai.javaclaw.channels.discord;
 
-import ai.javaclaw.agent.Agent;
+import ai.javaclaw.channels.ApprovalChat;
+import ai.javaclaw.channels.ApprovalFormat;
 import ai.javaclaw.channels.Channel;
+import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
 import net.dv8tion.jda.api.JDA;
@@ -15,6 +17,8 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.EnumSet;
+
 import static java.util.Optional.ofNullable;
 import static java.util.regex.Pattern.quote;
 
@@ -23,13 +27,15 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
     private static final Logger log = LoggerFactory.getLogger(DiscordChannel.class);
 
     private final String allowedUserId;
-    private final Agent agent;
+    static final String ERROR_MESSAGE = "Sorry, something went wrong while handling your message.";
+
+    private final ChannelApprovals approvals;
     private final ChannelRegistry channelRegistry;
     private volatile MessageChannel lastChannel;
 
-    public DiscordChannel(String allowedUserId, Agent agent, ChannelRegistry channelRegistry) {
-        this.allowedUserId = normalizeUserId(allowedUserId);
-        this.agent = agent;
+    public DiscordChannel(String allowedUserId, ChannelApprovals approvals, ChannelRegistry channelRegistry) {
+        this.allowedUserId = DiscordUserIds.normalize(allowedUserId);
+        this.approvals = approvals;
         this.channelRegistry = channelRegistry;
         channelRegistry.registerChannel(this);
         log.info("Started Discord integration");
@@ -41,7 +47,7 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
             return;
         }
 
-        String userId = normalizeUserId(event.getAuthor().getId());
+        String userId = DiscordUserIds.normalize(event.getAuthor().getId());
         MessageChannel channel = event.getChannel();
         String content = normalizeText(event.getJDA(), event.getMessage(), event.isFromGuild());
 
@@ -55,10 +61,20 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
             return;
         }
 
+        String conversationId = getConversationId(channel.getId());
+        // /approve and /deny are answered here, on JDA's event thread, and never reach the model
+        if (approvals.handleCommand(conversationId, content, text -> reply(channel, text))) {
+            return;
+        }
         lastChannel = channel;
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), content));
-        String response = agent.respondTo(getConversationId(channel.getId()), content);
-        reply(channel, response);
+        // The turn runs in the background, so JDA can still deliver an /approve it may wait for
+        // Approvals are asked only in a DM; in a server channel, calls that need one are refused
+        DiscordChat chat = new DiscordChat(channel, event.isFromType(ChannelType.PRIVATE));
+        approvals.respond(conversationId, content, chat, e -> {
+            log.error("Failed to handle Discord message for conversation '{}'", conversationId, e);
+            reply(channel, ERROR_MESSAGE);
+        });
     }
 
     @Override
@@ -84,6 +100,34 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
         return userId != null && userId.equalsIgnoreCase(allowedUserId);
     }
 
+    /**
+     * The channel a turn came from. Approval requests are sent in Discord markdown with mentions
+     * switched off, so nothing a tool call contains can ping anyone, and are edited to show their
+     * outcome.
+     *
+     * @param canAsk whether this is a DM, the only place the owner is asked
+     */
+    private record DiscordChat(MessageChannel channel, boolean canAsk) implements ApprovalChat {
+
+        private static final EnumSet<Message.MentionType> NO_MENTIONS = EnumSet.noneOf(Message.MentionType.class);
+
+        @Override
+        public ApprovalFormat format() {
+            return ApprovalFormat.DISCORD_MARKDOWN;
+        }
+
+        @Override
+        public void send(String text) {
+            reply(channel, text);
+        }
+
+        @Override
+        public void sendFormatted(String markdown) {
+            channel.sendMessage(markdown).setAllowedMentions(NO_MENTIONS).complete();
+        }
+
+    }
+
     private static void reply(MessageChannel channel, String text) {
         channel.sendMessage(text).queue();
     }
@@ -103,19 +147,5 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
 
     private static String getConversationId(String channelId) {
         return "discord-" + channelId;
-    }
-
-    private static String normalizeUserId(String userId) {
-        if (userId == null) {
-            return null;
-        }
-        String normalized = userId.trim();
-        if (normalized.startsWith("<@") && normalized.endsWith(">")) {
-            normalized = normalized.substring(2, normalized.length() - 1);
-            if (normalized.startsWith("!")) {
-                normalized = normalized.substring(1);
-            }
-        }
-        return normalized.isBlank() ? null : normalized;
     }
 }

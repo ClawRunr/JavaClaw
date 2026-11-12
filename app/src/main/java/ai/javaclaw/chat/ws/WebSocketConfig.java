@@ -17,8 +17,9 @@ public class WebSocketConfig implements WebSocketConfigurer {
         this.handler = handler;
     }
 
+    /** No allowed origins are set, so Spring's default same-origin check applies. */
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(handler, "/ws/chat").setAllowedOrigins("*");
+        registry.addHandler(handler, "/ws/chat");
     }
 }

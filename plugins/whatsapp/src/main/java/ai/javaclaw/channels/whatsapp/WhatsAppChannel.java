@@ -1,13 +1,17 @@
 package ai.javaclaw.channels.whatsapp;
 
-import ai.javaclaw.agent.Agent;
+import ai.javaclaw.channels.ApprovalChat;
+import ai.javaclaw.channels.ApprovalFormat;
 import ai.javaclaw.channels.Channel;
+import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.function.Consumer;
 
 /**
  * Puts the agent behind {@link WhatsApp}: it answers what arrives there, and it is where replies
@@ -21,12 +25,12 @@ public class WhatsAppChannel implements Channel {
 
     private final WhatsApp whatsApp;
     private final ChannelRegistry channelRegistry;
-    private final Agent agent;
+    private final ChannelApprovals approvals;
 
-    public WhatsAppChannel(WhatsApp whatsApp, ChannelRegistry channelRegistry, Agent agent) {
+    public WhatsAppChannel(WhatsApp whatsApp, ChannelRegistry channelRegistry, ChannelApprovals approvals) {
         this.whatsApp = whatsApp;
         this.channelRegistry = channelRegistry;
-        this.agent = agent;
+        this.approvals = approvals;
     }
 
     @Override
@@ -55,12 +59,38 @@ public class WhatsAppChannel implements Channel {
         whatsApp.sendMessage(message);
     }
 
+    /** Only messages from the configured chat get here; {@link WhatsApp} drops the rest. */
     void onMessage(String fromJidId, String message) {
+        Consumer<String> reply = whatsApp::sendMessage;
+        // /approve and /deny are answered here, on the webhook worker, and never reach the model
+        if (approvals.handleCommand(fromJidId, message, reply)) {
+            return;
+        }
         channelRegistry.publishMessageReceivedEvent(new WhatsAppChannelMessageReceivedEvent(getName(), message, fromJidId));
-        try {
-            whatsApp.sendMessage(agent.respondTo(fromJidId, message));
-        } catch (RuntimeException e) {
-            LOGGER.error("Failed to handle WhatsApp message for chat '{}'", fromJidId, e);
+        // The turn runs in the background, so the single webhook worker can deliver an /approve it waits for
+        approvals.respond(fromJidId, message, new WhatsAppChat(),
+                e -> LOGGER.error("Failed to handle WhatsApp message for chat '{}'", fromJidId, e));
+    }
+
+    /**
+     * The configured chat. Approval requests use WhatsApp's own markup; wacli cannot edit a sent
+     * message, so the outcome of a request arrives as a short reply.
+     */
+    private final class WhatsAppChat implements ApprovalChat {
+
+        @Override
+        public ApprovalFormat format() {
+            return ApprovalFormat.WHATSAPP;
+        }
+
+        @Override
+        public void send(String text) {
+            whatsApp.sendMessage(text);
+        }
+
+        @Override
+        public void sendFormatted(String formatted) {
+            whatsApp.sendMessage(formatted);
         }
     }
 

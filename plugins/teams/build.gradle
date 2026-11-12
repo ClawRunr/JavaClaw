@@ -9,5 +9,6 @@ dependencies {
     implementation(libs.nimbus.jose.jwt)
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation testFixtures(project(':base'))
     testImplementation 'org.springframework.boot:spring-boot-starter-json'
 }

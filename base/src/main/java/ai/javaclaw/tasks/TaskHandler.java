@@ -1,6 +1,7 @@
 package ai.javaclaw.tasks;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentEvent;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.jobrunr.jobs.annotations.Job;
@@ -10,6 +11,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
 import static ai.javaclaw.tasks.Task.Status.awaiting_human_input;
@@ -49,7 +54,13 @@ public class TaskHandler {
         try {
             LOGGER.info("Starting task: {}", task.getName());
             String agentInput = formatTaskForAgent(inProgress);
-            TaskResult result = agent.prompt(getConversationId(taskId), agentInput, TaskResult.class);
+            List<AgentEvent.ApprovalResolved> blocked = new CopyOnWriteArrayList<>();
+            TaskResult result = withBlockedTools(agent.prompt(getConversationId(taskId), agentInput, TaskResult.class,
+                    event -> {
+                        if (event instanceof AgentEvent.ApprovalResolved resolved && !resolved.approved()) {
+                            blocked.add(resolved);
+                        }
+                    }), blocked);
             taskRepository.save(inProgress.withFeedback(result.feedback()).withStatus(result.newStatus()));
             notifyUser(task.getName(), result);
             LOGGER.info("Finished task: {} with status {}", task.getName(), result.newStatus());
@@ -57,6 +68,26 @@ public class TaskHandler {
             taskRepository.save(inProgress.withStatus(Task.Status.todo));
             throw e;
         }
+    }
+
+    /**
+     * A task cannot ask anyone to approve a tool call, so a blocked tool is the likeliest reason it
+     * did not get done. Say so plainly, naming each tool, instead of leaving the owner to
+     * dig it out of the agent's own wording — and leave the task for a human rather than completed.
+     */
+    static TaskResult withBlockedTools(TaskResult result, List<AgentEvent.ApprovalResolved> blocked) {
+        if (blocked.isEmpty()) {
+            return result;
+        }
+        String report = blocked.stream().map(AgentEvent.ApprovalResolved::toolName).distinct()
+                .map(tool -> "- " + tool)
+                .collect(Collectors.joining("\n", "Not run, because a task cannot ask for approval (see agent.approval.allow in the README):\n", ""));
+        List<String> parts = new ArrayList<>();
+        parts.add(report);
+        if (result != null && result.feedback() != null && !result.feedback().isBlank()) {
+            parts.add(result.feedback());
+        }
+        return new TaskResult(awaiting_human_input, String.join("\n\n", parts));
     }
 
     // TODO: currently we lose the conversationId when moving to a channel. Should channel registry track this?

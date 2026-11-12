@@ -11,6 +11,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class TeamsChannel implements Channel {
@@ -67,25 +68,44 @@ public class TeamsChannel implements Channel {
         if (message == null || message.isBlank()) {
             return;
         }
+        send(reference, "POST", activitiesUrl(reference), Map.of("type", "message", "text", message));
+    }
 
-        String url = reference.serviceUrl()
+    /**
+     * Sends a message written in Teams markdown.
+     *
+     * @throws IllegalStateException when Teams did not accept the message
+     */
+    public void sendMarkdown(TeamsConversationReference reference, String markdown) {
+        send(reference, "POST", activitiesUrl(reference),
+                Map.of("type", "message", "textFormat", "markdown", "text", markdown))
+                .orElseThrow(() -> new IllegalStateException("Teams did not accept the message"));
+    }
+
+    private static String activitiesUrl(TeamsConversationReference reference) {
+        return reference.serviceUrl()
                 + (reference.serviceUrl().endsWith("/") ? "" : "/")
                 + "v3/conversations/" + reference.conversationId() + "/activities";
+    }
 
+    /** @return the response body when Teams accepted the call */
+    private Optional<String> send(TeamsConversationReference reference, String method, String url, Map<String, String> activity) {
         try {
-            String body = JSON.writeValueAsString(Map.of("type", "message", "text", message));
             HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                     .header("Authorization", "Bearer " + tokenProvider.getToken())
                     .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .method(method, HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(activity)))
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() >= 300) {
-                LOGGER.error("Teams send to conversation '{}' failed with status {}: {}",
-                        reference.conversationId(), response.statusCode(), response.body());
+                LOGGER.error("Teams {} to conversation '{}' failed with status {}: {}",
+                        method, reference.conversationId(), response.statusCode(), response.body());
+                return Optional.empty();
             }
+            return Optional.of(response.body() == null ? "" : response.body());
         } catch (Exception e) {
             LOGGER.error("Failed to send Teams message to conversation '{}'", reference.conversationId(), e);
+            return Optional.empty();
         }
     }
 }

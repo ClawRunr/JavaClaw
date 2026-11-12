@@ -43,7 +43,7 @@ public class TelegramOnboardingProvider implements OnboardingProvider {
     @Override
     public String processStep(Map<String, String> formParams, Map<String, Object> session) {
         String token = formParams.getOrDefault("telegramBotToken", "").trim();
-        String username = normalizeTelegramUsername(formParams.get("telegramUsername"));
+        String username = TelegramUsernames.normalize(formParams.get("telegramUsername"));
 
         if (username != null) {
             session.put(SESSION_USERNAME, username);
@@ -70,14 +70,5 @@ public class TelegramOnboardingProvider implements OnboardingProvider {
                     "agent.channels.telegram.username", username
             ));
         }
-    }
-
-    private static String normalizeTelegramUsername(String telegramUsername) {
-        if (telegramUsername == null) return null;
-        String normalized = telegramUsername.trim();
-        if (normalized.startsWith("@")) {
-            normalized = normalized.substring(1);
-        }
-        return normalized.isBlank() ? null : normalized;
     }
 }

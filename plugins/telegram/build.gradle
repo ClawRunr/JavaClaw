@@ -11,4 +11,5 @@ dependencies {
     implementation(libs.commonmark.ext.gfm.strikethrough)
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation testFixtures(project(':base'))
 }

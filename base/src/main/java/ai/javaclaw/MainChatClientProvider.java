@@ -1,5 +1,6 @@
 package ai.javaclaw;
 
+import ai.javaclaw.approval.ApprovalGate;
 import ai.javaclaw.configuration.ConfigurationManager;
 import ai.javaclaw.llm.ChatClientRegistry;
 import ai.javaclaw.llm.LlmProviderProperties;
@@ -26,6 +27,7 @@ import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
+import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,6 +58,8 @@ public class MainChatClientProvider {
     private final ChatClientRegistry registry;
     private final ChatMemory chatMemory;
     private final ObjectProvider<ToolSearchToolCallingAdvisor> toolSearchAdvisorProvider;
+    private final ApprovalGate approvalGate;
+    private final ObjectProvider<ToolCallingManager> toolCallingManagers;
     private final SyncMcpToolCallbackProvider mcpToolProvider;
     private final TaskManager taskManager;
     private final ConfigurationManager configurationManager;
@@ -69,6 +73,8 @@ public class MainChatClientProvider {
     public MainChatClientProvider(ChatClientRegistry registry,
                                   ChatMemory chatMemory,
                                   ObjectProvider<ToolSearchToolCallingAdvisor> toolSearchAdvisorProvider,
+                                  ApprovalGate approvalGate,
+                                  ObjectProvider<ToolCallingManager> toolCallingManagers,
                                   SyncMcpToolCallbackProvider mcpToolProvider,
                                   TaskManager taskManager,
                                   ConfigurationManager configurationManager,
@@ -79,6 +85,8 @@ public class MainChatClientProvider {
         this.registry = registry;
         this.chatMemory = chatMemory;
         this.toolSearchAdvisorProvider = toolSearchAdvisorProvider;
+        this.approvalGate = approvalGate;
+        this.toolCallingManagers = toolCallingManagers;
         this.mcpToolProvider = mcpToolProvider;
         this.taskManager = taskManager;
         this.configurationManager = configurationManager;
@@ -99,9 +107,13 @@ public class MainChatClientProvider {
             ChatClient.Builder builder = registry.builderFor(DEFAULT);
 
             String agentPrompt = readSystemPrompt();
+            // Both advisors run every tool call through the approval gate (the tool-search one is
+            // built with it in DynamicToolDiscoveryConfiguration)
             ToolCallingAdvisor toolCallAdvisor = toolSearchAdvisorProvider.getIfAvailable();
             if (toolCallAdvisor == null) {
-                toolCallAdvisor = ToolCallingAdvisor.builder().build();
+                toolCallAdvisor = ToolCallingAdvisor.builder()
+                        .toolCallingManager(approvalGate.toolCallingManager(toolCallingManagers))
+                        .build();
             }
 
             builder.defaultAdvisors(new SimpleLoggerAdvisor())

@@ -8,6 +8,10 @@ public enum StreamFrameType {
     CHUNK("chunk"),
     TOOL_CALL("toolCall"),
     TOOL_RESULT("toolResult"),
+    /** The agent waits for the owner to allow or deny a tool call. */
+    APPROVAL_REQUESTED("approvalRequested"),
+    /** A tool call that needed a decision was allowed or refused, with the reason. */
+    APPROVAL_RESOLVED("approvalResolved"),
     DONE("done"),
     ERROR("error");
 

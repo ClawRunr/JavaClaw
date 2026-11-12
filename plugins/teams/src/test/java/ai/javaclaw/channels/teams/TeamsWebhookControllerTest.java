@@ -1,6 +1,8 @@
 package ai.javaclaw.channels.teams;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.approval.PendingApprovals;
+import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,7 +50,8 @@ class TeamsWebhookControllerTest {
         properties.setAllowedUserId(allowedUserId);
         // Most tests send "Bearer t"; lenient, because tests without a Bearer header never reach the validator
         lenient().when(jwtValidator.isValid("t", SERVICE_URL)).thenReturn(true);
-        return new TeamsWebhookController(properties, channelRegistry, agent, channel, jwtValidator);
+        return new TeamsWebhookController(properties, channelRegistry,
+                new ChannelApprovals(agent, new PendingApprovals()), channel, jwtValidator);
     }
 
     // -----------------------------------------------------------------------
@@ -125,7 +128,7 @@ class TeamsWebhookControllerTest {
     void ignoresMessagesFromUnauthorizedUser() {
         controller(ALLOWED_USER).webhook("Bearer t", activity("message", "29:other-user", "hello", "conv-1"));
 
-        verify(agent, never()).respondTo(anyString(), anyString());
+        verify(agent, never()).answer(anyString(), anyString(), any(), any());
         verifyNoInteractions(channel);
     }
 
@@ -139,23 +142,23 @@ class TeamsWebhookControllerTest {
 
     @Test
     void acceptsMessagesFromTheConfiguredTeamsUserId() {
-        when(agent.respondTo("teams-conv-1", "hello")).thenReturn("hi!");
+        when(agent.answer(eq("teams-conv-1"), eq("hello"), any(), any())).thenReturn("hi!");
 
         controller(ALLOWED_USER).webhook("Bearer t", activity("message", ALLOWED_USER, "hello", "conv-1"));
 
-        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).respondTo("teams-conv-1", "hello");
+        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).answer(eq("teams-conv-1"), eq("hello"), any(), any());
     }
 
     @Test
     void acceptsMessagesFromTheConfiguredEntraObjectId() {
-        when(agent.respondTo("teams-conv-1", "hello")).thenReturn("hi!");
+        when(agent.answer(eq("teams-conv-1"), eq("hello"), any(), any())).thenReturn("hi!");
         TeamsActivityPayload activity = new TeamsActivityPayload("message", "activity-1", SERVICE_URL, "msteams", "hello",
                 new TeamsActivityPayload.From("29:some-teams-id", "Some User", "AAD-OBJECT-ID"),
                 new TeamsActivityPayload.Conversation("conv-1", "personal"));
 
         controller("aad-object-id").webhook("Bearer t", activity);
 
-        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).respondTo("teams-conv-1", "hello");
+        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).answer(eq("teams-conv-1"), eq("hello"), any(), any());
     }
 
     // -----------------------------------------------------------------------
@@ -186,7 +189,7 @@ class TeamsWebhookControllerTest {
 
     @Test
     void handsTheMessageToTheAgentAndRepliesThroughTheChannel() {
-        when(agent.respondTo("teams-conv-1", "hello")).thenReturn("hi!");
+        when(agent.answer(eq("teams-conv-1"), eq("hello"), any(), any())).thenReturn("hi!");
         TeamsConversationReference reference = new TeamsConversationReference(SERVICE_URL, "conv-1");
 
         ResponseEntity<Void> response = controller(ALLOWED_USER)
@@ -195,19 +198,19 @@ class TeamsWebhookControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         verify(channel).updateConversationReference(reference);
         verify(channelRegistry).publishMessageReceivedEvent(any(TeamsChannelMessageReceivedEvent.class));
-        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).respondTo("teams-conv-1", "hello");
+        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).answer(eq("teams-conv-1"), eq("hello"), any(), any());
         verify(channel, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).sendMessage(reference, "hi!");
     }
 
     @Test
     void repliesToTheConversationTheMessageCameFromEvenWhenAnotherMessageArrivesMeanwhile() throws Exception {
         CountDownLatch secondMessageReceived = new CountDownLatch(1);
-        when(agent.respondTo("teams-conv-1", "first")).thenAnswer(invocation -> {
+        when(agent.answer(eq("teams-conv-1"), eq("first"), any(), any())).thenAnswer(invocation -> {
             // Still busy with the first message while the second one comes in
             secondMessageReceived.await(WAIT_FOR_BACKGROUND_WORK_MILLIS, TimeUnit.MILLISECONDS);
             return "answer-1";
         });
-        when(agent.respondTo("teams-conv-2", "second")).thenReturn("answer-2");
+        when(agent.answer(eq("teams-conv-2"), eq("second"), any(), any())).thenReturn("answer-2");
         TeamsWebhookController controller = controller(ALLOWED_USER);
 
         controller.webhook("Bearer t", activity("message", ALLOWED_USER, "first", "conv-1"));
@@ -226,7 +229,7 @@ class TeamsWebhookControllerTest {
 
     @Test
     void tellsTheUserWhenTheAgentFailsWithoutExposingTheError() {
-        when(agent.respondTo("teams-conv-1", "hello"))
+        when(agent.answer(eq("teams-conv-1"), eq("hello"), any(), any()))
                 .thenThrow(new IllegalStateException("provider said: invalid api key sk-123"));
 
         controller(ALLOWED_USER).webhook("Bearer t", activity("message", ALLOWED_USER, "hello", "conv-1"));
