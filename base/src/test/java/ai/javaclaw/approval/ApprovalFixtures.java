@@ -4,26 +4,21 @@ import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 
-import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/** Builds gates and tools for approval tests. */
-public final class ApprovalGateFixtures {
+/** Policies and tools for approval tests. */
+public final class ApprovalFixtures {
 
     /** {@code readNotes} and tool search run without asking; everything else asks. */
-    public static final ApprovalProperties DEFAULTS = new ApprovalProperties(null, List.of("readNotes", "toolSearchTool"));
+    public static final ApprovalProperties DEFAULTS = new ApprovalProperties(List.of("readNotes", "toolSearchTool"));
 
-    private ApprovalGateFixtures() {
+    private ApprovalFixtures() {
     }
 
-    public static ApprovalGate defaultGate() {
-        return gate(DEFAULTS, new PendingApprovals());
-    }
-
-    public static ApprovalGate gate(ApprovalProperties properties, PendingApprovals pendingApprovals) {
-        return new ApprovalGate(properties, pendingApprovals, Clock.systemUTC());
+    public static ApprovalPolicy defaultPolicy() {
+        return new ApprovalPolicy(DEFAULTS);
     }
 
     /** A tool that records every input, and the tool context, it runs with. */
@@ -32,9 +27,16 @@ public final class ApprovalGateFixtures {
         private final String name;
         private final List<String> runs = new CopyOnWriteArrayList<>();
         private final List<Map<String, Object>> contexts = new CopyOnWriteArrayList<>();
+        private final List<String> log;
 
         public RecordingTool(String name) {
+            this(name, new CopyOnWriteArrayList<>());
+        }
+
+        /** @param log gets {@code name:input} for every run, so tests can share one across tools */
+        public RecordingTool(String name, List<String> log) {
             this.name = name;
+            this.log = log;
         }
 
         public List<String> runs() {
@@ -59,6 +61,7 @@ public final class ApprovalGateFixtures {
         @Override
         public String call(String toolInput, ToolContext toolContext) {
             runs.add(toolInput);
+            log.add(name + ":" + toolInput);
             contexts.add(toolContext == null ? Map.of() : toolContext.getContext());
             return "ran " + name;
         }

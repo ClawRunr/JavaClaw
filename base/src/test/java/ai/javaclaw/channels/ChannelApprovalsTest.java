@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -19,9 +18,9 @@ import static ai.javaclaw.testsupport.ChannelApprovalFixture.shortId;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The text approval flow messaging channels share, through a real agent and the real gate: the
- * owner gets the call with a short id, answers {@code /approve_<id>} or {@code /deny_<id>} in the
- * same chat, and the turn carries on. How the request reads per tool is {@link ApprovalMessagesTest}.
+ * The text approval flow messaging channels share, through a real agent and the real policy: the
+ * turn pauses, the owner gets the call with a short id, answers {@code /approve_<id>} or
+ * {@code /deny_<id>} in the same chat, and the turn carries on. How the request reads per tool is {@link ApprovalMessagesTest}.
  */
 class ChannelApprovalsTest {
 
@@ -38,14 +37,13 @@ class ChannelApprovalsTest {
     }
 
     @Test
-    void theRequestHasATitleTheArgumentsAnExpiryTimeAndOneTapCommands() {
+    void theRequestHasATitleTheArgumentsAndOneTapCommands() {
         String request = askAndAwaitRequest(CHAT);
 
         String id = shortId(request);
         assertThat(id).hasSize(6);
         assertThat(request).startsWith("<b>JavaClaw wants to run</b> <code>" + TOOL + "</code>\n")
                 .contains("<pre>  url: https://example.com</pre>")
-                .containsPattern("Expires at \\d\\d:\\d\\d")
                 .endsWith("Reply /approve_" + id + " or /deny_" + id);
         assertThat(fixture.toolRuns()).isEmpty();
     }
@@ -102,7 +100,7 @@ class ChannelApprovalsTest {
         Thread.sleep(200);
         assertThat(chat.sent()).hasSize(1);
         assertThat(fixture.toolRuns()).isEmpty();
-        assertThat(fixture.pending().pendingFor(CHAT)).isNotEmpty();
+        assertThat(fixture.agent().waitingForApproval(CHAT)).isNotEmpty();
 
         command(CHAT, "/deny_" + id);
         await(() -> chat.sent().size() == 3);
@@ -116,7 +114,7 @@ class ChannelApprovalsTest {
 
         assertThat(replies).singleElement().asString().contains("No approval " + id + " is waiting in this chat");
         assertThat(fixture.toolRuns()).isEmpty();
-        assertThat(fixture.pending().pendingFor(CHAT)).isNotEmpty();
+        assertThat(fixture.agent().waitingForApproval(CHAT)).isNotEmpty();
 
         // Still answerable where it was asked
         command(CHAT, "/approve_" + id);
@@ -124,17 +122,28 @@ class ChannelApprovalsTest {
     }
 
     @Test
-    void anExpiredRequestIsNotRunAndCanNoLongerBeAnswered() {
-        fixture.close();
-        fixture = new ChannelApprovalFixture(Duration.ofSeconds(1), ARGUMENTS);
+    void aNewMessageWhileARequestWaitsDeniesItAndTheOldIdNoLongerWorks() {
         String id = shortId(askAndAwaitRequest(CHAT));
 
-        await(() -> chat.sent().size() == 3);
-        assertThat(chat.sent().get(1)).isEqualTo("❌ No approval was given in time. (" + id + ")");
-        assertThat(chat.sent().get(2)).isEqualTo("Not done: No approval was given in time.");
+        fixture.approvals().respond(CHAT, "never mind", chat, failures::add);
 
+        await(() -> chat.sent().size() == 3);
+        assertThat(chat.sent().get(1)).isEqualTo("❌ The user moved on without approving. (" + id + ")");
+        assertThat(chat.sent().get(2)).isEqualTo("Not done: The user moved on without approving.");
         assertThat(command(CHAT, "/approve_" + id)).isTrue();
         assertThat(replies).singleElement().asString().contains("No approval " + id + " is waiting");
+        assertThat(fixture.toolRuns()).isEmpty();
+    }
+
+    @Test
+    void aChatOthersCanReadIsNeverAskedAndTheTurnFinishes() {
+        RecordingChat group = new RecordingChat(ApprovalFormat.TELEGRAM_HTML, false);
+
+        fixture.approvals().respond("telegram-group", "fetch example.com", group, failures::add);
+
+        await(() -> !group.sent().isEmpty());
+        assertThat(group.sent()).containsExactly(
+                "Not done: No one could be asked to approve this action here, so it was not run.");
         assertThat(fixture.toolRuns()).isEmpty();
     }
 
@@ -150,7 +159,7 @@ class ChannelApprovalsTest {
 
     @Test
     void aFailingTurnIsReportedInsteadOfAnswered() {
-        ChannelApprovals approvals = new ChannelApprovals(new ai.javaclaw.agent.Agent() {
+        ChannelApprovals approvals = ChannelApprovalFixture.onCallingThread(new ai.javaclaw.agent.Agent() {
             @Override
             public String respondTo(String conversationId, String question) {
                 throw new IllegalStateException("provider down");
@@ -160,7 +169,7 @@ class ChannelApprovalsTest {
             public <T> T prompt(String conversationId, String input, Class<T> result) {
                 throw new UnsupportedOperationException();
             }
-        }, fixture.pending());
+        });
         try {
             approvals.respond(CHAT, "hi", chat, failures::add);
 

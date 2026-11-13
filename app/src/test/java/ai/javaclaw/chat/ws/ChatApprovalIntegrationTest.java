@@ -2,9 +2,8 @@ package ai.javaclaw.chat.ws;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.DefaultAgent;
-import ai.javaclaw.approval.ApprovalGate;
+import ai.javaclaw.approval.ApprovalPolicy;
 import ai.javaclaw.approval.ApprovalProperties;
-import ai.javaclaw.approval.PendingApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.chat.ChatChannel;
 import org.junit.jupiter.api.AfterEach;
@@ -21,10 +20,8 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
-import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -43,7 +40,6 @@ import reactor.core.publisher.Flux;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
-import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
@@ -52,12 +48,11 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 /**
- * The approval round trip over a real WebSocket: the model asks for a tool, the browser gets an
- * {@code approvalRequested} frame, answers on the same socket while the turn is still waiting, and
- * the tool runs — or does not, when the browser goes away instead.
+ * The approval round trip over a real WebSocket: the model asks for a tool, the turn pauses and
+ * the browser gets an {@code approvalRequested} frame, answers it, and the resumed turn streams the
+ * tool's result and the answer. A pause outlives the socket: a client that comes back is shown it.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         classes = ChatApprovalIntegrationTest.TestConfig.class)
@@ -67,9 +62,6 @@ class ChatApprovalIntegrationTest {
 
     @LocalServerPort
     int port;
-
-    @Autowired
-    PendingApprovals pendingApprovals;
 
     final ObjectMapper objectMapper = new ObjectMapper();
     final BlockingQueue<Map<String, Object>> frames = new LinkedBlockingQueue<>();
@@ -132,15 +124,28 @@ class ChatApprovalIntegrationTest {
     }
 
     @Test
-    void closingTheLastClientDeniesThePendingApproval() throws Exception {
-        WebSocketSession session = connect();
-        send(session, Map.of("type", "userMessage", "conversationId", "web", "message", "note: buy milk"));
+    void aPauseOutlivesTheSocketAndCanBeAnsweredAfterReconnecting() throws Exception {
+        WebSocketSession first = connect();
+        send(first, Map.of("type", "userMessage", "conversationId", "web", "message", "note: buy milk"));
         String approvalId = (String) data(frameOfType("approvalRequested")).get("approvalId");
+        first.close();
 
-        session.close();
+        WebSocketSession second = connect();
+        try {
+            Map<String, Object> request = data(frameOfType("approvalRequested"));
+            assertThat(request).containsEntry("approvalId", approvalId);
+            assertThat(toolRuns).isEmpty();
 
-        await().atMost(5, TimeUnit.SECONDS).until(() -> !pendingApprovals.isPending(approvalId));
-        assertThat(toolRuns).isEmpty();
+            send(second, Map.of("type", "approvalDecision", "conversationId", "web",
+                    "approvalId", approvalId,
+                    "argumentsHash", request.get("argumentsHash"),
+                    "decision", "allow-once"));
+
+            assertThat(frameOfType("chunk").get("data")).isEqualTo("Done: saved");
+            assertThat(toolRuns).containsExactly("{\"text\":\"buy milk\"}");
+        } finally {
+            second.close();
+        }
     }
 
     private WebSocketSession connect() throws Exception {
@@ -258,19 +263,14 @@ class ChatApprovalIntegrationTest {
         }
 
         @Bean
-        PendingApprovals pendingApprovals() {
-            return new PendingApprovals();
-        }
-
-        @Bean
-        Agent agent(PendingApprovals pendingApprovals) {
-            ApprovalGate gate = new ApprovalGate(ApprovalProperties.defaults(), pendingApprovals, Clock.systemUTC());
+        Agent agent() {
+            ApprovalPolicy policy = new ApprovalPolicy(ApprovalProperties.defaults());
             return new DefaultAgent(ChatClient.builder(new NoteModel())
                     .defaultTools(new WriteNoteTool())
                     .defaultAdvisors(ToolCallingAdvisor.builder()
-                            .toolCallingManager(gate.toolCallingManager(ToolCallingManager.builder().build()))
+                            .toolCallingManager(policy.toolCallingManager())
                             .build())
-                    .build());
+                    .build(), policy);
         }
     }
 }

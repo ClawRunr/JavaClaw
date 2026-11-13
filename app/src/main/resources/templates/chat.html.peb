@@ -358,7 +358,7 @@
 }
 .ar-approval .ar-tool__pre { margin-top: .45rem; }
 .ar-approval__actions { display: flex; align-items: center; gap: .5rem; margin-top: .6rem; flex-wrap: wrap; }
-.ar-approval__expires { font-size: .68rem; color: rgba(200, 212, 240, .45); }
+.ar-approval__status { font-size: .68rem; color: rgba(200, 212, 240, .45); }
 .ar-approval__outcome { font-size: .75rem; font-weight: 600; margin-top: .45rem; }
 .ar-approval__outcome--allowed { color: var(--bulma-success); }
 .ar-approval__outcome--denied { color: var(--bulma-danger); }
@@ -645,7 +645,7 @@
             button.addEventListener('click', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                if (!socket) { expires.textContent = 'Not connected \u2014 cannot send.'; return; }
+                if (!socket) { status.textContent = 'Not connected \u2014 cannot send.'; return; }
                 buttons.forEach(function (b) { b.disabled = true; });
                 button.classList.add('is-loading');
                 socket.send(JSON.stringify({
@@ -659,9 +659,8 @@
             buttons.push(button);
             actions.appendChild(button);
         });
-        var expires = el('span', 'ar-approval__expires',
-            data.expiresAt ? 'Denied automatically at ' + new Date(data.expiresAt).toLocaleTimeString() : '');
-        actions.appendChild(expires);
+        var status = el('span', 'ar-approval__status', 'Waiting for your decision.');
+        actions.appendChild(status);
         panel.appendChild(actions);
 
         var body = card.querySelector('.ar-tool__body');
@@ -762,11 +761,13 @@
         run.textContent += token;
     }
 
-    // Cards still waiting when the answer ends will never get a result — settle them.
+    // Cards still waiting when the answer ends will never get a result — settle them. A card
+    // waiting for approval is not settled: the turn is paused, and its result follows the decision.
     function endStream(conversationId, unfinishedClass, unfinishedLabel) {
         Object.keys(toolCards).forEach(function (callId) {
             var entry = toolCards[callId];
             if (entry.conversationId !== conversationId) return;
+            if (entry.card.classList.contains('ar-tool--awaiting')) return;
             entry.card.classList.add(unfinishedClass);
             entry.card.querySelector('.ar-tool__time').textContent = unfinishedLabel;
             delete toolCards[callId];

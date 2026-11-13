@@ -10,10 +10,22 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class RecordingChat implements ApprovalChat {
 
     private final ApprovalFormat format;
+    private final boolean canAsk;
     private final List<String> sent = new CopyOnWriteArrayList<>();
 
     public RecordingChat(ApprovalFormat format) {
+        this(format, true);
+    }
+
+    /** @param canAsk {@code false} for a chat others can read, such as a group */
+    public RecordingChat(ApprovalFormat format, boolean canAsk) {
         this.format = format;
+        this.canAsk = canAsk;
+    }
+
+    @Override
+    public boolean canAsk() {
+        return canAsk;
     }
 
     /** Every message sent, plain or formatted, in order. */

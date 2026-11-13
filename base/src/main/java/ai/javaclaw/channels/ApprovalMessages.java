@@ -5,40 +5,29 @@ import ai.javaclaw.approval.ApprovalRequest;
 import ai.javaclaw.approval.Denial;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.time.Clock;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import static ai.javaclaw.utils.JsonObjects.parseObject;
 
 /**
  * Writes approval requests for messaging channels: the tool, its arguments as {@code key: value}
- * lines, the expiry as a clock time and the commands to answer with. {@link ApprovalFormat} turns it into the channel's markup.
+ * lines and the commands to answer with. {@link ApprovalFormat} turns it into the channel's markup.
  *
  * <p>Every message fits the channel's {@link ApprovalFormat#maxLength()}: values are cut at
  * {@value #VALUE_LIMIT} characters and arguments that still do not fit are left out. Whenever
  * anything is cut, the message says so and points to the web chat, which shows everything.
  *
- * <p>Presentation only: what is asked, and how the answer is checked, stays with the gate.
+ * <p>Presentation only: what is asked, and how the answer is checked, stays with the agent.
  */
 public class ApprovalMessages {
 
     static final int VALUE_LIMIT = 300;
     static final String NOT_SHOWN_IN_FULL = "Not shown in full. Approve from the web chat to see everything.";
-    private static final DateTimeFormatter CLOCK_TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT);
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
-    private final Clock clock;
-
-    /** @param clock its zone is the one expiry times are shown in */
-    public ApprovalMessages(Clock clock) {
-        this.clock = clock;
-    }
-
-    /** The request, ending with the expiry and the commands to answer with. */
+    /** The request, ending with the commands to answer with. */
     public String request(ApprovalRequest request, String shortId, ApprovalFormat format) {
         List<String> commands = new ArrayList<>();
         if (request.decisions().contains(ApprovalDecision.ALLOW_ONCE)) {
@@ -47,9 +36,7 @@ public class ApprovalMessages {
         if (request.decisions().contains(ApprovalDecision.DENY)) {
             commands.add("/deny_" + shortId);
         }
-        String tail = format.text("Expires at " + CLOCK_TIME.format(request.expiresAt().atZone(clock.getZone())))
-                + format.lineBreak()
-                + format.text("Reply ") + String.join(format.text(" or "), commands.stream().map(format::command).toList());
+        String tail = format.text("Reply ") + String.join(format.text(" or "), commands.stream().map(format::command).toList());
         return fit(request, tail, format);
     }
 

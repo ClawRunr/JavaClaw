@@ -86,7 +86,7 @@ class TeamsApprovalTest {
         Thread.sleep(300);
         assertThat(sent).hasSize(1);
         assertThat(fixture.toolRuns()).isEmpty();
-        assertThat(fixture.pending().pendingFor("teams-conv-1")).isNotEmpty();
+        assertThat(fixture.agent().waitingForApproval("teams-conv-1")).isNotEmpty();
 
         controller.webhook("Bearer t", activity(OWNER, "/deny " + id, "personal"));
         await(() -> sent.size() == 3);

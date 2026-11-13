@@ -33,10 +33,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final Supplier<Executor> turnExecutors;
     /**
-     * Each session answers its messages one at a time, in order, off the socket's own thread. The
-     * container hands a session its next frame only after the previous one is handled, so running
-     * the agent there would leave it unable to receive an approval decision — or to notice that
-     * the client went away — while a turn waits for one.
+     * Each session runs its turns and approval decisions one at a time, in order, off the socket's
+     * own thread, which the container needs back to hand the session its next frame. A decision
+     * that resumes a paused turn streams the rest of it.
      */
     private final Map<WebSocketSession, Executor> turns = new ConcurrentHashMap<>();
 
@@ -80,7 +79,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         chatChannel.clearWsSession(session);
         if (turns.remove(session) instanceof ExecutorService executor) {
-            // A running turn finishes on its own; its pending approvals were just denied
+            // A running turn finishes on its own; a paused one stays paused
             executor.shutdown();
         }
         log.info("WebChat WebSocket disconnected: {} ({})", session.getId(), status);
@@ -151,9 +150,17 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         String approvalId = payload.get("approvalId") instanceof String s ? s : null;
         String hash = payload.get("argumentsHash") instanceof String s ? s : null;
         String decision = payload.get("decision") instanceof String s ? s : null;
-        if (!chatChannel.decide(session, approvalId, hash, decision)) {
-            log.info("Approval decision for {} was not accepted (unknown, already answered or does not match)", approvalId);
-        }
+        turns.computeIfAbsent(session, _ -> turnExecutors.get()).execute(() -> {
+            try {
+                if (!chatChannel.decide(session, approvalId, hash, decision)) {
+                    log.info("Approval decision for {} was not accepted (unknown, already answered or does not match)",
+                            approvalId);
+                }
+                chatChannel.sendHtml(Htmx.oobReplace("typing-indicator", ""));
+            } catch (Exception ex) {
+                log.warn("Approval decision {} failed", approvalId, ex);
+            }
+        });
     }
 
     /** How many sessions still hold a turn executor; each is dropped and shut down when its session closes. */

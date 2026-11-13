@@ -1,13 +1,9 @@
 package ai.javaclaw.approval;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
-
-import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,35 +13,16 @@ class ApprovalPropertiesTest {
             .withUserConfiguration(PropertiesOnly.class);
 
     @Test
-    void withoutConfigurationNothingIsAllowedAndTheTimeoutIsTwoMinutes() {
-        contextRunner.run(context -> {
-            ApprovalProperties properties = context.getBean(ApprovalProperties.class);
-            assertThat(properties.timeout()).isEqualTo(Duration.ofMinutes(2));
-            assertThat(properties.allow()).isEmpty();
-        });
+    void withoutConfigurationNothingIsAllowed() {
+        contextRunner.run(context -> assertThat(context.getBean(ApprovalProperties.class).allow()).isEmpty());
     }
 
     @Test
-    void bindsAllowAndTimeout() {
+    void bindsAllowTrimmedWithoutBlanks() {
         contextRunner
-                .withPropertyValues(
-                        "agent.approval.timeout=10m",
-                        "agent.approval.allow=Read, WebFetch")
-                .run(context -> {
-                    ApprovalProperties properties = context.getBean(ApprovalProperties.class);
-                    assertThat(properties.timeout()).isEqualTo(Duration.ofMinutes(10));
-                    assertThat(properties.allow()).containsExactly("Read", "WebFetch");
-                });
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"11m", "10m1s", "0s", "-5s", "PT1H", "soon"})
-    void invalidTimeoutsFailAtStartup(String timeout) {
-        contextRunner
-                .withPropertyValues("agent.approval.timeout=" + timeout)
-                .run(context -> assertThat(context).hasFailed()
-                        .getFailure().rootCause().isInstanceOfAny(IllegalArgumentException.class,
-                                org.springframework.core.convert.ConversionFailedException.class));
+                .withPropertyValues("agent.approval.allow=Read, WebFetch,,")
+                .run(context -> assertThat(context.getBean(ApprovalProperties.class).allow())
+                        .containsExactly("Read", "WebFetch"));
     }
 
     @Configuration(proxyBeanMethods = false)

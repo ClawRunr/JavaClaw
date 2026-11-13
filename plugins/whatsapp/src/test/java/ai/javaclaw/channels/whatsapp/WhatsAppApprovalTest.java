@@ -89,7 +89,7 @@ class WhatsAppApprovalTest {
         Thread.sleep(300);
         assertThat(sent).hasSize(1);
         assertThat(fixture.toolRuns()).isEmpty();
-        assertThat(fixture.pending().pendingFor(CHAT_JID)).isNotEmpty();
+        assertThat(fixture.agent().waitingForApproval(CHAT_JID)).isNotEmpty();
 
         receive(CHAT_JID, "/deny " + id);
         await(() -> sent.stream().anyMatch(m -> m.startsWith("❌ The user did not approve this action.")));

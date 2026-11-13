@@ -2,12 +2,11 @@ package ai.javaclaw.approval;
 
 /**
  * Whoever can answer approval requests for a turn: the web chat, or the messaging chat the turn
- * came from. A turn with no handler (scheduled tasks) cannot ask, so its calls that need approval
- * are refused. A handler that throws is treated as unable to ask and the call is refused, never run.
+ * came from. A turn with no handler (scheduled tasks), or whose handler says no or throws, cannot
+ * ask: the calls that need approval are denied right away and the turn carries on.
  * <p>
- * The question itself reaches the owner through the turn's {@link ApprovalListener}; the answer
- * comes back through {@link PendingApprovals#decide}. Named after the equivalent interface in
- * spring-ai-playground (Apache 2.0), which inspired this design.
+ * Named after the equivalent interface in spring-ai-playground (Apache 2.0), which inspired this
+ * design.
  * </p>
  */
 @FunctionalInterface

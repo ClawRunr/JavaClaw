@@ -22,7 +22,7 @@ JavaClaw is a Java-based personal AI assistant that runs on your own devices. It
 |---|---|
 | Language | Java 25 |
 | Framework | Spring Boot 4.0.3, Spring Modulith 2.0.3 |
-| LLM | Spring AI 2.0.0-SNAPSHOT (OpenAI, Anthropic, Ollama) |
+| LLM | Spring AI 2.1.0-RC2 (OpenAI, Anthropic, Ollama) |
 | Agent | Spring AI Agent Utils |
 | MCP | Spring AI MCP Client |
 | Jobs | JobRunr 8.5.0 |
@@ -316,9 +316,15 @@ Notes:
 
 ### Tool Approval
 
-**What asks.** Every tool call asks for approval, except tools listed in `agent.approval.allow`. MCP and plugin tools ask too. If you deny it, nobody answers within `agent.approval.timeout` (default `2m`, at most `10m`), or nobody can be asked (scheduled tasks, Telegram groups, Discord server channels), the call is not run and the agent is told "The user did not approve this action." (or "No approval was given in time.").
+**What asks.** Every tool call needs approval, except tools listed in `agent.approval.allow`. MCP and plugin tools need it too. When the model asks for one, the turn pauses: none of that reply's tool calls run, and the request waits for your decision. There is no timeout.
 
-**Web chat.** An approval card shows the tool and its exact arguments, with **Allow once** and **Deny**.
+**Deciding.** Allowing runs the call once; denying tells the agent "The user did not approve this action.". When every call of the reply is decided, they run in the order the model asked for them, and the answer continues.
+
+**Moving on.** If you send a new message instead of deciding, the waiting calls are denied first ("The user moved on without approving.") and then your message is answered. An old request can no longer be approved after that.
+
+**Nobody to ask.** Scheduled tasks, Telegram groups, Discord server channels and the Vaadin UI can't ask. There the call is denied right away ("No one could be asked to approve this action here, so it was not run.") and the turn finishes.
+
+**Web chat.** An approval card shows the tool and its exact arguments, with **Allow once** and **Deny**. A paused conversation stays paused when you close the tab; the card shows again when you come back to it.
 
 **Telegram, Discord, WhatsApp and Teams.** The request arrives in the same chat, cut to fit the channel's message limit:
 
@@ -326,18 +332,20 @@ Notes:
 JavaClaw wants to run `Write`
   filePath: workspace/notes/todo.md
   content: - buy milk
-Expires at 12:05
 Reply /approve_a1b2c3 or /deny_a1b2c3
 ```
 
-Reply `/approve_<id>` or `/deny_<id>`; the outcome comes back as a short reply. Approvals are asked only in private chats and DMs.
+Reply `/approve_<id>` or `/deny_<id>`; the outcome comes back as a short reply, then the answer. Approvals are asked only in private chats and DMs.
+
+**Known limits.**
+- Paused requests are kept in memory. They are lost when JavaClaw restarts; just send your next message.
+- Tool calls that ran earlier in the same turn, before the pause, are not visible to the agent after it resumes. For example, a tool search that found the tool is not shown again; the agent searches again if it needs another tool.
 
 **The `allow` list** lives in `application.yaml`. A list set in `application.private.yaml` replaces it, so repeat the tools you want to keep:
 
 ```yaml
 agent:
   approval:
-    timeout: 2m
     allow: [Read, Skill, toolSearchTool, CheckListTool, listRecurringTasks, getText, waitForSelector,
             closeBrowser, takeScreenshot, Glob, Grep, ListDirectory, BashOutput, TodoWrite, MemoryView]
 ```
