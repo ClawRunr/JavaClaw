@@ -1,6 +1,6 @@
 [versions]
 spring-boot = "4.0.6"
-spring-ai = "2.0.0"
+spring-ai = "2.1.0-RC2"
 telegrambots = "9.5.0"
 commonmark = "0.28.0"
 archunit = "1.4.2"

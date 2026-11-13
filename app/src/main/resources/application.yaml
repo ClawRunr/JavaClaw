@@ -11,6 +11,7 @@ spring:
       chat: unknown
       audio.speech: unknown
       audio.transcription: unknown
+      decision: unknown
       embedding: unknown
       image: unknown
       moderation: unknown
