@@ -8,9 +8,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,23 +21,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ApprovalMessagesTest {
 
-    static final Instant NOW = Instant.parse("2026-11-07T11:00:00Z");
     static final JsonMapper JSON = JsonMapper.builder().build();
 
-    final ApprovalMessages messages = new ApprovalMessages(Clock.fixed(NOW, ZoneId.of("Europe/Amsterdam")));
+    final ApprovalMessages messages = new ApprovalMessages();
 
     // -----------------------------------------------------------------------
     // What a request says
     // -----------------------------------------------------------------------
 
     @Test
-    void theRequestNamesTheToolListsItsArgumentsAndEndsWithTheExpiryAndCommands() {
+    void theRequestNamesTheToolListsItsArgumentsAndEndsWithTheCommands() {
         String message = render(request("fetchPage", json(Map.of("url", "https://example.com"))));
 
         assertThat(message).isEqualTo("""
                 <b>JavaClaw wants to run</b> <code>fetchPage</code>
                 <pre>  url: https://example.com</pre>
-                Expires at 12:05
                 Reply /approve_abc234 or /deny_abc234""");
     }
 
@@ -171,11 +166,11 @@ class ApprovalMessagesTest {
 
     @ParameterizedTest
     @EnumSource(ApprovalFormat.class)
-    void everyChannelShowsTheCommandsAndTheExpiry(ApprovalFormat format) {
+    void everyChannelShowsTheCommands(ApprovalFormat format) {
         String message = messages.request(request("fetchPage", json(Map.of("url", "https://example.com"))),
                 "abc234", format);
 
-        assertThat(message.replace("\\", "")).contains("/approve_abc234").contains("/deny_abc234").contains("12:05");
+        assertThat(message.replace("\\", "")).contains("/approve_abc234").contains("/deny_abc234");
     }
 
     // -----------------------------------------------------------------------
@@ -190,8 +185,8 @@ class ApprovalMessagesTest {
                 .isEqualTo("✅ Approved: running fetchPage. (abc234)");
         assertThat(messages.outcome(request, "abc234", Denial.NOT_APPROVED, ApprovalFormat.TELEGRAM_HTML))
                 .isEqualTo("❌ The user did not approve this action. (abc234)");
-        assertThat(messages.outcome(request, "abc234", Denial.TIMED_OUT, ApprovalFormat.TELEGRAM_HTML))
-                .isEqualTo("❌ No approval was given in time. (abc234)");
+        assertThat(messages.outcome(request, "abc234", Denial.MOVED_ON, ApprovalFormat.TELEGRAM_HTML))
+                .isEqualTo("❌ The user moved on without approving. (abc234)");
     }
 
     // -----------------------------------------------------------------------
@@ -202,7 +197,7 @@ class ApprovalMessagesTest {
 
     private static ApprovalRequest request(String tool, String arguments) {
         return new ApprovalRequest("call-1", "call-1", "telegram-42", tool, arguments, "hash",
-                List.of(ApprovalDecision.ALLOW_ONCE, ApprovalDecision.DENY), NOW.plusSeconds(300));
+                List.of(ApprovalDecision.ALLOW_ONCE, ApprovalDecision.DENY));
     }
 
     private static String json(Map<String, ?> args) {

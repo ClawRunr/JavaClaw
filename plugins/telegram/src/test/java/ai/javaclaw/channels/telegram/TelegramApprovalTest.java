@@ -89,7 +89,7 @@ class TelegramApprovalTest {
         // Only the request and mallory's rejection
         assertThat(sent).hasSize(2);
         assertThat(fixture.toolRuns()).isEmpty();
-        assertThat(fixture.pending().pendingFor("telegram-42")).isNotEmpty();
+        assertThat(fixture.agent().waitingForApproval("telegram-42")).isNotEmpty();
 
         channel.consume(update("owner", "/deny_" + id));
         await(() -> sent.size() == 4);
@@ -102,9 +102,9 @@ class TelegramApprovalTest {
 
         await(() -> !sent.isEmpty());
         assertThat(sent).singleElement().satisfies(message -> assertThat(message.getText())
-                .isEqualTo("Not done: The user did not approve this action."));
+                .isEqualTo("Not done: No one could be asked to approve this action here, so it was not run."));
         assertThat(fixture.toolRuns()).isEmpty();
-        assertThat(fixture.pending().pendingFor("telegram-42")).isEmpty();
+        assertThat(fixture.agent().waitingForApproval("telegram-42")).isEmpty();
     }
 
     private TelegramChannel channel() {

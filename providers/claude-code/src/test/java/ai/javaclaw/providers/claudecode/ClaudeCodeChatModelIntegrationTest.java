@@ -1,12 +1,13 @@
 package ai.javaclaw.providers.claudecode;
 
+import ai.javaclaw.agent.Agent.DecisionResult;
+import ai.javaclaw.agent.AgentEvent;
+import ai.javaclaw.agent.DefaultAgent;
 import ai.javaclaw.approval.ApprovalDecision;
-import ai.javaclaw.approval.ApprovalGate;
-import ai.javaclaw.approval.ApprovalListener;
+import ai.javaclaw.approval.ApprovalPolicy;
 import ai.javaclaw.approval.ApprovalProperties;
 import ai.javaclaw.approval.ApprovalRequest;
-import ai.javaclaw.approval.ApprovalTurn;
-import ai.javaclaw.approval.PendingApprovals;
+import ai.javaclaw.approval.Denial;
 import ai.javaclaw.providers.claudecode.FakeAnthropicUpstream.Mode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,14 +22,12 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
-import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.function.FunctionToolCallback;
 import reactor.core.Disposable;
 import tools.jackson.databind.JsonNode;
 
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -165,67 +164,52 @@ class ClaudeCodeChatModelIntegrationTest {
     }
 
     @Test
-    void toolCallsFromClaudeCodeGoThroughTheApprovalGate() throws Exception {
+    void aClaudeCodeToolCallIsDeniedWhenNobodyCanApproveIt() throws Exception {
         try (FakeAnthropicUpstream upstream = new FakeAnthropicUpstream(Mode.TOOL, Mode.TEXT)) {
-            ChatClient client = ChatClient.builder(model(upstream))
-                    .defaultAdvisors(gatedToolCallingAdvisor(new PendingApprovals()))
-                    .defaultTools(readFile)
-                    .build();
-
-            // No turn that can ask: read_file is unclassified, so it needs approval and is refused
-            String answer = client.prompt("Read the fixture").call().content();
+            // No one to ask: read_file is not in allow, so it is denied and the turn finishes
+            String answer = agent(upstream).respondTo("task-1", "Read the fixture");
 
             assertThat(answer).isEqualTo(FakeAnthropicUpstream.TEXT);
             assertThat(toolInvocations).isEmpty();
             assertThat(FakeAnthropicUpstream.blocks(upstream.bodies.get(1))).anySatisfy(block -> {
                 assertThat(block.get("type").stringValue()).isEqualTo("tool_result");
-                assertThat(block.get("content").toString()).contains("The user did not approve this action.");
+                assertThat(block.get("content").toString()).contains(Denial.NOBODY_TO_ASK.message());
             });
         }
     }
 
     @Test
-    void aClaudeCodeToolCallRunsOnlyOnceApproved() throws Exception {
+    void aClaudeCodeToolCallPausesAndRunsOnlyOnceApproved() throws Exception {
         try (FakeAnthropicUpstream upstream = new FakeAnthropicUpstream(Mode.TOOL, Mode.TEXT)) {
-            PendingApprovals pending = new PendingApprovals();
-            List<ApprovalRequest> requests = new CopyOnWriteArrayList<>();
-            ApprovalTurn turn = new ApprovalTurn("web", _ -> true, new ApprovalListener() {
-                @Override
-                public void requested(ApprovalRequest request) {
-                    requests.add(request);
-                }
+            List<AgentEvent> events = new CopyOnWriteArrayList<>();
+            DefaultAgent agent = agent(upstream);
 
-                @Override
-                public void resolved(ApprovalOutcome outcome) {
-                }
-            });
-            ChatClient client = ChatClient.builder(model(upstream))
-                    .defaultAdvisors(gatedToolCallingAdvisor(pending))
-                    .defaultTools(readFile)
-                    .build();
+            agent.respondTo("web", "Read the fixture", events::add, _ -> true);
 
-            var answer = java.util.concurrent.CompletableFuture.supplyAsync(() ->
-                    client.prompt("Read the fixture").toolContext(turn.toolContext()).call().content());
-            long deadline = System.currentTimeMillis() + 60_000;
-            while (requests.isEmpty() && System.currentTimeMillis() < deadline) {
-                Thread.sleep(50);
-            }
-            assertThat(requests).singleElement().satisfies(r -> assertThat(r.toolName()).isEqualTo("read_file"));
+            ApprovalRequest request = events.stream().filter(AgentEvent.ApprovalRequested.class::isInstance)
+                    .map(e -> ((AgentEvent.ApprovalRequested) e).request()).findFirst().orElseThrow();
+            assertThat(request.toolName()).isEqualTo("read_file");
             assertThat(toolInvocations).isEmpty();
+            assertThat(upstream.requests()).isEqualTo(1);
 
-            ApprovalRequest request = requests.getFirst();
-            assertThat(pending.decide("web", request.approvalId(), request.argumentsHash(), ApprovalDecision.ALLOW_ONCE)).isTrue();
+            assertThat(agent.decide("web", request.approvalId(), request.argumentsHash(), ApprovalDecision.ALLOW_ONCE,
+                    _ -> true, events::add)).isEqualTo(DecisionResult.RESUMED);
 
-            assertThat(answer.get(60, TimeUnit.SECONDS)).isEqualTo(FakeAnthropicUpstream.TEXT);
+            assertThat(events).contains(new AgentEvent.Token(FakeAnthropicUpstream.TEXT));
             assertThat(toolInvocations).containsExactly("fixture.txt");
+            assertThat(FakeAnthropicUpstream.blocks(upstream.bodies.get(1))).anySatisfy(block -> {
+                assertThat(block.get("type").stringValue()).isEqualTo("tool_result");
+                assertThat(block.get("content").toString()).contains("fixture contents");
+            });
         }
     }
 
-    private static ToolCallingAdvisor gatedToolCallingAdvisor(PendingApprovals pending) {
-        ApprovalGate gate = new ApprovalGate(ApprovalProperties.defaults(), pending, Clock.systemUTC());
-        return ToolCallingAdvisor.builder()
-                .toolCallingManager(gate.toolCallingManager(ToolCallingManager.builder().build()))
-                .build();
+    private DefaultAgent agent(FakeAnthropicUpstream upstream) {
+        ApprovalPolicy policy = new ApprovalPolicy(ApprovalProperties.defaults());
+        return new DefaultAgent(ChatClient.builder(model(upstream))
+                .defaultAdvisors(ToolCallingAdvisor.builder().toolCallingManager(policy.toolCallingManager()).build())
+                .defaultTools(readFile)
+                .build(), policy);
     }
 
     @Test

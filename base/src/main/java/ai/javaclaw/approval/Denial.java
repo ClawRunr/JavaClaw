@@ -6,10 +6,12 @@ package ai.javaclaw.approval;
  */
 public enum Denial {
 
-    /** Denied, or nobody could be asked. */
+    /** The owner denied it. */
     NOT_APPROVED("The user did not approve this action."),
-    /** Nobody answered within {@code agent.approval.timeout}. */
-    TIMED_OUT("No approval was given in time.");
+    /** A new message arrived while the call was still waiting. */
+    MOVED_ON("The user moved on without approving."),
+    /** Nobody can answer here: a scheduled task, a group chat, or a client that cannot ask. */
+    NOBODY_TO_ASK("No one could be asked to approve this action here, so it was not run.");
 
     private final String message;
 

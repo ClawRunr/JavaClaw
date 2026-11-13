@@ -4,7 +4,6 @@ import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentEvent;
 
 import java.util.function.Consumer;
-import ai.javaclaw.approval.PendingApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.chat.ChatChannel;
 import org.junit.jupiter.api.Test;
@@ -108,11 +107,6 @@ class ChatStreamingIntegrationTest {
         @Bean
         ObjectMapper objectMapper() {
             return new ObjectMapper();
-        }
-
-        @Bean
-        PendingApprovals pendingApprovals() {
-            return new PendingApprovals();
         }
 
         @Bean

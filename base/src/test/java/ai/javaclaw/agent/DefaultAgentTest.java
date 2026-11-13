@@ -1,7 +1,5 @@
 package ai.javaclaw.agent;
 
-import ai.javaclaw.approval.ApprovalTurn;
-import ai.javaclaw.approval.HumanQuestionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -9,15 +7,20 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,42 +41,28 @@ class DefaultAgentTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         agent = new DefaultAgent(chatClient);
-        when(chatClient.prompt("hello")).thenReturn(requestSpec);
-        when(requestSpec.toolContext(any(Map.class))).thenReturn(requestSpec);
+        when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.messages(anyList())).thenReturn(requestSpec);
         when(requestSpec.advisors(any(Consumer.class))).thenReturn(requestSpec);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theQuestionIsSentAsTheUserMessage() {
         when(requestSpec.stream()).thenReturn(streamSpec);
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void everyRequestCarriesTheTurnsApprovalStateToTheToolGate() {
-        when(streamSpec.content()).thenReturn(Flux.just("ok"));
-        HumanQuestionHandler questions = _ -> true;
-
-        agent.respondTo("web", "hello", events::add, questions);
-
-        ArgumentCaptor<Map<String, Object>> toolContext = ArgumentCaptor.forClass(Map.class);
-        verify(requestSpec).toolContext(toolContext.capture());
-        ApprovalTurn turn = ApprovalTurn.from(toolContext.getValue()).orElseThrow();
-        assertThat(turn.conversationId()).isEqualTo("web");
-        assertThat(turn.questions()).contains(questions);
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void aTurnWithoutAQuestionHandlerCannotAsk() {
-        when(streamSpec.content()).thenReturn(Flux.just("ok"));
+        when(streamSpec.chatResponse()).thenReturn(Flux.just(text("ok")));
 
         agent.respondTo("web", "hello", events::add);
 
-        ArgumentCaptor<Map<String, Object>> toolContext = ArgumentCaptor.forClass(Map.class);
-        verify(requestSpec).toolContext(toolContext.capture());
-        assertThat(ApprovalTurn.from(toolContext.getValue()).orElseThrow().questions()).isEmpty();
+        ArgumentCaptor<List<Message>> messages = ArgumentCaptor.forClass(List.class);
+        verify(requestSpec).messages(messages.capture());
+        assertThat(messages.getValue()).containsExactly(new UserMessage("hello"));
     }
 
     @Test
     void reportsEachTokenAndCompletionToListener() {
-        when(streamSpec.content()).thenReturn(Flux.just("Hello ", "world"));
+        when(requestSpec.stream()).thenReturn(streamSpec);
+        when(streamSpec.chatResponse()).thenReturn(Flux.just(text("Hello "), text("world")));
 
         agent.respondTo("web", "hello", events::add);
 
@@ -85,8 +74,9 @@ class DefaultAgentTest {
 
     @Test
     void reportsErrorAndReturnsPartialResponseWhenStreamFails() {
-        when(streamSpec.content()).thenReturn(Flux.concat(
-                Flux.just("Hello "),
+        when(requestSpec.stream()).thenReturn(streamSpec);
+        when(streamSpec.chatResponse()).thenReturn(Flux.concat(
+                Flux.just(text("Hello ")),
                 Flux.error(new RuntimeException("boom"))));
 
         agent.respondTo("web", "hello", events::add);
@@ -98,14 +88,27 @@ class DefaultAgentTest {
 
     @Test
     void fallsBackToBlockingCallWhenModelDoesNotSupportStreaming() {
-        when(streamSpec.content()).thenReturn(Flux.error(new UnsupportedOperationException("streaming is not supported")));
+        when(requestSpec.stream()).thenReturn(streamSpec);
+        when(streamSpec.chatResponse()).thenReturn(Flux.error(new UnsupportedOperationException("streaming is not supported")));
         when(requestSpec.call()).thenReturn(callSpec);
-        when(callSpec.content()).thenReturn("full response");
+        when(callSpec.chatResponse()).thenReturn(text("full response"));
 
         agent.respondTo("web", "hello", events::add);
 
         assertThat(events).containsExactly(
                 new AgentEvent.Token("full response"),
                 new AgentEvent.Done());
+    }
+
+    @Test
+    void aBlockingAnswerReturnsTheText() {
+        when(requestSpec.call()).thenReturn(callSpec);
+        when(callSpec.chatResponse()).thenReturn(text("full response"));
+
+        assertThat(agent.respondTo("web", "hello")).isEqualTo("full response");
+    }
+
+    private static ChatResponse text(String text) {
+        return new ChatResponse(List.of(new Generation(new AssistantMessage(text))));
     }
 }

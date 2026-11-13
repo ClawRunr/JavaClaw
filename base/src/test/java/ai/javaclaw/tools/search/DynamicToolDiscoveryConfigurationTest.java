@@ -1,7 +1,7 @@
 package ai.javaclaw.tools.search;
 
-import ai.javaclaw.approval.ApprovalGate;
-import ai.javaclaw.approval.ApprovalGateFixtures;
+import ai.javaclaw.approval.ApprovalFixtures;
+import ai.javaclaw.approval.ApprovalPolicy;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
 import org.springframework.ai.tool.toolsearch.ToolIndex;
@@ -13,7 +13,7 @@ class DynamicToolDiscoveryConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withUserConfiguration(DynamicToolDiscoveryConfiguration.class)
-            .withBean(ApprovalGate.class, ApprovalGateFixtures::defaultGate);
+            .withBean(ApprovalPolicy.class, ApprovalFixtures::defaultPolicy);
 
     @Test
     void whenPropertyIsMissing_defaultsToEnabled() {

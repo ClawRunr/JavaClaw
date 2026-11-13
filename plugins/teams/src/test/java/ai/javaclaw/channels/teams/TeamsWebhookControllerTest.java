@@ -1,7 +1,6 @@
 package ai.javaclaw.channels.teams;
 
 import ai.javaclaw.agent.Agent;
-import ai.javaclaw.approval.PendingApprovals;
 import ai.javaclaw.channels.ChannelApprovals;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.Test;
@@ -51,7 +50,7 @@ class TeamsWebhookControllerTest {
         // Most tests send "Bearer t"; lenient, because tests without a Bearer header never reach the validator
         lenient().when(jwtValidator.isValid("t", SERVICE_URL)).thenReturn(true);
         return new TeamsWebhookController(properties, channelRegistry,
-                new ChannelApprovals(agent, new PendingApprovals()), channel, jwtValidator);
+                new ChannelApprovals(agent), channel, jwtValidator);
     }
 
     // -----------------------------------------------------------------------

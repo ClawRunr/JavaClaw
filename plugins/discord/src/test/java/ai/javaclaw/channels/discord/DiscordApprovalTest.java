@@ -77,7 +77,7 @@ class DiscordApprovalTest {
         assertThat(sent).contains("I'm sorry, I don't accept instructions from you.");
         assertThat(sent).hasSize(2);
         assertThat(fixture.toolRuns()).isEmpty();
-        assertThat(fixture.pending().pendingFor("discord-D1")).isNotEmpty();
+        assertThat(fixture.agent().waitingForApproval("discord-D1")).isNotEmpty();
 
         channel.onMessageReceived(event("123", "/deny " + id));
         await(() -> sent.size() == 4);
@@ -91,9 +91,9 @@ class DiscordApprovalTest {
 
         await(() -> !sent.isEmpty());
         assertThat(sent).singleElement().asString()
-                .isEqualTo("Not done: The user did not approve this action.");
+                .isEqualTo("Not done: No one could be asked to approve this action here, so it was not run.");
         assertThat(fixture.toolRuns()).isEmpty();
-        assertThat(fixture.pending().pendingFor("discord-D1")).isEmpty();
+        assertThat(fixture.agent().waitingForApproval("discord-D1")).isEmpty();
     }
 
     private MessageReceivedEvent event(String authorId, String content) {

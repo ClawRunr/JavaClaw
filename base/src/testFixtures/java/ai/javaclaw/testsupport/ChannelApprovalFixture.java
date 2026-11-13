@@ -2,9 +2,8 @@ package ai.javaclaw.testsupport;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.DefaultAgent;
-import ai.javaclaw.approval.ApprovalGate;
+import ai.javaclaw.approval.ApprovalPolicy;
 import ai.javaclaw.approval.ApprovalProperties;
-import ai.javaclaw.approval.PendingApprovals;
 import ai.javaclaw.channels.ApprovalMessages;
 import ai.javaclaw.channels.ChannelApprovals;
 import org.springframework.ai.chat.client.ChatClient;
@@ -19,11 +18,9 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
-import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -32,10 +29,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * A real agent behind the real approval gate, for testing the text approval flow end to end
+ * A real agent with the real approval policy, for testing the text approval flow end to end
  * without a language model: the scripted model asks for {@value #TOOL} with {@link #ARGUMENTS}
- * once, then answers with the tool's result ({@code "Done: fetched"}) or the gate's refusal.
- * The tool is not in {@code allow}, so it needs approval.
+ * once, then answers with the tool's result ({@code "Done: fetched"}) or the refusal. The tool is
+ * not in {@code allow}, so the turn pauses on it. Turns and decisions run on the calling thread,
+ * so a test sees the whole exchange when the channel returns.
  */
 public final class ChannelApprovalFixture implements AutoCloseable {
 
@@ -45,40 +43,30 @@ public final class ChannelApprovalFixture implements AutoCloseable {
     public static final String ANSWER = "Done: " + TOOL_RESULT;
     private static final Pattern SHORT_ID = Pattern.compile("/approve(?:\\\\)?_([a-z0-9]{6})");
 
-    private final PendingApprovals pending = new PendingApprovals();
     private final List<String> toolRuns = new CopyOnWriteArrayList<>();
     private final List<String> modelSaw = new CopyOnWriteArrayList<>();
     private final Agent agent;
     private final ChannelApprovals approvals;
 
     public ChannelApprovalFixture() {
-        this(Duration.ofSeconds(30), ARGUMENTS);
+        this(ARGUMENTS);
     }
 
-    /**
-     * @param timeout   how long an approval waits
-     * @param arguments what the model passes to {@value #TOOL}
-     */
-    public ChannelApprovalFixture(Duration timeout, String arguments) {
-        ApprovalGate gate = new ApprovalGate(new ApprovalProperties(timeout, null), pending, Clock.systemUTC());
+    /** @param arguments what the model passes to {@value #TOOL} */
+    public ChannelApprovalFixture(String arguments) {
+        ApprovalPolicy policy = new ApprovalPolicy(ApprovalProperties.defaults());
         this.agent = new DefaultAgent(ChatClient.builder(new ScriptedModel(arguments))
                 .defaultTools(new FetchTool())
                 .defaultAdvisors(ToolCallingAdvisor.builder()
-                        .toolCallingManager(gate.toolCallingManager(ToolCallingManager.builder().build()))
+                        .toolCallingManager(policy.toolCallingManager())
                         .build())
-                .build());
-        this.approvals = new ChannelApprovals(agent, pending);
+                .build(), policy);
+        this.approvals = onCallingThread(agent);
     }
 
-    /**
-     * Approvals whose turns run on the calling thread, so a test sees the whole exchange when the
-     * channel returns. Only for turns that never wait for an approval: one that did would block the
-     * thread its answer has to arrive on.
-     */
+    /** Approvals whose turns and decisions run on the calling thread. */
     public static ChannelApprovals onCallingThread(Agent agent) {
-        return new ChannelApprovals(agent, new PendingApprovals(),
-                new ApprovalMessages(Clock.systemDefaultZone()),
-                Clock.systemDefaultZone(), Runnable::run);
+        return new ChannelApprovals(agent, new ApprovalMessages(), Runnable::run);
     }
 
     public Agent agent() {
@@ -87,10 +75,6 @@ public final class ChannelApprovalFixture implements AutoCloseable {
 
     public ChannelApprovals approvals() {
         return approvals;
-    }
-
-    public PendingApprovals pending() {
-        return pending;
     }
 
     /** The arguments of every run of {@value #TOOL}. */
