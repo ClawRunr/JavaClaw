@@ -9,6 +9,7 @@ import ai.javaclaw.tools.AgentEnvironment;
 import ai.javaclaw.tools.AutoDiscoveredTool;
 import ai.javaclaw.tools.CheckListTool;
 import ai.javaclaw.tools.McpTool;
+import ai.javaclaw.tools.ToolCallingManagers;
 import ai.javaclaw.tools.JavaClawTaskTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -101,7 +102,9 @@ public class MainChatClientProvider {
             String agentPrompt = readSystemPrompt();
             ToolCallingAdvisor toolCallAdvisor = toolSearchAdvisorProvider.getIfAvailable();
             if (toolCallAdvisor == null) {
-                toolCallAdvisor = ToolCallingAdvisor.builder().build();
+                toolCallAdvisor = ToolCallingAdvisor.builder()
+                        .toolCallingManager(ToolCallingManagers.unlimited())
+                        .build();
             }
 
             builder.defaultAdvisors(new SimpleLoggerAdvisor())

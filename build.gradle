@@ -23,7 +23,9 @@ allprojects {
 configure(subprojects.findAll { it.buildFile.exists() }) {
     plugins.withType(JavaPlugin).configureEach {
         dependencies {
-            implementation(platform(libs.bom.spring.boot))
+            // enforcedPlatform: Spring AI 2.1 is built on Boot 4.2 and its starters pull in Boot 4.2 /
+            // Framework 7.1 modules transitively; keep every Spring module on our Boot line.
+            implementation(enforcedPlatform(libs.bom.spring.boot))
             implementation(platform(libs.bom.spring.ai))
             implementation(platform(libs.bom.spring.modulith))
 
