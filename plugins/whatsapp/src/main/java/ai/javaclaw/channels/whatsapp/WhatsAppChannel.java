@@ -1,6 +1,8 @@
 package ai.javaclaw.channels.whatsapp;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
@@ -58,7 +60,7 @@ public class WhatsAppChannel implements Channel {
     void onMessage(String fromJidId, String message) {
         channelRegistry.publishMessageReceivedEvent(new WhatsAppChannelMessageReceivedEvent(getName(), message, fromJidId));
         try {
-            whatsApp.sendMessage(agent.respondTo(fromJidId, message));
+            whatsApp.sendMessage(agent.respondTo(AgentRequest.chat(fromJidId, SessionChannel.WHATSAPP, message)));
         } catch (RuntimeException e) {
             LOGGER.error("Failed to handle WhatsApp message for chat '{}'", fromJidId, e);
         }

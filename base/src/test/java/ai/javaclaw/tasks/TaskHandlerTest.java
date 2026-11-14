@@ -1,6 +1,9 @@
 package ai.javaclaw.tasks;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.SessionChannel;
+import ai.javaclaw.agent.SessionKind;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.tasks.TaskHandler.TaskResult;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,7 +21,7 @@ import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -45,21 +48,22 @@ class TaskHandlerTest {
     // -----------------------------------------------------------------------
     // The conversation id the agent is called with
     //
-    // A task's id is the absolute path of its markdown file. Handing that to
-    // the agent as a conversation id makes the memory repository resolve
-    // conversations/chat-<absolute path>.yaml, which spreads one file per task
-    // across a directory tree mirroring the filesystem.
+    // A task's id is the absolute path of its markdown file: machine-specific
+    // and unreadable as a conversation id in the conversation list.
     // -----------------------------------------------------------------------
 
     @Test
     void callsTheAgentWithAConversationIdThatIsNotTheTaskFilePath() {
         Task task = givenATodoTask("Buy milk");
-        when(agentMock.prompt(anyString(), anyString(), eq(TaskResult.class)))
+        when(agentMock.prompt(any(AgentRequest.class), eq(TaskResult.class)))
                 .thenReturn(new TaskResult(Task.Status.completed, "done"));
 
         taskHandler.executeTask(task.getId());
 
-        assertThat(conversationIdPassedToAgent())
+        AgentRequest request = requestPassedToAgent();
+        assertThat(request.kind()).isEqualTo(SessionKind.TASK);
+        assertThat(request.channel()).isEqualTo(SessionChannel.INTERNAL);
+        assertThat(request.conversationId())
                 .isNotEqualTo(task.getId())
                 .doesNotContain("/")
                 .doesNotContain("\\")
@@ -69,7 +73,7 @@ class TaskHandlerTest {
     @Test
     void derivesTheConversationIdFromTheTasksDateDirectoryAndFileName() {
         Task task = givenATodoTask("Buy milk");
-        when(agentMock.prompt(anyString(), anyString(), eq(TaskResult.class)))
+        when(agentMock.prompt(any(AgentRequest.class), eq(TaskResult.class)))
                 .thenReturn(new TaskResult(Task.Status.completed, "done"));
 
         taskHandler.executeTask(task.getId());
@@ -77,14 +81,13 @@ class TaskHandlerTest {
         Path taskFile = Path.of(task.getId());
         String dateDirectory = taskFile.getParent().getFileName().toString();
         String fileName = taskFile.getFileName().toString().replace(".md", "");
-        assertThat(conversationIdPassedToAgent()).isEqualTo("task-" + dateDirectory + "-" + fileName);
+        assertThat(requestPassedToAgent().conversationId()).isEqualTo("task-" + dateDirectory + "-" + fileName);
     }
 
-    private String conversationIdPassedToAgent() {
-        ArgumentCaptor<String> conversationId = ArgumentCaptor.forClass(String.class);
-        org.mockito.Mockito.verify(agentMock)
-                .prompt(conversationId.capture(), anyString(), eq(TaskResult.class));
-        return conversationId.getValue();
+    private AgentRequest requestPassedToAgent() {
+        ArgumentCaptor<AgentRequest> request = ArgumentCaptor.forClass(AgentRequest.class);
+        org.mockito.Mockito.verify(agentMock).prompt(request.capture(), eq(TaskResult.class));
+        return request.getValue();
     }
 
     private Task givenATodoTask(String name) {

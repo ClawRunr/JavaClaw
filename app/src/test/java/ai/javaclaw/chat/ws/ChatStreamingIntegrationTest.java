@@ -2,13 +2,14 @@ package ai.javaclaw.chat.ws;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentEvent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatHistory;
 
 import java.util.function.Consumer;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.chat.ChatChannel;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.memory.ChatMemoryRepository;
-import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
+import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -111,27 +112,27 @@ class ChatStreamingIntegrationTest {
         }
 
         @Bean
-        ChatMemoryRepository chatMemoryRepository() {
-            return new InMemoryChatMemoryRepository();
+        ChatHistory chatHistory() {
+            return Mockito.mock(ChatHistory.class);
         }
 
         @Bean
         Agent agent() {
             return new Agent() {
                 @Override
-                public String respondTo(String conversationId, String question) {
+                public String respondTo(AgentRequest request) {
                     return "Hello world";
                 }
 
                 @Override
-                public void respondTo(String conversationId, String question, Consumer<AgentEvent> events) {
+                public void respondTo(AgentRequest request, Consumer<AgentEvent> events) {
                     events.accept(new AgentEvent.Token("Hello "));
                     events.accept(new AgentEvent.Token("world"));
                     events.accept(new AgentEvent.Done());
                 }
 
                 @Override
-                public <T> T prompt(String conversationId, String input, Class<T> result) {
+                public <T> T prompt(AgentRequest request, Class<T> result) {
                     return null;
                 }
             };

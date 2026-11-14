@@ -42,7 +42,7 @@ class DefaultAgentTest {
     void reportsEachTokenAndCompletionToListener() {
         when(streamSpec.content()).thenReturn(Flux.just("Hello ", "world"));
 
-        agent.respondTo("web", "hello", events::add);
+        agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"), events::add);
 
         assertThat(events).containsExactly(
                 new AgentEvent.Token("Hello "),
@@ -56,7 +56,7 @@ class DefaultAgentTest {
                 Flux.just("Hello "),
                 Flux.error(new RuntimeException("boom"))));
 
-        agent.respondTo("web", "hello", events::add);
+        agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"), events::add);
 
         assertThat(events).containsExactly(
                 new AgentEvent.Token("Hello "),
@@ -69,7 +69,7 @@ class DefaultAgentTest {
         when(requestSpec.call()).thenReturn(callSpec);
         when(callSpec.content()).thenReturn("full response");
 
-        agent.respondTo("web", "hello", events::add);
+        agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"), events::add);
 
         assertThat(events).containsExactly(
                 new AgentEvent.Token("full response"),

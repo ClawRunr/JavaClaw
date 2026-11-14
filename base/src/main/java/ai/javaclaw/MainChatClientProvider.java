@@ -21,12 +21,12 @@ import org.springaicommunity.agent.tools.task.TaskTool;
 import org.springaicommunity.agent.tools.task.claude.ClaudeSubagentReferences;
 import org.springaicommunity.agent.tools.task.claude.ClaudeSubagentType;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
-import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
+import org.springframework.ai.session.SessionService;
+import org.springframework.ai.session.advisor.SessionAdvisors;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -55,7 +55,7 @@ public class MainChatClientProvider {
     private static final String DEFAULT = LlmProviderProperties.DEFAULT_PROVIDER_NAME;
 
     private final ChatClientRegistry registry;
-    private final ChatMemory chatMemory;
+    private final SessionService sessionService;
     private final ObjectProvider<ToolSearchToolCallingAdvisor> toolSearchAdvisorProvider;
     private final SyncMcpToolCallbackProvider mcpToolProvider;
     private final TaskManager taskManager;
@@ -68,7 +68,7 @@ public class MainChatClientProvider {
     private final ChatClient chatClient;
 
     public MainChatClientProvider(ChatClientRegistry registry,
-                                  ChatMemory chatMemory,
+                                  SessionService sessionService,
                                   ObjectProvider<ToolSearchToolCallingAdvisor> toolSearchAdvisorProvider,
                                   SyncMcpToolCallbackProvider mcpToolProvider,
                                   TaskManager taskManager,
@@ -78,7 +78,7 @@ public class MainChatClientProvider {
                                   @Value("${agent.workspace:Unknown}") Resource workspace,
                                   @Value("${agent.skills.paths}") List<Resource> skillPaths) {
         this.registry = registry;
-        this.chatMemory = chatMemory;
+        this.sessionService = sessionService;
         this.toolSearchAdvisorProvider = toolSearchAdvisorProvider;
         this.mcpToolProvider = mcpToolProvider;
         this.taskManager = taskManager;
@@ -120,7 +120,10 @@ public class MainChatClientProvider {
                             McpTool.builder().configurationManager(configurationManager).build(),
                             FileSystemTools.builder().build(),
                             SmartWebFetchTool.builder(registry.getOrDefault(DEFAULT)).build())
-                    .defaultAdvisors(toolCallAdvisor, MessageChatMemoryAdvisor.builder(chatMemory).build());
+                    .defaultAdvisors(toolCallAdvisor)
+                    // The turn advisor wraps the tool loop; the memory advisor runs inside it, so every
+                    // round's tool calls and results are stored
+                    .defaultAdvisors(SessionAdvisors.builder(sessionService).build());
 
             ToolCallback subagentTaskTool = buildSubagentTaskTool();
             if (subagentTaskTool != null) {

@@ -1,6 +1,9 @@
 package ai.javaclaw.tasks;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.SessionChannel;
+import ai.javaclaw.agent.SessionKind;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.jobrunr.jobs.annotations.Job;
@@ -21,7 +24,6 @@ public class TaskHandler {
 
     private static final Logger LOGGER = new JobRunrDashboardLogger(LoggerFactory.getLogger(TaskHandler.class));
 
-    private static final String CONVERSATION_ID_PREFIX = "task-";
     private static final String TASK_FILE_EXTENSION = ".md";
     /** The character set task file names are already restricted to by {@code FileSystemTaskRepository}. */
     private static final Pattern UNSAFE_CHARACTERS = Pattern.compile("[^a-zA-Z0-9._-]");
@@ -49,7 +51,8 @@ public class TaskHandler {
         try {
             LOGGER.info("Starting task: {}", task.getName());
             String agentInput = formatTaskForAgent(inProgress);
-            TaskResult result = agent.prompt(getConversationId(taskId), agentInput, TaskResult.class);
+            TaskResult result = agent.prompt(new AgentRequest(getConversationId(taskId), SessionKind.TASK, SessionChannel.INTERNAL, agentInput),
+                    TaskResult.class);
             taskRepository.save(inProgress.withFeedback(result.feedback()).withStatus(result.newStatus()));
             notifyUser(task.getName(), result);
             LOGGER.info("Finished task: {} with status {}", task.getName(), result.newStatus());
@@ -76,13 +79,10 @@ public class TaskHandler {
     }
 
     /**
-     * Derives the conversation id used for a task's chat memory.
+     * Derives the conversation id, and so the session, a task runs in.
      *
-     * <p>A task's id is the absolute path of its markdown file. Passed straight through it reaches
-     * {@code FileSystemChatMemoryRepository}, which resolves {@code conversations/chat-{id}.yaml} -
-     * so each task creates a directory tree mirroring its own location on disk instead of a single
-     * conversation file, never appears in the conversation list, and on Windows is rejected outright
-     * because of the colon in the drive letter.
+     * <p>A task's id is the absolute path of its markdown file: machine-specific, unreadable in the
+     * conversation list, and as a session id limited to 255 characters.
      *
      * <p>The last two path segments carry everything needed: tasks are stored as
      * {@code {date}/{time}-{name}.md} and recurring ones as {@code recurring/{name}.md}, so the pair
@@ -111,7 +111,7 @@ public class TaskHandler {
             throw new IllegalArgumentException("Cannot derive a conversation id from a task id that names no file");
         }
 
-        return sanitize(CONVERSATION_ID_PREFIX + (group.isBlank() ? name : group + "-" + name));
+        return sanitize(SessionKind.TASK_ID_PREFIX + (group.isBlank() ? name : group + "-" + name));
     }
 
     private static String removeExtension(String fileName) {

@@ -1,6 +1,8 @@
 package ai.javaclaw.channels.whatsapp;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.channels.whatsapp.WhatsAppChannel.WhatsAppChannelMessageReceivedEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,7 +78,7 @@ class WhatsAppChannelTest {
 
     @Test
     void answersWhatTheAgentReplies() {
-        when(agent.respondTo(ALLOWED_JID, "hello")).thenReturn("hi there");
+        when(agent.respondTo(AgentRequest.chat(ALLOWED_JID, SessionChannel.WHATSAPP, "hello"))).thenReturn("hi there");
 
         channel.onMessage(ALLOWED_JID, "hello");
 
@@ -85,7 +87,7 @@ class WhatsAppChannelTest {
 
     @Test
     void publishesAnEventNamingTheChatAsTheConversation() {
-        when(agent.respondTo(ALLOWED_JID, "hello")).thenReturn("hi there");
+        when(agent.respondTo(AgentRequest.chat(ALLOWED_JID, SessionChannel.WHATSAPP, "hello"))).thenReturn("hi there");
 
         channel.onMessage(ALLOWED_JID, "hello");
 
@@ -101,7 +103,7 @@ class WhatsAppChannelTest {
     void publishesTheEventBeforeAskingTheAgent() {
         // The agent turn takes seconds; the registry has to know which channel is live before then,
         // or a task finishing mid-turn would have its reply routed somewhere else.
-        when(agent.respondTo(ALLOWED_JID, "hello")).thenAnswer(invocation -> {
+        when(agent.respondTo(AgentRequest.chat(ALLOWED_JID, SessionChannel.WHATSAPP, "hello"))).thenAnswer(invocation -> {
             verify(channelRegistry).publishMessageReceivedEvent(any());
             return "hi there";
         });
@@ -113,7 +115,7 @@ class WhatsAppChannelTest {
 
     @Test
     void swallowsAgentFailures() {
-        when(agent.respondTo(ALLOWED_JID, "hello")).thenThrow(new RuntimeException("boom"));
+        when(agent.respondTo(AgentRequest.chat(ALLOWED_JID, SessionChannel.WHATSAPP, "hello"))).thenThrow(new RuntimeException("boom"));
 
         channel.onMessage(ALLOWED_JID, "hello");
 

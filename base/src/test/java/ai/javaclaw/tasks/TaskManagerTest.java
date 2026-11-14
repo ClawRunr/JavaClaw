@@ -1,6 +1,7 @@
 package ai.javaclaw.tasks;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.SessionKind;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.tasks.Task.Status;
 import ai.javaclaw.tasks.TaskHandler.TaskResult;
@@ -28,8 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.jobrunr.server.BackgroundJobServerConfiguration.usingStandardBackgroundJobServerConfiguration;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -71,7 +71,8 @@ class TaskManagerTest {
         when(taskRepositoryMock.save(any(Task.class))).thenReturn(saved);
         when(taskRepositoryMock.getTaskById("some-id")).thenReturn(saved);
         // The agent is called with the task's conversation id, not with the task id itself
-        when(agentMock.prompt(eq("task-some-id"), anyString(), any())).thenReturn(new TaskResult(Status.completed, "All mail was summarized!"));
+        when(agentMock.prompt(argThat(request -> request.conversationId().equals("task-some-id")
+                && request.kind() == SessionKind.TASK), any())).thenReturn(new TaskResult(Status.completed, "All mail was summarized!"));
 
         taskManager.create("handle-email", "Process unread email messages");
 

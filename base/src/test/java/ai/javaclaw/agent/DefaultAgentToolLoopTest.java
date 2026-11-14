@@ -32,7 +32,7 @@ class DefaultAgentToolLoopTest {
 
     @Test
     void reportsToolCallAndResultBetweenTheTokensOfAStreamedAnswer() {
-        agentFor(new WeatherModel(true)).respondTo("web", "Weather in Paris?", events::add);
+        agentFor(new WeatherModel(true)).respondTo(AgentRequest.chat("web", SessionChannel.WEB, "Weather in Paris?"), events::add);
 
         assertThat(events).containsExactly(
                 new AgentEvent.Token("Let me check. "),
@@ -45,7 +45,7 @@ class DefaultAgentToolLoopTest {
 
     @Test
     void reportsToolCallAndResultWhenTheModelCannotStream() {
-        agentFor(new WeatherModel(false)).respondTo("web", "Weather in Paris?", events::add);
+        agentFor(new WeatherModel(false)).respondTo(AgentRequest.chat("web", SessionChannel.WEB, "Weather in Paris?"), events::add);
 
         assertThat(events).containsExactly(
                 new AgentEvent.ToolCall("call-1", "weather", WEATHER_ARGS),

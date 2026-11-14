@@ -2,13 +2,15 @@ package ai.javaclaw.chat;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentEvent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatHistory;
+import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.web.socket.TextMessage;
@@ -28,13 +30,13 @@ import static org.mockito.Mockito.*;
 class ChatChannelTest {
 
     @Mock Agent agent;
-    @Mock ChatMemoryRepository chatMemoryRepository;
+    @Mock ChatHistory chatHistory;
 
     ChatChannel chatChannel;
 
     @BeforeEach
     void setUp() {
-        chatChannel = new ChatChannel(agent, new ChannelRegistry(), chatMemoryRepository, new ObjectMapper());
+        chatChannel = new ChatChannel(agent, new ChannelRegistry(), chatHistory, new ObjectMapper());
     }
 
     // -----------------------------------------------------------------------
@@ -43,7 +45,7 @@ class ChatChannelTest {
 
     @Test
     void conversationIdsAlwaysContainsWebFirst() {
-        when(chatMemoryRepository.findConversationIds()).thenReturn(List.of("telegram-42", "web"));
+        when(chatHistory.conversationIds()).thenReturn(List.of("telegram-42", "web"));
 
         List<String> ids = chatChannel.conversationIds();
 
@@ -52,7 +54,7 @@ class ChatChannelTest {
 
     @Test
     void conversationIdsIncludesWebEvenWhenRepositoryReturnsEmpty() {
-        when(chatMemoryRepository.findConversationIds()).thenReturn(List.of());
+        when(chatHistory.conversationIds()).thenReturn(List.of());
 
         List<String> ids = chatChannel.conversationIds();
 
@@ -61,7 +63,7 @@ class ChatChannelTest {
 
     @Test
     void conversationIdsIncludesOtherChannelsAfterWeb() {
-        when(chatMemoryRepository.findConversationIds()).thenReturn(List.of("telegram-42", "telegram-99"));
+        when(chatHistory.conversationIds()).thenReturn(List.of("telegram-42", "telegram-99"));
 
         List<String> ids = chatChannel.conversationIds();
 
@@ -70,7 +72,7 @@ class ChatChannelTest {
 
     @Test
     void conversationIdsDeduplicatesWeb() {
-        when(chatMemoryRepository.findConversationIds()).thenReturn(List.of("web", "telegram-42"));
+        when(chatHistory.conversationIds()).thenReturn(List.of("web", "telegram-42"));
 
         List<String> ids = chatChannel.conversationIds();
 
@@ -83,7 +85,7 @@ class ChatChannelTest {
 
     @Test
     void loadHistoryReturnsWelcomeBubbleWhenNoHistory() {
-        when(chatMemoryRepository.findByConversationId("web")).thenReturn(List.of());
+        when(chatHistory.messages("web")).thenReturn(List.of());
 
         List<String> bubbles = chatChannel.loadHistoryAsHtml("web");
 
@@ -93,7 +95,7 @@ class ChatChannelTest {
 
     @Test
     void loadHistoryRendersUserAndAgentBubbles() {
-        when(chatMemoryRepository.findByConversationId("web")).thenReturn(List.of(
+        when(chatHistory.messages("web")).thenReturn(List.of(
                 new UserMessage("Hello"),
                 new AssistantMessage("Hi there")
         ));
@@ -107,7 +109,7 @@ class ChatChannelTest {
 
     @Test
     void loadHistoryEscapesHtmlInMessages() {
-        when(chatMemoryRepository.findByConversationId("web")).thenReturn(List.of(
+        when(chatHistory.messages("web")).thenReturn(List.of(
                 new UserMessage("<script>alert('xss')</script>")
         ));
 
@@ -118,11 +120,11 @@ class ChatChannelTest {
 
     @Test
     void loadHistoryUsesSuppliedConversationId() {
-        when(chatMemoryRepository.findByConversationId("telegram-42")).thenReturn(List.of());
+        when(chatHistory.messages("telegram-42")).thenReturn(List.of());
 
         chatChannel.loadHistoryAsHtml("telegram-42");
 
-        verify(chatMemoryRepository).findByConversationId("telegram-42");
+        verify(chatHistory).messages("telegram-42");
     }
 
     // -----------------------------------------------------------------------
@@ -133,14 +135,14 @@ class ChatChannelTest {
     void chatDelegatesToAgentWithConversationId() {
         chatChannel.chat("web", "hello");
 
-        verify(agent).respondTo(eq("web"), eq("hello"), anyConsumer());
+        verify(agent).respondTo(eq(AgentRequest.chat("web", SessionChannel.WEB, "hello")), anyConsumer());
     }
 
     @Test
     void chatUsesSuppliedConversationId() {
         chatChannel.chat("telegram-42", "hello");
 
-        verify(agent).respondTo(eq("telegram-42"), eq("hello"), anyConsumer());
+        verify(agent).respondTo(eq(AgentRequest.chat("telegram-42", SessionChannel.WEB, "hello")), anyConsumer());
     }
 
     // -----------------------------------------------------------------------
@@ -326,9 +328,9 @@ class ChatChannelTest {
 
     private void agentStreams(java.util.function.Consumer<java.util.function.Consumer<AgentEvent>> progress) {
         doAnswer(invocation -> {
-            progress.accept(invocation.getArgument(2));
+            progress.accept(invocation.getArgument(1));
             return null;
-        }).when(agent).respondTo(eq("web"), eq("hello"), anyConsumer());
+        }).when(agent).respondTo(eq(AgentRequest.chat("web", SessionChannel.WEB, "hello")), anyConsumer());
     }
 
     @SuppressWarnings("unchecked")
