@@ -138,7 +138,7 @@ public class ChatView extends VerticalLayout {
             composer.clear();
             append(Role.USER, question);
             try {
-                append(Role.ASSISTANT, agent.respondTo(AgentRequest.chat(CONVERSATION_ID, SessionChannel.VAADIN, question)));
+                append(Role.ASSISTANT, agent.respondTo(AgentRequest.chat(CONVERSATION_ID, SessionChannel.WEB, question)));
             } catch (RuntimeException e) {
                 log.error("The agent failed to answer in conversation '{}'", CONVERSATION_ID, e);
                 append(Role.ERROR, AGENT_FAILED);

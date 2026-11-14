@@ -6,8 +6,8 @@ package ai.javaclaw.agent;
  */
 public enum SessionChannel {
 
+    /** The web chat, at {@code /chat} (HTMX) and {@code /ui} (Vaadin); both continue the same conversation. */
     WEB("web"),
-    VAADIN("vaadin"),
     TELEGRAM("telegram"),
     DISCORD("discord"),
     WHATSAPP("whatsapp"),

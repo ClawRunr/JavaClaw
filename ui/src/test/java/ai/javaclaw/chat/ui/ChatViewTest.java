@@ -74,13 +74,13 @@ class ChatViewTest {
     @Test
     void sendingShowsTheQuestionAndTheAgentsBlockingReply() {
         when(history.messages("web")).thenReturn(List.of());
-        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.VAADIN, "hello"))).thenReturn("hi there");
+        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"))).thenReturn("hi there");
         ChatView view = new ChatView(agent, history);
 
         composer(view).setValue("hello");
         send(view).click();
 
-        verify(agent).respondTo(AgentRequest.chat("web", SessionChannel.VAADIN, "hello"));
+        verify(agent).respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"));
         assertThat(transcript(view)).containsExactly("user: hello", "assistant: hi there");
         assertThat(composer(view).getValue()).isEmpty();
         assertThat(send(view).isEnabled()).isTrue();
@@ -106,7 +106,7 @@ class ChatViewTest {
     @Test
     void anAgentFailureShowsAGenericErrorAndLeavesTheComposerUsable() {
         when(history.messages("web")).thenReturn(List.of());
-        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.VAADIN, "hello"))).thenThrow(new IllegalStateException("api key sk-secret rejected"));
+        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"))).thenThrow(new IllegalStateException("api key sk-secret rejected"));
         ChatView view = new ChatView(agent, history);
 
         composer(view).setValue("hello");
@@ -124,7 +124,7 @@ class ChatViewTest {
     @Test
     void aNullReplyIsShownAsAnEmptyAnswerRatherThanFailing() {
         when(history.messages("web")).thenReturn(List.of());
-        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.VAADIN, "hello"))).thenReturn(null);
+        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"))).thenReturn(null);
         ChatView view = new ChatView(agent, history);
 
         composer(view).setValue("hello");
