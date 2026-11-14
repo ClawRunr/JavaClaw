@@ -1,6 +1,9 @@
 package ai.javaclaw.chat.ui;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatHistory;
+import ai.javaclaw.agent.SessionChannel;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.Span;
@@ -13,17 +16,15 @@ import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.memory.ChatMemoryRepository;
-import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 
 /**
  * The Vaadin chat, served at {@code /ui} next to the HTMX chat at {@code /chat}.
  *
- * <p>It shows and continues the same {@code web} conversation the HTMX chat uses, read from the
- * agent's own {@link ChatMemoryRepository}: there is one history, owned by the agent, and this
- * view keeps no copy of it.
+ * <p>It shows and continues the same {@code web} conversation the HTMX chat uses, read through the
+ * same {@link ChatHistory}: there is one history, owned by the agent, and this view keeps no copy
+ * of it.
  *
  * <p>The reply is blocking: {@link Agent#respondTo(String, String)} runs inside the Vaadin request,
  * which holds the browser session's lock for the whole call. Until the answer is back, every
@@ -70,10 +71,10 @@ public class ChatView extends VerticalLayout {
     /**
      * Builds the page and shows the conversation as it stands. Spring supplies both arguments.
      *
-     * @param agent                the agent that answers, never null
-     * @param chatMemoryRepository the agent's conversation store, read once here to show history
+     * @param agent       the agent that answers, never null
+     * @param chatHistory the agent's conversations, read once here to show history
      */
-    public ChatView(Agent agent, ChatMemoryRepository chatMemoryRepository) {
+    public ChatView(Agent agent, ChatHistory chatHistory) {
         this.agent = agent;
 
         transcript.setId("transcript");
@@ -99,26 +100,22 @@ public class ChatView extends VerticalLayout {
         add(scroller, composerRow);
         setFlexGrow(1, scroller);
 
-        showHistory(chatMemoryRepository);
+        showHistory(chatHistory);
     }
 
     /**
-     * Shows the stored user and assistant messages of {@link #CONVERSATION_ID}, the same filter the
-     * HTMX chat applies; system and tool messages are not part of what a reader sees.
+     * Shows the messages of {@link #CONVERSATION_ID} as {@link ChatHistory} gives them to every chat:
+     * questions and answers, without tool calls, tool results or system messages.
      *
      * <p>A store that cannot be read leaves an error line instead of failing the whole page, so
      * the composer still works.
      *
-     * @param chatMemoryRepository the agent's conversation store
+     * @param chatHistory the agent's conversations
      */
-    private void showHistory(ChatMemoryRepository chatMemoryRepository) {
+    private void showHistory(ChatHistory chatHistory) {
         try {
-            for (Message message : chatMemoryRepository.findByConversationId(CONVERSATION_ID)) {
-                if (message instanceof UserMessage) {
-                    append(Role.USER, message.getText());
-                } else if (message instanceof AssistantMessage) {
-                    append(Role.ASSISTANT, message.getText());
-                }
+            for (Message message : chatHistory.messages(CONVERSATION_ID)) {
+                append(message instanceof UserMessage ? Role.USER : Role.ASSISTANT, message.getText());
             }
         } catch (RuntimeException e) {
             log.error("Could not read conversation '{}'", CONVERSATION_ID, e);
@@ -141,7 +138,7 @@ public class ChatView extends VerticalLayout {
             composer.clear();
             append(Role.USER, question);
             try {
-                append(Role.ASSISTANT, agent.respondTo(CONVERSATION_ID, question));
+                append(Role.ASSISTANT, agent.respondTo(AgentRequest.chat(CONVERSATION_ID, SessionChannel.WEB, question)));
             } catch (RuntimeException e) {
                 log.error("The agent failed to answer in conversation '{}'", CONVERSATION_ID, e);
                 append(Role.ERROR, AGENT_FAILED);

@@ -22,8 +22,16 @@ dependencies {
 
     implementation(libs.spring.ai.agent.utils)
 
-    runtimeOnly 'com.h2database:h2'
+    // Session memory. The JDBC auto-configuration (and the starter that brings it) is left out on
+    // purpose: it binds to the single DataSource bean, which is the one JobRunr uses.
+    implementation 'org.springframework.ai:spring-ai-session-jdbc'
+    implementation 'org.springframework.ai:spring-ai-session-advisor'
+    implementation 'org.springframework.ai:spring-ai-autoconfigure-model-session'
+
+    // The sessions database is opened directly, through H2's own connection pool
+    implementation 'com.h2database:h2'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-jdbc'
     testImplementation 'org.awaitility:awaitility'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 }

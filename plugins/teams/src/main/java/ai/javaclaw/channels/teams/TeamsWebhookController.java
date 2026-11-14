@@ -1,6 +1,8 @@
 package ai.javaclaw.channels.teams;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,7 +92,7 @@ public class TeamsWebhookController {
     private void handleMessage(TeamsConversationReference reference, String text) {
         String conversationId = getConversationId(reference.conversationId());
         try {
-            String response = agent.respondTo(conversationId, text);
+            String response = agent.respondTo(AgentRequest.chat(conversationId, SessionChannel.TEAMS, text));
             channel.sendMessage(reference, response);
         } catch (RuntimeException e) {
             LOGGER.error("Failed to handle Teams message for conversation '{}'", conversationId, e);

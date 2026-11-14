@@ -1,6 +1,8 @@
 package ai.javaclaw.channels.telegram;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
@@ -82,7 +84,7 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
         this.chatId = requestMessage.getChatId();
         Integer messageThreadId = requestMessage.getMessageThreadId();
         channelRegistry.publishMessageReceivedEvent(new TelegramChannelMessageReceivedEvent(getName(), messageText, chatId, messageThreadId));
-        String response = agent.respondTo(getConversationId(chatId, messageThreadId), messageText);
+        String response = agent.respondTo(AgentRequest.chat(getConversationId(chatId, messageThreadId), SessionChannel.TELEGRAM, messageText));
         sendMessage(chatId, messageThreadId, response);
     }
 

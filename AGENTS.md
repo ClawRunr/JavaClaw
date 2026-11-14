@@ -95,7 +95,7 @@ User/Agent → TaskManager.create()
 
 **Prompt construction** (`MainChatClientProvider.java`):
 - System prompt = `workspace/AGENT.private.md` (falls back to `workspace/AGENT.md`) + `workspace/INFO.md`
-- **Advisors**: `SimpleLoggerAdvisor`, `ToolSearchToolCallingAdvisor` (falls back to plain `ToolCallingAdvisor`), `MessageChatMemoryAdvisor` (chat history)
+- **Advisors**: `SimpleLoggerAdvisor`, `ToolSearchToolCallingAdvisor` (falls back to plain `ToolCallingAdvisor`), Spring AI session advisors (chat history in `workspace/data/sessions`, see `agent/session/SessionStoreConfiguration`)
 
 **Default Tools** always injected:
 | Tool | Purpose |

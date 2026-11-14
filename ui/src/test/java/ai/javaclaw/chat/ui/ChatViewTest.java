@@ -1,22 +1,23 @@
 package ai.javaclaw.chat.ui;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.SessionChannel;
+import ai.javaclaw.agent.ChatHistory;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasText;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.textfield.TextArea;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -24,7 +25,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Drives {@link ChatView} server-side, without a browser: the view is built from a mocked {@link
- * Agent} and {@link ChatMemoryRepository}, and the transcript is read back from the component tree,
+ * Agent} and {@link ChatHistory}, and the transcript is read back from the component tree,
  * so each test sees what a reader would see rather than the view's internals.
  */
 class ChatViewTest {
@@ -36,23 +37,21 @@ class ChatViewTest {
     /** The agent the view talks to; each test stubs only what it needs. */
     private final Agent agent = mock(Agent.class);
 
-    /** The agent's own conversation store, which is the view's only source of history. */
-    private final ChatMemoryRepository memory = mock(ChatMemoryRepository.class);
+    /** The agent's conversations, the view's only source of history. */
+    private final ChatHistory history = mock(ChatHistory.class);
 
     /**
-     * History comes from the {@code web} conversation, the one the HTMX chat also uses, and only
-     * user and assistant turns are shown. Reading another conversation, or showing the system
-     * prompt, would fail here.
+     * History comes from the {@code web} conversation, the one the HTMX chat also uses, in the
+     * order {@link ChatHistory} gives it. Reading another conversation would fail here.
      */
     @Test
     void showsTheWebConversationsUserAndAssistantMessagesInOrder() {
-        when(memory.findByConversationId("web")).thenReturn(List.of(
-                new SystemMessage("system prompt"),
+        when(history.messages("web")).thenReturn(List.of(
                 new UserMessage("first question"),
                 new AssistantMessage("first answer"),
                 new UserMessage("second question")));
 
-        ChatView view = new ChatView(agent, memory);
+        ChatView view = new ChatView(agent, history);
 
         assertThat(transcript(view)).containsExactly(
                 "user: first question",
@@ -63,9 +62,9 @@ class ChatViewTest {
     /** A conversation that has not started yet is a normal state, not an error. */
     @Test
     void anEmptyConversationShowsAnEmptyTranscript() {
-        when(memory.findByConversationId("web")).thenReturn(List.of());
+        when(history.messages("web")).thenReturn(List.of());
 
-        assertThat(transcript(new ChatView(agent, memory))).isEmpty();
+        assertThat(transcript(new ChatView(agent, history))).isEmpty();
     }
 
     /**
@@ -74,14 +73,14 @@ class ChatViewTest {
      */
     @Test
     void sendingShowsTheQuestionAndTheAgentsBlockingReply() {
-        when(memory.findByConversationId("web")).thenReturn(List.of());
-        when(agent.respondTo("web", "hello")).thenReturn("hi there");
-        ChatView view = new ChatView(agent, memory);
+        when(history.messages("web")).thenReturn(List.of());
+        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"))).thenReturn("hi there");
+        ChatView view = new ChatView(agent, history);
 
         composer(view).setValue("hello");
         send(view).click();
 
-        verify(agent).respondTo("web", "hello");
+        verify(agent).respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"));
         assertThat(transcript(view)).containsExactly("user: hello", "assistant: hi there");
         assertThat(composer(view).getValue()).isEmpty();
         assertThat(send(view).isEnabled()).isTrue();
@@ -90,13 +89,13 @@ class ChatViewTest {
     /** Whitespace is not a question: nothing reaches the agent and nothing is added. */
     @Test
     void blankInputIsNotSent() {
-        when(memory.findByConversationId("web")).thenReturn(List.of());
-        ChatView view = new ChatView(agent, memory);
+        when(history.messages("web")).thenReturn(List.of());
+        ChatView view = new ChatView(agent, history);
 
         composer(view).setValue("   \n ");
         send(view).click();
 
-        verify(agent, never()).respondTo(anyString(), anyString());
+        verify(agent, never()).respondTo(any(AgentRequest.class));
         assertThat(transcript(view)).isEmpty();
     }
 
@@ -106,9 +105,9 @@ class ChatViewTest {
      */
     @Test
     void anAgentFailureShowsAGenericErrorAndLeavesTheComposerUsable() {
-        when(memory.findByConversationId("web")).thenReturn(List.of());
-        when(agent.respondTo("web", "hello")).thenThrow(new IllegalStateException("api key sk-secret rejected"));
-        ChatView view = new ChatView(agent, memory);
+        when(history.messages("web")).thenReturn(List.of());
+        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"))).thenThrow(new IllegalStateException("api key sk-secret rejected"));
+        ChatView view = new ChatView(agent, history);
 
         composer(view).setValue("hello");
         send(view).click();
@@ -124,9 +123,9 @@ class ChatViewTest {
     /** {@link Agent#respondTo(String, String)} may return null; that must not break the page. */
     @Test
     void aNullReplyIsShownAsAnEmptyAnswerRatherThanFailing() {
-        when(memory.findByConversationId("web")).thenReturn(List.of());
-        when(agent.respondTo("web", "hello")).thenReturn(null);
-        ChatView view = new ChatView(agent, memory);
+        when(history.messages("web")).thenReturn(List.of());
+        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"))).thenReturn(null);
+        ChatView view = new ChatView(agent, history);
 
         composer(view).setValue("hello");
         send(view).click();
@@ -140,9 +139,9 @@ class ChatViewTest {
      */
     @Test
     void anUnreadableConversationShowsAnErrorInsteadOfBreakingThePage() {
-        when(memory.findByConversationId("web")).thenThrow(new IllegalStateException("corrupt chat-web.yaml at /secret/path"));
+        when(history.messages("web")).thenThrow(new IllegalStateException("corrupt chat-web.yaml at /secret/path"));
 
-        ChatView view = new ChatView(agent, memory);
+        ChatView view = new ChatView(agent, history);
 
         List<String> lines = transcript(view);
         assertThat(lines).hasSize(1);
@@ -156,9 +155,9 @@ class ChatViewTest {
      */
     @Test
     void markupInAMessageIsShownAsText() {
-        when(memory.findByConversationId("web")).thenReturn(List.of(new AssistantMessage("<img src=x onerror=alert(1)>")));
+        when(history.messages("web")).thenReturn(List.of(new AssistantMessage("<img src=x onerror=alert(1)>")));
 
-        ChatView view = new ChatView(agent, memory);
+        ChatView view = new ChatView(agent, history);
 
         assertThat(transcript(view)).containsExactly("assistant: <img src=x onerror=alert(1)>");
         assertThat(descendants(view)
