@@ -1,0 +1,12 @@
+# Optional Spring configuration overlay. No Parallel API key is needed.
+spring:
+  ai:
+    mcp:
+      client:
+        streamable-http:
+          connections:
+            parallel:
+              url: https://search.parallel.ai
+              endpoint: /mcp
+              headers:
+                User-Agent: JavaClaw/1.0 (Parallel Search MCP)
