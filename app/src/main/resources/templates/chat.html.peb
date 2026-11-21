@@ -119,7 +119,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.2/ws.js"></script>
+<script src="/webjars/htmx-ext-ws/ws.js"></script>
 <script src="/webjars/marked/lib/marked.umd.js"></script>
 <script src="/webjars/dompurify/dist/purify.min.js"></script>
 <script src="/chat/markdown.js"></script>

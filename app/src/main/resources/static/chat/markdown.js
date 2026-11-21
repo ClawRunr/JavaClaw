@@ -3,7 +3,9 @@
  * through render(), so a message looks the same live and after a reload.
  *
  * Model output is untrusted. Raw HTML in it is escaped and shown as text, and the rendered HTML is
- * sanitized with DOMPurify before it is inserted.
+ * sanitized with DOMPurify before it is inserted. Nothing in an answer loads on its own: a Markdown
+ * image becomes a link, since loading its URL could send data out (a prompt injection can put file
+ * contents in it), and media tags are removed by the sanitizer as a second line of defense.
  */
 window.JavaClawMarkdown = (function () {
     'use strict';
@@ -26,6 +28,12 @@ window.JavaClawMarkdown = (function () {
             html: function (token) {
                 return escapeHtml(token.text);
             },
+            // An image is shown as a link to it, labelled with its alt text (or its URL).
+            image: function (token) {
+                var label = token.text || token.href || '';
+                var title = token.title ? ' title="' + escapeHtml(token.title) + '"' : '';
+                return '<a href="' + escapeHtml(token.href || '') + '"' + title + '>' + escapeHtml(label) + '</a>';
+            },
             code: function (token) {
                 var lang = (token.lang || '').trim().split(/\s+/)[0];
                 return '<div class="ar-code">' +
@@ -42,7 +50,8 @@ window.JavaClawMarkdown = (function () {
     var SANITIZE = {
         // No data-* attributes: htmx also reads data-hx-*, and nothing rendered here needs them.
         ALLOW_DATA_ATTR: false,
-        FORBID_TAGS: ['style', 'form', 'input', 'textarea', 'select'],
+        FORBID_TAGS: ['style', 'form', 'input', 'textarea', 'select',
+            'img', 'picture', 'source', 'video', 'audio', 'track', 'iframe', 'object', 'embed'],
         FORBID_ATTR: ['style'],
         ADD_ATTR: ['target']
     };

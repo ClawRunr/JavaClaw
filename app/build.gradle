@@ -33,6 +33,10 @@ dependencies {
     runtimeOnly(libs.webjars.dompurify)
     runtimeOnly(libs.webjars.font.inter)
     runtimeOnly(libs.webjars.font.jetbrains.mono)
+    runtimeOnly(libs.webjars.htmx)
+    runtimeOnly(libs.webjars.htmx.ext.ws)
+    runtimeOnly(libs.webjars.bulma)
+    runtimeOnly(libs.webjars.bulma.timeline)
 
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
     // Runs from the IDE can pick up ui's development-mode build info, which needs Vaadin's dev server.
@@ -52,9 +56,6 @@ dependencies {
     testImplementation libs.archunit.junit5
     // Runs the chat page's JavaScript (Markdown rendering, sanitizing) in headless Chromium
     testImplementation(libs.playwright)
-    testRuntimeOnly(libs.webjars.htmx)
-    testRuntimeOnly(libs.webjars.htmx.ext.ws)
-    testRuntimeOnly(libs.webjars.bulma)
 }
 
 // JobRunr's BOM lifts Playwright on the runtime classpath (1.59 over our 1.52); compile the tests
