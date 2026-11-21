@@ -28,7 +28,6 @@ commonmark-java = { module = "org.commonmark:commonmark", version.ref = "commonm
 commonmark-ext-gfm-strikethrough = { module = "org.commonmark:commonmark-ext-gfm-strikethrough", version.ref = "commonmark" }
 nimbus-jose-jwt = { module = "com.nimbusds:nimbus-jose-jwt", version = "10.9.1" }
 
-# Web chat assets, served locally from /webjars/** (JavaClaw often runs offline)
 webjars-locator-lite = { module = "org.webjars:webjars-locator-lite" }
 webjars-marked = { module = "org.webjars.npm:marked", version = "18.2.0" }
 webjars-dompurify = { module = "org.webjars.npm:dompurify", version = "3.4.18" }
@@ -37,8 +36,6 @@ webjars-font-jetbrains-mono = { module = "org.webjars.npm:fontsource__jetbrains-
 webjars-htmx = { module = "org.webjars.npm:htmx.org", version = "2.0.8" }
 webjars-htmx-ext-ws = { module = "org.webjars.npm:htmx-ext-ws", version = "2.0.2" }
 webjars-bulma = { module = "org.webjars.npm:bulma", version = "1.0.4" }
-# Onboarding's step timeline. The @samlam140330 fork it used from the CDN has no WebJar; this is the
-# package it was forked from, with the same rules for what onboarding uses.
 webjars-bulma-timeline = { module = "org.webjars.npm:bulma-timeline", version = "3.0.4" }
 
 [bundles]
