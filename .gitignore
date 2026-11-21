@@ -2,9 +2,13 @@ HELP.md
 .DS_Store
 .gradle
 build/
+# Vaadin 25.3's build tooling writes a Maven-style target/ (e.g. app/target/vaadin-dev-server-settings.json)
+target/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
+!**/src/main/**/target/
+!**/src/test/**/target/
 
 ### STS ###
 .apt_generated
