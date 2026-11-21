@@ -9,12 +9,15 @@ import org.springframework.ai.session.CreateSessionRequest;
 import org.springframework.ai.session.DefaultSessionService;
 import org.springframework.ai.session.InMemorySessionRepository;
 import org.springframework.ai.session.SessionAttributes;
+import org.springframework.ai.session.SessionEvent;
 import org.springframework.ai.session.SessionService;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 class ChatHistoryTest {
 
@@ -45,6 +48,19 @@ class ChatHistoryTest {
         append("web", new UserMessage("Weather?"), toolCall("call-1", "Let me check."));
 
         assertThat(texts(history.messages("web"))).containsExactly("Weather?", "Let me check.");
+    }
+
+    @Test
+    void eachShownMessageComesWithTheTimeItWasStored() {
+        open("web");
+        Instant asked = Instant.parse("2026-11-14T10:42:05Z");
+        Instant answered = Instant.parse("2026-11-14T10:42:31Z");
+        sessions.appendEvent(event("web", asked, new UserMessage("Weather?")));
+        sessions.appendEvent(event("web", asked.plusSeconds(1), toolCall("call-1", "")));
+        sessions.appendEvent(event("web", answered, new AssistantMessage("Sunny.")));
+
+        assertThat(history.entries("web")).extracting(e -> e.message().getText(), ChatHistory.Entry::timestamp)
+                .containsExactly(tuple("Weather?", asked), tuple("Sunny.", answered));
     }
 
     @Test
@@ -84,6 +100,10 @@ class ChatHistoryTest {
         for (Message message : messages) {
             sessions.appendMessage(conversationId, message);
         }
+    }
+
+    private static SessionEvent event(String conversationId, Instant timestamp, Message message) {
+        return SessionEvent.builder().sessionId(conversationId).timestamp(timestamp).message(message).build();
     }
 
     private static AssistantMessage toolCall(String id, String text) {

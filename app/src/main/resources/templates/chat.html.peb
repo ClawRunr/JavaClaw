@@ -3,655 +3,126 @@
 {% block title %} Chat{% endblock %}
 
 {% block head %}
-<style>
-.chat-page {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    background-color: hsl(229, 18%, 8%);
-}
-
-.chat-page > .navbar {
-    flex-shrink: 0;
-    border-bottom: 1px solid rgba(255, 255, 255, .06);
-}
-
-.chat-body {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    scroll-behavior: smooth;
-}
-.chat-body::-webkit-scrollbar { width: 4px; }
-.chat-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 4px; }
-
-.chat-body .container {
-    display: flex;
-    flex-direction: column;
-    min-height: 100%;
-    padding: 1.5rem 1.5rem .5rem;
-}
-
-#chat-messages {
-    margin-top: auto;
-    display: flex;
-    flex-direction: column;
-    gap: .875rem;
-    padding-bottom: .25rem;
-}
-
-.ar-msg {
-    display: flex;
-    align-items: flex-end;
-    gap: .55rem;
-    max-width: 76%;
-    animation: msg-in .22s cubic-bezier(.22, 1, .36, 1);
-}
-@keyframes msg-in {
-    from { opacity: 0; transform: translateY(8px) scale(.98); }
-    to   { opacity: 1; transform: translateY(0)   scale(1);   }
-}
-.ar-msg--user  { align-self: flex-end;  flex-direction: row-reverse; }
-.ar-msg--agent { align-self: flex-start; }
-
-.ar-msg__avatar {
-    flex-shrink: 0;
-    width: 30px; height: 30px;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: .58rem; font-weight: 800; letter-spacing: .04em;
-    background: hsl(160, 30%, 14%);
-    border: 1px solid color-mix(in srgb, var(--bulma-primary) 30%, transparent);
-    color: var(--bulma-primary);
-}
-
-.ar-msg__bubble {
-    padding: .6rem .95rem;
-    border-radius: 1.1rem;
-    line-height: 1.65;
-    white-space: pre-wrap;
-    word-break: break-word;
-}
-.ar-msg--user  .ar-msg__bubble {
-    background: var(--bulma-primary);
-    color: #fff;
-    border-bottom-right-radius: .25rem;
-    box-shadow: 0 3px 14px color-mix(in srgb, var(--bulma-primary) 40%, transparent);
-}
-.ar-msg--agent .ar-msg__bubble,
-.ar-typing__dots {
-    background: hsl(228, 22%, 13%);
-    border: 1px solid rgba(255, 255, 255, .07);
-    border-radius: 1.1rem;
-    border-bottom-left-radius: .25rem;
-}
-
-.ar-msg--agent .ar-msg__bubble {
-    color: #c8cee0;
-}
-
-.ar-typing { display: flex; align-items: flex-end; gap: .55rem; padding-top: .5rem; animation: msg-in .22s cubic-bezier(.22,1,.36,1); }
-.ar-typing__dots {
-    display: flex; gap: .3rem; align-items: center;
-    padding: .65rem .9rem;
-}
-.ar-typing__dots span {
-    display: block; width: 6px; height: 6px; border-radius: 50%;
-    background: color-mix(in srgb, var(--bulma-primary) 65%, transparent);
-    animation: bounce 1.2s ease infinite;
-}
-.ar-typing__dots span:nth-child(2) { animation-delay: .15s; }
-.ar-typing__dots span:nth-child(3) { animation-delay: .30s; }
-@keyframes bounce {
-    0%, 60%, 100% { transform: translateY(0);    opacity: .3; }
-    30%            { transform: translateY(-5px); opacity: 1;  }
-}
-
-.chat-footer {
-    flex-shrink: 0;
-    padding: .875rem 1.5rem 1rem;
-    border-top: 1px solid rgba(255, 255, 255, .06);
-    background: hsl(229, 22%, 7%);
-}
-
-.chat-footer .textarea {
-    background: hsl(229, 20%, 12%);
-    border-color: rgba(255, 255, 255, .1);
-    color: #d8dde8;
-    border-radius: .75rem;
-    resize: none;
-    overflow-y: hidden;
-    min-height: 2.75rem;
-    max-height: 9rem;
-    padding: .6rem .9rem;
-    line-height: 1.5;
-    transition: border-color .15s, box-shadow .15s;
-}
-.chat-footer .textarea::placeholder { color: rgba(180, 195, 235, .28); }
-.chat-footer .textarea:focus {
-    border-color: var(--bulma-primary);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--bulma-primary) 16%, transparent);
-}
-.chat-footer .button.is-primary {
-    border-radius: .75rem;
-    height: 2.75rem;
-    align-self: flex-end;
-    box-shadow: 0 3px 12px color-mix(in srgb, var(--bulma-primary) 45%, transparent);
-}
-
-.chat-readonly-notice {
-    color: rgba(180, 195, 235, .45);
-    font-size: .875rem;
-    text-align: center;
-    padding: .4rem 0;
-}
-.chat-readonly-notice strong {
-    color: rgba(180, 195, 235, .7);
-}
-
-.ar-msg--error .ar-msg__bubble {
-    border-color: color-mix(in srgb, var(--bulma-danger) 45%, transparent);
-    color: var(--bulma-danger);
-}
-
-/* A message that ran tools needs more room for JSON than a plain sentence does,
-   and its avatar belongs at the top rather than floating beside the last line. */
-.ar-msg--agent:has(.ar-tool) {
-    max-width: 92%;
-    align-items: flex-start;
-}
-
-/* Tool calls render inside the agent bubble, one shade darker to read as nested. */
-.ar-tool {
-    display: block;
-    margin: .55rem 0;
-    background: hsl(229, 24%, 10%);
-    border: 1px solid rgba(255, 255, 255, .08);
-    border-radius: .85rem;
-    overflow: hidden;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
-    animation: msg-in .22s cubic-bezier(.22, 1, .36, 1);
-    transition: border-color .18s ease, box-shadow .18s ease;
-}
-.ar-tool:hover { border-color: rgba(255, 255, 255, .13); }
-.ar-tool[open] { box-shadow: 0 4px 18px rgba(0, 0, 0, .28); }
-
-.ar-msg__bubble > .ar-tool:first-child { margin-top: 0; }
-.ar-msg__bubble > .ar-tool:last-child  { margin-bottom: 0; }
-
-.ar-tool, .ar-tool * { white-space: normal; }
-
-.ar-tool__head {
-    display: flex;
-    align-items: center;
-    gap: .55rem;
-    padding: .5rem .7rem;
-    cursor: pointer;
-    list-style: none;
-    user-select: none;
-}
-.ar-tool__head::-webkit-details-marker { display: none; }
-
-.ar-tool__caret {
-    flex-shrink: 0;
-    width: .42rem; height: .42rem;
-    border-right: 1.5px solid rgba(200, 212, 240, .4);
-    border-bottom: 1.5px solid rgba(200, 212, 240, .4);
-    transform: rotate(-45deg);
-    transition: transform .2s cubic-bezier(.22, 1, .36, 1);
-}
-.ar-tool[open] .ar-tool__caret { transform: rotate(45deg); }
-
-.ar-tool__glyph {
-    flex-shrink: 0;
-    width: 22px; height: 22px;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: .45rem;
-    background: hsl(160, 30%, 14%);
-    border: 1px solid color-mix(in srgb, var(--bulma-primary) 30%, transparent);
-    color: var(--bulma-primary);
-}
-.ar-tool__glyph svg { width: 12px; height: 12px; }
-
-.ar-tool__name {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: .78rem;
-    font-weight: 600;
-    letter-spacing: -.01em;
-    color: #c8cee0;
-    white-space: nowrap;
-}
-
-/* Collapsed cards stay informative: the key argument reads inline after the name. */
-.ar-tool__args {
-    min-width: 0;
-    flex: 1;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: .72rem;
-    color: rgba(200, 212, 240, .42);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.ar-tool[open] .ar-tool__args { opacity: 0; }
-
-.ar-tool__meta {
-    margin-left: auto;
-    flex-shrink: 0;
-    display: flex; align-items: center; gap: .45rem;
-}
-.ar-tool__time {
-    font-size: .68rem;
-    font-variant-numeric: tabular-nums;
-    color: rgba(200, 212, 240, .38);
-}
-.ar-tool__dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--bulma-primary);
-    animation: tool-pulse 1.15s ease-in-out infinite;
-}
-@keyframes tool-pulse {
-    0%, 100% { opacity: .3; transform: scale(.75); }
-    50%      { opacity: 1;  transform: scale(1);   }
-}
-.ar-tool--done .ar-tool__dot {
-    animation: none;
-    opacity: 1;
-    background: var(--bulma-success);
-}
-/* The answer ended without this tool reporting back (returnDirect, or it threw). */
-.ar-tool--unanswered .ar-tool__dot {
-    animation: none;
-    opacity: .5;
-    background: rgba(200, 212, 240, .6);
-}
-.ar-tool--failed .ar-tool__dot {
-    animation: none;
-    opacity: 1;
-    background: var(--bulma-danger);
-}
-
-.ar-tool__body {
-    padding: .6rem .7rem .7rem;
-    border-top: 1px solid rgba(255, 255, 255, .05);
-}
-.ar-tool__section + .ar-tool__section { margin-top: .6rem; }
-
-.ar-tool__label {
-    display: flex;
-    align-items: center;
-    margin-bottom: .28rem;
-    font-size: .62rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: .08em;
-    color: rgba(200, 212, 240, .34);
-}
-
-.ar-tool__pre {
-    margin: 0;
-    padding: .5rem .6rem;
-    max-height: 13rem;
-    overflow: auto;
-    border-radius: .5rem;
-    background: hsl(229, 20%, 7%);
-    border: 1px solid rgba(255, 255, 255, .05);
-    border-left: 2px solid color-mix(in srgb, var(--bulma-primary) 38%, transparent);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: .72rem;
-    line-height: 1.6;
-    color: #9fb0cc;
-    white-space: pre-wrap;
-    word-break: break-word;
-}
-.ar-tool__pre, .ar-tool__pre * { white-space: pre-wrap; }
-.ar-tool__copy {
-    margin-left: auto;
-    padding: .1rem .35rem;
-    border: 1px solid rgba(255, 255, 255, .08);
-    border-radius: .3rem;
-    background: transparent;
-    color: rgba(200, 212, 240, .5);
-    font: inherit;
-    font-size: .6rem;
-    letter-spacing: .04em;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity .15s ease, color .15s ease, border-color .15s ease;
-}
-.ar-tool__section:hover .ar-tool__copy { opacity: 1; }
-.ar-tool__copy:hover { color: var(--bulma-primary); border-color: color-mix(in srgb, var(--bulma-primary) 40%, transparent); }
-.ar-tool__copy:focus-visible { opacity: 1; outline: none; }
-
-.ar-tool__pre::-webkit-scrollbar { width: 4px; height: 4px; }
-.ar-tool__pre::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .1); border-radius: 4px; }
-.ar-tool__section--output .ar-tool__pre {
-    border-left-color: color-mix(in srgb, var(--bulma-success) 38%, transparent);
-}
-</style>
+<link rel="stylesheet" href="/webjars/fontsource__inter/400.css">
+<link rel="stylesheet" href="/webjars/fontsource__inter/500.css">
+<link rel="stylesheet" href="/webjars/fontsource__inter/600.css">
+<link rel="stylesheet" href="/webjars/fontsource__inter/700.css">
+<link rel="stylesheet" href="/webjars/fontsource__jetbrains-mono/400.css">
+<link rel="stylesheet" href="/webjars/fontsource__jetbrains-mono/500.css">
+<link rel="stylesheet" href="/chat/chat.css">
 {% endblock %}
 
 {% block content %}
 <div class="chat-page" hx-ext="ws" ws-connect="/ws/chat">
 
-    <nav class="navbar has-background-dark" role="navigation" aria-label="main navigation">
-        <div class="navbar-brand">
-            <span class="navbar-item">
-                <img class="brand-mascot" src="/brand/icon-192.png" alt="ClawRunr" width="28" height="28" draggable="false">
-                <div class="brand-lockup">
-                    <p class="brand-word"><span class="brand-agent">Java</span><span class="brand-runr">Claw</span></p>
-                </div>
-            </span>
-        </div>
-        <div class="navbar-end">
-            <div class="navbar-item">
-                <div class="select is-small is-dark" id="channel-selector"></div>
-            </div>
-            <div class="navbar-item">
-                <a href="/settings/agents" class="button is-small is-dark" hx-boost="false">
-                    <span>Agents</span>
-                </a>
-            </div>
-            <div class="navbar-item">
-                <a href="/onboarding" class="button is-small is-dark" hx-boost="false">
-                    <span>Settings</span>
-                </a>
-            </div>
-            <div class="navbar-item">
-                <a href="http://localhost:{{ jobrunrDashboardPort }}" target="_blank" rel="noopener noreferrer" class="button is-small is-dark">
-                    <span>JobRunr Dashboard</span>
-                </a>
-            </div>
-            <div class="navbar-item">
-                <span id="status-tag" class="tag is-success is-light is-rounded">Connected</span>
+    <header class="ar-header" role="banner">
+        <div class="ar-header__brand">
+            <img class="brand-mascot" src="/brand/icon-192.png" alt="ClawRunr" width="30" height="30" draggable="false">
+            <div class="brand-lockup">
+                <p class="brand-word"><span class="brand-agent">Java</span><span class="brand-runr">Claw</span></p>
             </div>
         </div>
-    </nav>
+        <div class="ar-conv">
+            <label class="ar-conv__label" for="channel-select">Conversation</label>
+            <div id="channel-selector"></div>
+        </div>
+        <nav class="ar-nav" aria-label="main navigation">
+            <a href="/settings/agents" class="ar-nav__link" hx-boost="false">Agents</a>
+            <a href="/onboarding" class="ar-nav__link" hx-boost="false">Settings</a>
+            <a href="http://localhost:{{ jobrunrDashboardPort }}" target="_blank" rel="noopener noreferrer" class="ar-nav__link">JobRunr Dashboard</a>
+        </nav>
+        <span id="status-tag" class="ar-status ar-status--ok" role="status">
+            <span class="ar-status__dot" aria-hidden="true"></span><span class="ar-status__text">Connected</span>
+        </span>
+    </header>
 
-    <div class="chat-body">
-        <div class="container">
+    <main class="chat-body">
+        <div class="ar-column">
             <div id="chat-messages">
             </div>
             <div id="typing-indicator"></div>
         </div>
-    </div>
+    </main>
 
-    <div class="chat-footer">
-        <div class="container" id="chat-input-area">
-            <form id="chat-form" ws-send hx-boost="false"
+    <footer class="chat-footer">
+        <div class="ar-column" id="chat-input-area">
+            <form id="chat-form" class="ar-composer" ws-send hx-boost="false"
                   hx-vals='js:{"type": "userMessage", "conversationId": document.getElementById("channel-select") ? document.getElementById("channel-select").value : "web"}'>
-                <div class="field is-grouped" style="align-items: flex-end; margin: 0;">
-                    <div class="control is-expanded">
-                        <textarea id="message-input" class="textarea" name="message" rows="1"
-                            placeholder="Message JavaClaw…"
-                            autocomplete="off" spellcheck="true" autofocus
-                            hx-trigger="keydown[key=='Enter'&&!shiftKey] consume"
-                            ws-send></textarea>
-                    </div>
-                    <div class="control">
-                        <button id="send-btn" type="submit" class="button is-primary" title="Send (Enter)">
-                            <span class="icon">
-                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-                                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                                </svg>
-                            </span>
-                        </button>
-                    </div>
-                </div>
+                <label for="message-input" class="is-sr-only">Message JavaClaw</label>
+                <textarea id="message-input" class="ar-composer__input" name="message" rows="1"
+                    placeholder="Message JavaClaw…"
+                    autocomplete="off" spellcheck="true" autofocus
+                    hx-trigger="keydown[key=='Enter'&&!shiftKey] consume"
+                    ws-send></textarea>
+                <button id="send-btn" type="submit" class="ar-composer__send" title="Send (Enter)" aria-label="Send">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                         stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 19V5M5 12l7-7 7 7"/>
+                    </svg>
+                </button>
             </form>
         </div>
-    </div>
+    </footer>
+
+    {# Markup the streaming script clones; it fills in text with textContent only. #}
+    <template id="agent-message-template">
+        <article class="ar-msg ar-msg--agent">
+            <header class="ar-msg__head">
+                <img class="ar-msg__mascot" src="/brand/icon-192.png" alt="" width="26" height="26" draggable="false">
+                <span class="ar-msg__author">JavaClaw</span>
+                <time class="ar-msg__time"></time>
+            </header>
+            <div class="ar-msg__body"></div>
+        </article>
+    </template>
+
+    <template id="tool-group-template">
+        <div class="ar-tools">
+            <button type="button" class="ar-tools__head" aria-expanded="true">
+                <span class="ar-tools__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.1-2.1z"/>
+                    </svg>
+                </span>
+                <span class="ar-tools__title"></span>
+                <span class="ar-tools__time"></span>
+                <span class="ar-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="ar-tools__list"></div>
+        </div>
+    </template>
+
+    <template id="tool-call-template">
+        <div class="ar-tool">
+            <button type="button" class="ar-tool__row" aria-expanded="false">
+                <span class="ar-tool__dot" aria-hidden="true"></span>
+                <span class="ar-tool__name"></span>
+                <span class="ar-tool__args"></span>
+                <span class="ar-tool__time"></span>
+                <span class="ar-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="ar-tool__detail" hidden>
+                <div class="ar-tool__label">Input</div>
+                <pre class="ar-tool__pre ar-tool__input"></pre>
+                <div class="ar-tool__output-section" hidden>
+                    <div class="ar-tool__label">Output
+                        <button type="button" class="ar-copy ar-tool__copy">Copy</button>
+                    </div>
+                    <pre class="ar-tool__pre ar-tool__output"></pre>
+                </div>
+            </div>
+        </div>
+    </template>
 
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.2/ws.js"></script>
-<script>
-// htmx handles: WebSocket connect/send, OOB DOM swaps, auto-scroll (show:bottom),
-// form reset (hx-on:htmx:wsAfterSend), and Enter-to-send (hx-trigger on textarea).
-// JS handles only what htmx cannot: updating two separate DOM nodes from one WS event.
-(function () {
-    const statusTag  = document.getElementById('status-tag');
-
-    document.body.addEventListener('htmx:wsOpen', function () {
-        statusTag.className = 'tag is-success is-light is-rounded';
-        statusTag.textContent = 'Connected';
-        var ta = document.getElementById('message-input');
-        var btn = document.getElementById('send-btn');
-        if (ta) ta.disabled = false;
-        if (btn) btn.disabled = false;
-    });
-    document.body.addEventListener('htmx:wsClose', function () {
-        statusTag.className = 'tag is-warning is-light is-rounded';
-        statusTag.textContent = 'Reconnecting…';
-        var ta = document.getElementById('message-input');
-        var btn = document.getElementById('send-btn');
-        if (ta) ta.disabled = true;
-        if (btn) btn.disabled = true;
-    });
-    document.body.addEventListener('htmx:wsError', function () {
-        statusTag.className = 'tag is-danger is-light is-rounded';
-        statusTag.textContent = 'Connection error';
-    });
-    document.body.addEventListener('keydown', function (e) {
-        if (e.target.id === 'message-input' && e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-        }
-    });
-    document.body.addEventListener('htmx:wsAfterSend', function () {
-        var ta = document.getElementById('message-input');
-        if (ta) { ta.value = ''; ta.style.height = ''; }
-    });
-    document.body.addEventListener('htmx:wsAfterMessage', function () {
-        scrollToBottom();
-    });
-
-    // --- Streaming frames ------------------------------------------------
-    // The server streams the agent response as JSON frames (type: chunk /
-    // done / error). These are intercepted here and never reach htmx; HTML
-    // frames (no JSON type) keep the htmx OOB-swap behavior unchanged.
-    var streamBubbles = {};   // conversationId -> in-progress bubble element
-
-    document.body.addEventListener('htmx:wsBeforeMessage', function (e) {
-        var frame = parseStreamFrame(e.detail.message);
-        if (!frame) return;
-        e.preventDefault();
-        handleStreamFrame(frame);
-        scrollToBottom();
-    });
-
-    function parseStreamFrame(text) {
-        if (!text || text.charAt(0) !== '{') return null;
-        try {
-            var frame = JSON.parse(text);
-            return frame && typeof frame === 'object' && frame.type ? frame : null;
-        } catch (err) {
-            return null;
-        }
-    }
-
-    function handleStreamFrame(frame) {
-        var id = frame.conversationId || 'web';
-        if (frame.type === 'chunk') {
-            appendToken(id, frame.data);
-        } else if (frame.type === 'toolCall') {
-            renderToolCall(id, frame.data);
-        } else if (frame.type === 'toolResult') {
-            renderToolResult(frame.data);
-        } else if (frame.type === 'done') {
-            clearTypingIndicator();
-            endStream(id, 'ar-tool--unanswered', 'no result');
-        } else if (frame.type === 'error') {
-            // Append rather than replace: text and tool cards already shown still stand.
-            delete streamTexts[id];
-            appendToken(id, frame.data);
-            streamBubble(id).closest('.ar-msg').classList.add('ar-msg--error');
-            endStream(id, 'ar-tool--failed', 'failed');
-        }
-    }
-
-    // Tool cards render inside the agent bubble, between runs of text. Each run of
-    // text therefore needs its own span — assigning to the bubble's textContent would
-    // wipe out any card already in it.
-    var toolCards = {};   // tool call id -> { card, conversationId, startedAt }
-    var streamTexts = {}; // conversationId -> trailing text span of the open bubble
-
-    var TOOL_ICON =
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
-        'stroke-linecap="round" stroke-linejoin="round">' +
-        '<path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.1-2.1z"/>' +
-        '</svg>';
-
-    function renderToolCall(conversationId, data) {
-        clearTypingIndicator();
-        var bubble = streamBubble(conversationId);
-
-        var card = document.createElement('details');
-        card.className = 'ar-tool';
-        card.innerHTML =
-            '<summary class="ar-tool__head">' +
-            '<span class="ar-tool__caret"></span>' +
-            '<span class="ar-tool__glyph">' + TOOL_ICON + '</span>' +
-            '<span class="ar-tool__name"></span>' +
-            '<span class="ar-tool__args"></span>' +
-            '<span class="ar-tool__meta">' +
-            '<span class="ar-tool__time"></span>' +
-            '<span class="ar-tool__dot"></span>' +
-            '</span>' +
-            '</summary>' +
-            '<div class="ar-tool__body">' +
-            section('Input', '') +
-            '</div>';
-        card.querySelector('.ar-tool__name').textContent = data.name || 'tool';
-        card.querySelector('.ar-tool__args').textContent = summarize(data.input);
-        var inputPre = card.querySelector('.ar-tool__pre');
-        inputPre.textContent = pretty(data.input);
-        wireCopy(card.querySelector('.ar-tool__section'));
-        bubble.appendChild(card);
-        // Text arriving after this call starts a new run below the card.
-        delete streamTexts[conversationId];
-        if (data.id) toolCards[data.id] = { card: card, conversationId: conversationId, startedAt: Date.now() };
-    }
-
-    function renderToolResult(data) {
-        var entry = data.id ? toolCards[data.id] : null;
-        if (!entry || !entry.card.isConnected) return;
-        var card = entry.card;
-
-        card.classList.add('ar-tool--done');
-        card.querySelector('.ar-tool__time').textContent = elapsed(Date.now() - entry.startedAt);
-
-        var wrapper = document.createElement('div');
-        wrapper.innerHTML = section('Output', ' ar-tool__section--output');
-        var outputSection = wrapper.firstElementChild;
-        outputSection.querySelector('.ar-tool__pre').textContent = pretty(data.output);
-        card.querySelector('.ar-tool__body').appendChild(outputSection);
-        wireCopy(outputSection);
-        delete toolCards[data.id];
-    }
-
-    function section(label, extraClass) {
-        return '<div class="ar-tool__section' + extraClass + '">' +
-            '<div class="ar-tool__label">' + label +
-            '<button type="button" class="ar-tool__copy">Copy</button></div>' +
-            '<pre class="ar-tool__pre"></pre>' +
-            '</div>';
-    }
-
-    function wireCopy(sectionEl) {
-        var button = sectionEl.querySelector('.ar-tool__copy');
-        button.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            navigator.clipboard.writeText(sectionEl.querySelector('.ar-tool__pre').textContent)
-                .then(function () {
-                    button.textContent = 'Copied';
-                    setTimeout(function () { button.textContent = 'Copy'; }, 1200);
-                })
-                .catch(function () { button.textContent = 'Failed'; });
-        });
-    }
-
-    // Collapsed header hint: the first meaningful argument value, else compact JSON.
-    function summarize(input) {
-        if (!input) return '';
-        try {
-            var parsed = JSON.parse(input);
-            if (parsed === null || typeof parsed !== 'object') return String(parsed);
-            var keys = Object.keys(parsed);
-            if (!keys.length) return '';
-            var first = parsed[keys[0]];
-            var text = (typeof first === 'object') ? JSON.stringify(first) : String(first);
-            return keys.length > 1 ? text + ' +' + (keys.length - 1) : text;
-        } catch (err) {
-            return input.length > 60 ? input.slice(0, 60) + '\u2026' : input;
-        }
-    }
-
-    function elapsed(ms) {
-        if (ms < 1000) return ms + 'ms';
-        return (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + 's';
-    }
-
-    // Tool arguments and results are usually JSON; indent them when they parse.
-    function pretty(value) {
-        if (value === null || value === undefined || value === '') return '\u2014';
-        try {
-            return JSON.stringify(JSON.parse(value), null, 2);
-        } catch (err) {
-            return String(value);
-        }
-    }
-
-    // Appends to the trailing text run, starting a new one when a card was just added.
-    function appendToken(conversationId, token) {
-        var bubble = streamBubble(conversationId);
-        var run = streamTexts[conversationId];
-        if (!run || run.parentNode !== bubble) {
-            run = document.createElement('span');
-            bubble.appendChild(run);
-            streamTexts[conversationId] = run;
-        }
-        run.textContent += token;
-    }
-
-    // Cards still waiting when the answer ends will never get a result — settle them.
-    function endStream(conversationId, unfinishedClass, unfinishedLabel) {
-        Object.keys(toolCards).forEach(function (callId) {
-            var entry = toolCards[callId];
-            if (entry.conversationId !== conversationId) return;
-            entry.card.classList.add(unfinishedClass);
-            entry.card.querySelector('.ar-tool__time').textContent = unfinishedLabel;
-            delete toolCards[callId];
-        });
-        delete streamBubbles[conversationId];
-        delete streamTexts[conversationId];
-    }
-
-    function streamBubble(conversationId) {
-        var bubble = streamBubbles[conversationId];
-        if (!bubble || !bubble.isConnected) {
-            var article = document.createElement('article');
-            article.className = 'ar-msg ar-msg--agent';
-            article.innerHTML = '<div class="ar-msg__avatar">JC</div><div class="ar-msg__bubble"></div>';
-            document.getElementById('chat-messages').appendChild(article);
-            bubble = article.querySelector('.ar-msg__bubble');
-            streamBubbles[conversationId] = bubble;
-            clearTypingIndicator();
-        }
-        return bubble;
-    }
-
-    function clearTypingIndicator() {
-        var typing = document.getElementById('typing-indicator');
-        if (typing) typing.innerHTML = '';
-    }
-
-    function scrollToBottom() {
-        var body = document.querySelector('.chat-body');
-        if (body) body.scrollTop = body.scrollHeight;
-    }
-}());
-</script>
+<script src="/webjars/marked/lib/marked.umd.js"></script>
+<script src="/webjars/dompurify/dist/purify.min.js"></script>
+<script src="/chat/markdown.js"></script>
+<script src="/chat/time.js"></script>
+<script src="/chat/chat.js"></script>
 {% endblock %}

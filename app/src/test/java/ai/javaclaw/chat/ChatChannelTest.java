@@ -18,6 +18,7 @@ import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -85,46 +86,65 @@ class ChatChannelTest {
 
     @Test
     void loadHistoryReturnsWelcomeBubbleWhenNoHistory() {
-        when(chatHistory.messages("web")).thenReturn(List.of());
+        when(chatHistory.entries("web")).thenReturn(List.of());
 
         List<String> bubbles = chatChannel.loadHistoryAsHtml("web");
 
         assertThat(bubbles).hasSize(1);
-        assertThat(bubbles.get(0)).contains("ar-msg--agent");
+        // The welcome message is not a stored message, so it has no time
+        assertThat(bubbles.get(0)).contains("ar-msg--agent").doesNotContain("<time");
     }
 
     @Test
     void loadHistoryRendersUserAndAgentBubbles() {
-        when(chatHistory.messages("web")).thenReturn(List.of(
-                new UserMessage("Hello"),
-                new AssistantMessage("Hi there")
+        when(chatHistory.entries("web")).thenReturn(List.of(
+                entry(new UserMessage("Hello")),
+                entry(new AssistantMessage("Hi there"))
         ));
 
         List<String> bubbles = chatChannel.loadHistoryAsHtml("web");
 
         assertThat(bubbles).hasSize(2);
-        assertThat(bubbles.get(0)).contains("ar-msg--user").contains("Hello");
-        assertThat(bubbles.get(1)).contains("ar-msg--agent").contains("Hi there");
+        assertThat(bubbles.get(0)).contains("ar-msg--user").contains("<div class=\"ar-msg__bubble\">Hello</div>");
+        // Agent text goes to the browser as Markdown source, rendered there like a streamed answer
+        assertThat(bubbles.get(1)).contains("ar-msg--agent").contains("<div class=\"ar-md\" data-md>Hi there</div>");
+    }
+
+    @Test
+    void loadHistoryShowsTheStoredTimeOfEachMessageAsUtc() {
+        when(chatHistory.entries("web")).thenReturn(List.of(
+                new ChatHistory.Entry(new UserMessage("Hello"), Instant.parse("2026-11-14T10:42:05.123456Z")),
+                new ChatHistory.Entry(new AssistantMessage("Hi there"), Instant.parse("2026-11-14T10:43:00Z"))
+        ));
+
+        List<String> bubbles = chatChannel.loadHistoryAsHtml("web");
+
+        assertThat(bubbles.get(0)).contains(
+                "<div class=\"ar-msg__bubble\">Hello</div><time class=\"ar-msg__time\" datetime=\"2026-11-14T10:42:05Z\"></time>");
+        assertThat(bubbles.get(1)).contains(
+                "<span class=\"ar-msg__author\">JavaClaw</span><time class=\"ar-msg__time\" datetime=\"2026-11-14T10:43:00Z\"></time>");
     }
 
     @Test
     void loadHistoryEscapesHtmlInMessages() {
-        when(chatHistory.messages("web")).thenReturn(List.of(
-                new UserMessage("<script>alert('xss')</script>")
+        when(chatHistory.entries("web")).thenReturn(List.of(
+                entry(new UserMessage("<script>alert('xss')</script>")),
+                entry(new AssistantMessage("<img src=x onerror=alert(1)>"))
         ));
 
         List<String> bubbles = chatChannel.loadHistoryAsHtml("web");
 
         assertThat(bubbles.get(0)).doesNotContain("<script>").contains("&lt;script&gt;");
+        assertThat(bubbles.get(1)).doesNotContain("<img src=x").contains("&lt;img src=x onerror=alert(1)&gt;");
     }
 
     @Test
     void loadHistoryUsesSuppliedConversationId() {
-        when(chatHistory.messages("telegram-42")).thenReturn(List.of());
+        when(chatHistory.entries("telegram-42")).thenReturn(List.of());
 
         chatChannel.loadHistoryAsHtml("telegram-42");
 
-        verify(chatHistory).messages("telegram-42");
+        verify(chatHistory).entries("telegram-42");
     }
 
     // -----------------------------------------------------------------------
@@ -256,6 +276,9 @@ class ChatChannelTest {
                 .containsEntry("type", "chunk")
                 .containsEntry("data", "Hello ")
                 .containsEntry("conversationId", "web");
+        // The page shows the first frame's time as the answer's time
+        assertThat(Instant.parse((String) frames.get(0).get("time")))
+                .isBetween(Instant.now().minusSeconds(60), Instant.now());
         assertThat(frames.get(1))
                 .containsEntry("type", "chunk")
                 .containsEntry("data", "world");
@@ -317,6 +340,10 @@ class ChatChannelTest {
     @SuppressWarnings("unchecked")
     private static java.util.function.Consumer<AgentEvent> anyConsumer() {
         return any(java.util.function.Consumer.class);
+    }
+
+    private static ChatHistory.Entry entry(org.springframework.ai.chat.messages.Message message) {
+        return new ChatHistory.Entry(message, Instant.parse("2026-11-14T10:42:00Z"));
     }
 
     private WebSocketSession openSession() {

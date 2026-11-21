@@ -28,6 +28,11 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
     implementation(libs.pebble.spring.starter)
+    implementation(libs.webjars.locator.lite)
+    runtimeOnly(libs.webjars.marked)
+    runtimeOnly(libs.webjars.dompurify)
+    runtimeOnly(libs.webjars.font.inter)
+    runtimeOnly(libs.webjars.font.jetbrains.mono)
 
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
     // Runs from the IDE can pick up ui's development-mode build info, which needs Vaadin's dev server.
@@ -45,6 +50,17 @@ dependencies {
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testImplementation libs.spring.modulith.starter.test
     testImplementation libs.archunit.junit5
+    // Runs the chat page's JavaScript (Markdown rendering, sanitizing) in headless Chromium
+    testImplementation(libs.playwright)
+    testRuntimeOnly(libs.webjars.htmx)
+    testRuntimeOnly(libs.webjars.htmx.ext.ws)
+    testRuntimeOnly(libs.webjars.bulma)
+}
+
+// JobRunr's BOM lifts Playwright on the runtime classpath (1.59 over our 1.52); compile the tests
+// against the versions they run with, or API changes between the two fail with NoSuchMethodError.
+configurations.testCompileClasspath {
+    shouldResolveConsistentlyWith(configurations.testRuntimeClasspath)
 }
 
 bootRun {

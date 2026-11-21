@@ -13,6 +13,7 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -88,7 +89,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
         // Echo user message + show typing indicator
         chatChannel.sendHtml(
-                Htmx.oobAppend("chat-messages", ChatHtml.userBubble(userMessage)),
+                Htmx.oobAppend("chat-messages", ChatHtml.userBubble(userMessage, Instant.now())),
                 Htmx.oobReplace("typing-indicator", ChatHtml.typingDots()));
 
         try {
@@ -99,7 +100,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         } catch (RuntimeException ex) {
             log.warn("Chat request failed for conversation {}", conversationId, ex);
             chatChannel.sendHtml(
-                    Htmx.oobAppend("chat-messages", ChatHtml.agentBubble(genericUserFacingError(ex))),
+                    Htmx.oobAppend("chat-messages", ChatHtml.agentError(genericUserFacingError(ex), Instant.now())),
                     Htmx.oobReplace("typing-indicator", ""));
         }
     }
