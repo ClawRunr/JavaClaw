@@ -58,8 +58,9 @@ dependencies {
     testImplementation(libs.playwright)
 }
 
-// JobRunr's BOM lifts Playwright on the runtime classpath (1.59 over our 1.52); compile the tests
-// against the versions they run with, or API changes between the two fail with NoSuchMethodError.
+// JobRunr's BOM also sets a Playwright version, and the higher of it and ours wins on the runtime
+// classpath; compile the tests against the versions they run with, or API changes between the two
+// fail with NoSuchMethodError.
 configurations.testCompileClasspath {
     shouldResolveConsistentlyWith(configurations.testRuntimeClasspath)
 }
