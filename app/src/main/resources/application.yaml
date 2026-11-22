@@ -42,3 +42,10 @@ jobrunr:
   dashboard:
     enabled: true
     port: 8081
+javaclaw:
+  tools:
+    dynamic-discovery:
+      # Tool search is off until Spring AI fixes tool search with session memory: the model calls tools it saw in
+      # earlier turns, and tool search only offers tools found in the current turn, so the turn fails with
+      # "No ToolCallback found". See https://github.com/spring-projects/spring-ai/issues/7441.
+      enabled: false

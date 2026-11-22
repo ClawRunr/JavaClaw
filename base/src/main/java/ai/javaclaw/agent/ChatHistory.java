@@ -5,9 +5,11 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.session.Session;
 import org.springframework.ai.session.SessionAttributes;
+import org.springframework.ai.session.SessionEvent;
 import org.springframework.ai.session.SessionService;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -56,10 +58,24 @@ public class ChatHistory {
      * @return the messages, empty for a conversation that does not exist yet
      */
     public List<Message> messages(String conversationId) {
-        return sessionService.getMessages(conversationId).stream()
-                .filter(ChatHistory::isShown)
+        return entries(conversationId).stream().map(Entry::message).toList();
+    }
+
+    /**
+     * The same messages as {@link #messages(String)}, each with the time it was stored.
+     *
+     * @return the entries, empty for a conversation that does not exist yet
+     */
+    public List<Entry> entries(String conversationId) {
+        return sessionService.getEvents(conversationId).stream()
+                .filter(SessionEvent::hasMessage)
+                .filter(event -> isShown(event.getMessage()))
+                .map(event -> new Entry(event.getMessage(), event.getTimestamp()))
                 .toList();
     }
+
+    /** A message of a conversation and the time it was stored. */
+    public record Entry(Message message, Instant timestamp) {}
 
     private static boolean isShown(Message message) {
         return message instanceof UserMessage

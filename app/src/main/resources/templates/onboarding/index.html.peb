@@ -3,7 +3,7 @@
 {% block title %} Onboarding{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@samlam140330/bulma-timeline@1.0.3/dist/css/bulma-timeline.min.css">
+<link rel="stylesheet" href="/webjars/bulma-timeline/dist/css/bulma-timeline.min.css">
 <style>
     .provider-card {
         border: 2px solid var(--bulma-border);

@@ -50,6 +50,7 @@ class ChatWebSocketHandlerTest {
                 .contains("ar-typing");
 
         assertThat(String.join("", htmlCaptor.getAllValues().get(1)))
+                .contains("ar-msg--agent ar-msg--error")
                 .contains("An error occurred while contacting the AI provider")
                 .contains("Details: HTTP 401 - {")
                 .contains("typing-indicator")

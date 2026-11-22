@@ -21,6 +21,8 @@ import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -129,13 +131,16 @@ public class ChatChannel implements Channel {
      * Returns a single welcome bubble if no history exists yet.
      */
     public List<String> loadHistoryAsHtml(String conversationId) {
-        List<Message> history = chatHistory.messages(conversationId);
+        List<ChatHistory.Entry> history = chatHistory.entries(conversationId);
         if (history.isEmpty()) {
-            return List.of(ChatHtml.agentBubble("Hi! I'm your JavaClaw assistant. How can I help you today?"));
+            return List.of(ChatHtml.agentBubble("Hi! I'm your JavaClaw assistant. How can I help you today?", null));
         }
         List<String> bubbles = new ArrayList<>();
-        for (Message msg : history) {
-            bubbles.add(msg instanceof UserMessage ? ChatHtml.userBubble(msg.getText()) : ChatHtml.agentBubble(msg.getText()));
+        for (ChatHistory.Entry entry : history) {
+            Message msg = entry.message();
+            bubbles.add(msg instanceof UserMessage
+                    ? ChatHtml.userBubble(msg.getText(), entry.timestamp())
+                    : ChatHtml.agentBubble(msg.getText(), entry.timestamp()));
         }
         return bubbles;
     }
@@ -143,7 +148,8 @@ public class ChatChannel implements Channel {
     /**
      * Handles a chat message from the web UI for the given conversationId.
      * The response is streamed to the WebSocket session as JSON frames
-     * ({@code chunk}/{@code toolCall}/{@code toolResult}/{@code done}/{@code error}).
+     * ({@code chunk}/{@code toolCall}/{@code toolResult}/{@code done}/{@code error}), each with the
+     * time it was sent; the page shows the first frame's time as the time of the answer.
      */
     public void chat(String conversationId, String message) {
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), message));
@@ -173,6 +179,7 @@ public class ChatChannel implements Channel {
         frame.put("type", type.type());
         if (payload != null) frame.put("data", payload);
         frame.put("conversationId", conversationId);
+        frame.put("time", Instant.now().truncatedTo(ChronoUnit.SECONDS).toString());
         return frame;
     }
 
@@ -187,6 +194,6 @@ public class ChatChannel implements Channel {
     }
 
     private static String buildBackgroundMessageHtml(String text) {
-        return Htmx.oobAppend("chat-messages", ChatHtml.agentBubble(text));
+        return Htmx.oobAppend("chat-messages", ChatHtml.agentBubble(text, Instant.now()));
     }
 }
