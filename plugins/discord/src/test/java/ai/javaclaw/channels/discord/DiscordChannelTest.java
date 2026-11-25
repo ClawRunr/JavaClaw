@@ -2,6 +2,10 @@ package ai.javaclaw.channels.discord;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatCommands;
+import ai.javaclaw.agent.ChatSessions;
+import ai.javaclaw.agent.ConversationKey;
+import ai.javaclaw.agent.SessionKind;
 import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.ChannelRegistry;
 import net.dv8tion.jda.api.JDA;
@@ -27,6 +31,7 @@ import static org.mockito.Mockito.when;
 class DiscordChannelTest {
 
     private final Agent agent = mock(Agent.class);
+    private final ChatSessions chatSessions = mock(ChatSessions.class);
 
     @Test
     void ignoresBotMessages() {
@@ -65,7 +70,7 @@ class DiscordChannelTest {
 
         channel.onMessageReceived(event(false, true, false, "123", "D1", "hello", channelMock));
 
-        verify(agent).respondTo(AgentRequest.chat("discord-D1", SessionChannel.DISCORD, "hello"));
+        verify(agent).respondTo(AgentRequest.chat(ConversationKey.discord("D1"), SessionChannel.DISCORD, "hello"));
         verify(channelMock).sendMessage("hi");
     }
 
@@ -77,7 +82,7 @@ class DiscordChannelTest {
 
         channel.onMessageReceived(event(false, false, true, "123", "C1", "<@111> hello there", channelMock));
 
-        verify(agent).respondTo(AgentRequest.chat("discord-C1", SessionChannel.DISCORD, "hello there"));
+        verify(agent).respondTo(AgentRequest.chat(ConversationKey.discord("C1"), SessionChannel.DISCORD, "hello there"));
     }
 
     @Test
@@ -101,8 +106,20 @@ class DiscordChannelTest {
         verifyNoInteractions(agent);
     }
 
+    @Test
+    void newStartsANewSessionInsteadOfAskingTheAgent() {
+        DiscordChannel channel = channel("123");
+        MessageChannelUnion channelMock = messageChannel("C1");
+
+        channel.onMessageReceived(event(false, false, true, "123", "C1", "<@111> /new Groceries", channelMock));
+
+        verify(chatSessions).create(ConversationKey.discord("C1"), SessionKind.CHAT, SessionChannel.DISCORD, "Groceries");
+        verify(agent, never()).respondTo(any(AgentRequest.class));
+        verify(channelMock).sendMessage("Started a new conversation.");
+    }
+
     private DiscordChannel channel(String allowedUser) {
-        return new DiscordChannel(allowedUser, agent, new ChannelRegistry());
+        return new DiscordChannel(allowedUser, agent, new ChatCommands(chatSessions), new ChannelRegistry());
     }
 
     private MessageReceivedEvent event(boolean authorIsBot,

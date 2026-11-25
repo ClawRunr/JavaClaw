@@ -2,6 +2,10 @@ package ai.javaclaw.channels.teams;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatCommands;
+import ai.javaclaw.agent.ChatSessions;
+import ai.javaclaw.agent.ConversationKey;
+import ai.javaclaw.agent.SessionKind;
 import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.Test;
@@ -42,6 +46,9 @@ class TeamsWebhookControllerTest {
     private TeamsChannel channel;
 
     @Mock
+    private ChatSessions chatSessions;
+
+    @Mock
     private BotFrameworkJwtValidator jwtValidator;
 
     private TeamsWebhookController controller(String allowedUserId) {
@@ -49,7 +56,7 @@ class TeamsWebhookControllerTest {
         properties.setAllowedUserId(allowedUserId);
         // Most tests send "Bearer t"; lenient, because tests without a Bearer header never reach the validator
         lenient().when(jwtValidator.isValid("t", SERVICE_URL)).thenReturn(true);
-        return new TeamsWebhookController(properties, channelRegistry, agent, channel, jwtValidator);
+        return new TeamsWebhookController(properties, channelRegistry, agent, new ChatCommands(chatSessions), channel, jwtValidator);
     }
 
     // -----------------------------------------------------------------------
@@ -140,23 +147,23 @@ class TeamsWebhookControllerTest {
 
     @Test
     void acceptsMessagesFromTheConfiguredTeamsUserId() {
-        when(agent.respondTo(AgentRequest.chat("teams-conv-1", SessionChannel.TEAMS, "hello"))).thenReturn("hi!");
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.teams("conv-1"), SessionChannel.TEAMS, "hello"))).thenReturn("hi!");
 
         controller(ALLOWED_USER).webhook("Bearer t", activity("message", ALLOWED_USER, "hello", "conv-1"));
 
-        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).respondTo(AgentRequest.chat("teams-conv-1", SessionChannel.TEAMS, "hello"));
+        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).respondTo(AgentRequest.chat(ConversationKey.teams("conv-1"), SessionChannel.TEAMS, "hello"));
     }
 
     @Test
     void acceptsMessagesFromTheConfiguredEntraObjectId() {
-        when(agent.respondTo(AgentRequest.chat("teams-conv-1", SessionChannel.TEAMS, "hello"))).thenReturn("hi!");
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.teams("conv-1"), SessionChannel.TEAMS, "hello"))).thenReturn("hi!");
         TeamsActivityPayload activity = new TeamsActivityPayload("message", "activity-1", SERVICE_URL, "msteams", "hello",
                 new TeamsActivityPayload.From("29:some-teams-id", "Some User", "AAD-OBJECT-ID"),
                 new TeamsActivityPayload.Conversation("conv-1", "personal"));
 
         controller("aad-object-id").webhook("Bearer t", activity);
 
-        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).respondTo(AgentRequest.chat("teams-conv-1", SessionChannel.TEAMS, "hello"));
+        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).respondTo(AgentRequest.chat(ConversationKey.teams("conv-1"), SessionChannel.TEAMS, "hello"));
     }
 
     // -----------------------------------------------------------------------
@@ -187,7 +194,7 @@ class TeamsWebhookControllerTest {
 
     @Test
     void handsTheMessageToTheAgentAndRepliesThroughTheChannel() {
-        when(agent.respondTo(AgentRequest.chat("teams-conv-1", SessionChannel.TEAMS, "hello"))).thenReturn("hi!");
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.teams("conv-1"), SessionChannel.TEAMS, "hello"))).thenReturn("hi!");
         TeamsConversationReference reference = new TeamsConversationReference(SERVICE_URL, "conv-1");
 
         ResponseEntity<Void> response = controller(ALLOWED_USER)
@@ -196,19 +203,19 @@ class TeamsWebhookControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         verify(channel).updateConversationReference(reference);
         verify(channelRegistry).publishMessageReceivedEvent(any(TeamsChannelMessageReceivedEvent.class));
-        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).respondTo(AgentRequest.chat("teams-conv-1", SessionChannel.TEAMS, "hello"));
+        verify(agent, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).respondTo(AgentRequest.chat(ConversationKey.teams("conv-1"), SessionChannel.TEAMS, "hello"));
         verify(channel, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS)).sendMessage(reference, "hi!");
     }
 
     @Test
     void repliesToTheConversationTheMessageCameFromEvenWhenAnotherMessageArrivesMeanwhile() throws Exception {
         CountDownLatch secondMessageReceived = new CountDownLatch(1);
-        when(agent.respondTo(AgentRequest.chat("teams-conv-1", SessionChannel.TEAMS, "first"))).thenAnswer(invocation -> {
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.teams("conv-1"), SessionChannel.TEAMS, "first"))).thenAnswer(invocation -> {
             // Still busy with the first message while the second one comes in
             secondMessageReceived.await(WAIT_FOR_BACKGROUND_WORK_MILLIS, TimeUnit.MILLISECONDS);
             return "answer-1";
         });
-        when(agent.respondTo(AgentRequest.chat("teams-conv-2", SessionChannel.TEAMS, "second"))).thenReturn("answer-2");
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.teams("conv-2"), SessionChannel.TEAMS, "second"))).thenReturn("answer-2");
         TeamsWebhookController controller = controller(ALLOWED_USER);
 
         controller.webhook("Bearer t", activity("message", ALLOWED_USER, "first", "conv-1"));
@@ -227,7 +234,7 @@ class TeamsWebhookControllerTest {
 
     @Test
     void tellsTheUserWhenTheAgentFailsWithoutExposingTheError() {
-        when(agent.respondTo(AgentRequest.chat("teams-conv-1", SessionChannel.TEAMS, "hello")))
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.teams("conv-1"), SessionChannel.TEAMS, "hello")))
                 .thenThrow(new IllegalStateException("provider said: invalid api key sk-123"));
 
         controller(ALLOWED_USER).webhook("Bearer t", activity("message", ALLOWED_USER, "hello", "conv-1"));
@@ -249,5 +256,19 @@ class TeamsWebhookControllerTest {
         return new TeamsActivityPayload(type, "activity-1", SERVICE_URL, "msteams", text,
                 new TeamsActivityPayload.From(fromId, "Some User", null),
                 new TeamsActivityPayload.Conversation(conversationId, conversationType));
+    }
+
+    // -----------------------------------------------------------------------
+    // /new
+    // -----------------------------------------------------------------------
+
+    @Test
+    void newStartsANewSessionInsteadOfAskingTheAgent() {
+        controller(ALLOWED_USER).webhook("Bearer t", activity("message", ALLOWED_USER, "/new Groceries", "conv-1"));
+
+        verify(channel, timeout(WAIT_FOR_BACKGROUND_WORK_MILLIS))
+                .sendMessage(new TeamsConversationReference(SERVICE_URL, "conv-1"), "Started a new conversation.");
+        verify(chatSessions).create(ConversationKey.teams("conv-1"), SessionKind.CHAT, SessionChannel.TEAMS, "Groceries");
+        verify(agent, never()).respondTo(any(AgentRequest.class));
     }
 }

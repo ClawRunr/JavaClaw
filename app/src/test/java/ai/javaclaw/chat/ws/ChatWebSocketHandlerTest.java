@@ -7,7 +7,6 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,18 +28,18 @@ class ChatWebSocketHandlerTest {
                         "code": "invalid_api_key"
                     }
                 }
-                """)).when(chatChannel).chat("web", "hello");
+                """)).when(chatChannel).chat("hello");
 
         handler.handleTextMessage(session, new TextMessage(new ObjectMapper().writeValueAsString(Map.of(
                 "type", "userMessage",
-                "conversationId", "web",
                 "message", "hello"
         ))));
 
         ArgumentCaptor<String[]> htmlCaptor = ArgumentCaptor.forClass(String[].class);
         var inOrder = inOrder(chatChannel);
+        inOrder.verify(chatChannel).runCommand("hello");
         inOrder.verify(chatChannel).sendHtml(htmlCaptor.capture());
-        inOrder.verify(chatChannel).chat("web", "hello");
+        inOrder.verify(chatChannel).chat("hello");
         inOrder.verify(chatChannel).sendHtml(htmlCaptor.capture());
         verifyNoMoreInteractions(chatChannel);
 
@@ -63,18 +62,18 @@ class ChatWebSocketHandlerTest {
         WebSocketSession session = mock(WebSocketSession.class);
         ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
 
-        doThrow(new RuntimeException("boom")).when(chatChannel).chat(anyString(), anyString());
+        doThrow(new RuntimeException("boom")).when(chatChannel).chat(anyString());
 
         handler.handleTextMessage(session, new TextMessage(new ObjectMapper().writeValueAsString(Map.of(
                 "type", "userMessage",
-                "conversationId", "web",
                 "message", "hello"
         ))));
 
         ArgumentCaptor<String[]> htmlCaptor = ArgumentCaptor.forClass(String[].class);
         var inOrder = inOrder(chatChannel);
+        inOrder.verify(chatChannel).runCommand("hello");
         inOrder.verify(chatChannel).sendHtml(htmlCaptor.capture());
-        inOrder.verify(chatChannel).chat("web", "hello");
+        inOrder.verify(chatChannel).chat("hello");
         inOrder.verify(chatChannel).sendHtml(htmlCaptor.capture());
 
         assertThat(String.join("", htmlCaptor.getAllValues().get(1)))
@@ -92,14 +91,14 @@ class ChatWebSocketHandlerTest {
 
         handler.handleTextMessage(session, new TextMessage(new ObjectMapper().writeValueAsString(Map.of(
                 "type", "userMessage",
-                "conversationId", "web",
                 "message", "hello"
         ))));
 
         ArgumentCaptor<String[]> htmlCaptor = ArgumentCaptor.forClass(String[].class);
         var inOrder = inOrder(chatChannel);
+        inOrder.verify(chatChannel).runCommand("hello");
         inOrder.verify(chatChannel).sendHtml(htmlCaptor.capture());
-        inOrder.verify(chatChannel).chat("web", "hello");
+        inOrder.verify(chatChannel).chat("hello");
         inOrder.verify(chatChannel).sendHtml(htmlCaptor.capture());
         verifyNoMoreInteractions(chatChannel);
 
@@ -110,45 +109,63 @@ class ChatWebSocketHandlerTest {
     }
 
     @Test
-    void handleChannelChangedSendsHistoryAndInputArea() throws Exception {
+    void aCommandIsAnsweredWithoutEchoOrAgent() throws Exception {
         ChatChannel chatChannel = mock(ChatChannel.class);
-        WebSocketSession session = mock(WebSocketSession.class);
         ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
+        when(chatChannel.runCommand("/new")).thenReturn(true);
 
-        when(chatChannel.loadHistoryAsHtml("web")).thenReturn(List.of("<div>history</div>"));
+        handle(handler, Map.of("type", "userMessage", "message", "  /new  "));
 
-        handler.handleTextMessage(session, new TextMessage(new ObjectMapper().writeValueAsString(Map.of(
-                "type", "channelChanged",
-                "conversationId", "web"
-        ))));
-
-        ArgumentCaptor<String[]> htmlCaptor = ArgumentCaptor.forClass(String[].class);
-        verify(chatChannel).sendHtml(htmlCaptor.capture());
-
-        assertThat(String.join("", htmlCaptor.getValue()))
-                .contains("chat-messages")
-                .contains("history")
-                .contains("chat-input-area");
+        verify(chatChannel).runCommand("/new");
+        verifyNoMoreInteractions(chatChannel);
     }
 
     @Test
-    void afterConnectionEstablishedSendsSelectorHistoryAndInputArea() throws Exception {
+    void sessionFramesGoToTheChatChannel() throws Exception {
+        ChatChannel chatChannel = mock(ChatChannel.class);
+        ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
+
+        handle(handler, Map.of("type", "newChat"));
+        handle(handler, Map.of("type", "switchSession", "sessionId", "s1"));
+        handle(handler, Map.of("type", "viewSession", "sessionId", "telegram-42"));
+        handle(handler, Map.of("type", "renameSession", "sessionId", "s1", "title", "Trip to Lisbon"));
+
+        var inOrder = inOrder(chatChannel);
+        inOrder.verify(chatChannel).newChat();
+        inOrder.verify(chatChannel).switchTo("s1");
+        inOrder.verify(chatChannel).showChannel("telegram-42");
+        inOrder.verify(chatChannel).rename("s1", "Trip to Lisbon");
+        verifyNoMoreInteractions(chatChannel);
+    }
+
+    @Test
+    void aRefusedSessionFrameChangesNothingAndKeepsTheConnection() throws Exception {
+        ChatChannel chatChannel = mock(ChatChannel.class);
+        ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
+        doThrow(new IllegalArgumentException("not web's")).when(chatChannel).switchTo("telegram-42");
+
+        handle(handler, Map.of("type", "switchSession", "sessionId", "telegram-42"));
+        handle(handler, Map.of("type", "renameSession", "sessionId", "s1"));
+
+        verify(chatChannel).switchTo("telegram-42");
+        verifyNoMoreInteractions(chatChannel);
+    }
+
+    @Test
+    void afterConnectionEstablishedShowsTheWebChat() throws Exception {
         ChatChannel chatChannel = mock(ChatChannel.class);
         WebSocketSession session = mock(WebSocketSession.class);
         ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
 
-        when(chatChannel.conversationIds()).thenReturn(List.of("web"));
-        when(chatChannel.loadHistoryAsHtml("web")).thenReturn(List.of("<div>history</div>"));
-
         handler.afterConnectionEstablished(session);
 
-        ArgumentCaptor<String[]> htmlCaptor = ArgumentCaptor.forClass(String[].class);
-        verify(chatChannel).sendHtml(htmlCaptor.capture());
+        var inOrder = inOrder(chatChannel);
+        inOrder.verify(chatChannel).setWsSession(session);
+        inOrder.verify(chatChannel).showWebChat();
+        inOrder.verify(chatChannel).flushPendingMessages();
+    }
 
-        assertThat(String.join("", htmlCaptor.getValue()))
-                .contains("channel-selector")
-                .contains("chat-messages")
-                .contains("history")
-                .contains("chat-input-area");
+    private static void handle(ChatWebSocketHandler handler, Map<String, Object> frame) throws Exception {
+        handler.handleTextMessage(mock(WebSocketSession.class), new TextMessage(new ObjectMapper().writeValueAsString(frame)));
     }
 }

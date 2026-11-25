@@ -3,8 +3,13 @@ package ai.javaclaw.chat;
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentEvent;
 import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatCommands;
 import ai.javaclaw.agent.ChatHistory;
+import ai.javaclaw.agent.ChatSessions;
+import ai.javaclaw.agent.ConversationKey;
 import ai.javaclaw.agent.SessionChannel;
+import ai.javaclaw.agent.SessionKind;
+import ai.javaclaw.agent.SessionTitles;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -28,54 +34,158 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ChatChannelTest {
 
+    private static final ConversationKey WEB = ConversationKey.web();
+    private static final Instant NOW = Instant.parse("2026-11-24T15:30:12Z");
+
     @Mock Agent agent;
     @Mock ChatHistory chatHistory;
+    @Mock ChatSessions chatSessions;
 
     ChatChannel chatChannel;
 
     @BeforeEach
     void setUp() {
-        chatChannel = new ChatChannel(agent, new ChannelRegistry(), chatHistory, new ObjectMapper());
+        chatChannel = new ChatChannel(agent, new ChannelRegistry(), chatSessions, new ChatCommands(chatSessions),
+                chatHistory, new ObjectMapper());
     }
 
     // -----------------------------------------------------------------------
-    // conversationIds
+    // Views: the web chat's sessions and the other channels' conversations
     // -----------------------------------------------------------------------
 
     @Test
-    void conversationIdsAlwaysContainsWebFirst() {
-        when(chatHistory.conversationIds()).thenReturn(List.of("telegram-42", "web"));
+    void showWebChatSendsTheActiveSessionsHeaderSidebarHistoryAndComposer() throws IOException {
+        WebSocketSession session = openSession();
+        givenWebSessions(summary("s2", "Trip to Lisbon", true), summary("s1", "Groceries", false));
+        when(chatSessions.otherConversations(WEB)).thenReturn(List.of(
+                new ChatSessions.Summary("telegram-42", "Weather", SessionChannel.TELEGRAM, NOW, true)));
+        when(chatHistory.turns("s2")).thenReturn(List.of(question("Lisbon in May?")));
 
-        List<String> ids = chatChannel.conversationIds();
+        chatChannel.showWebChat();
 
-        assertThat(ids).first().isEqualTo("web");
+        String html = sentHtml(session);
+        assertThat(html)
+                .contains("<span class=\"ar-chat-head__label\">Web</span>")
+                .contains("<h1 class=\"ar-chat-head__title\" id=\"chat-title\">Trip to Lisbon</h1>")
+                .contains("id=\"rename-btn\"")
+                .contains("<input type=\"hidden\" name=\"sessionId\" value=\"s2\">")
+                .contains("Lisbon in May?")
+                .contains("<textarea id=\"message-input\"");
+        // The sidebar: the web chat's sessions, the shown one highlighted, then the other channels
+        assertThat(html.indexOf("Trip to Lisbon</span>")).isLessThan(html.indexOf("Groceries</span>"));
+        assertThat(html)
+                .contains("class=\"ar-side__item is-active\" aria-current=\"true\" ws-send hx-vals='{\"type\": \"switchSession\"}' name=\"sessionId\" value=\"s2\"")
+                .contains("class=\"ar-side__item\" ws-send hx-vals='{\"type\": \"switchSession\"}' name=\"sessionId\" value=\"s1\"")
+                .contains("hx-vals='{\"type\": \"viewSession\"}' name=\"sessionId\" value=\"telegram-42\"><span class=\"ar-side__channel\">Telegram</span><span class=\"ar-side__title\">Weather</span>")
+                .contains("<time class=\"ar-msg__time\" datetime=\"2026-11-24T15:30:12Z\"></time>");
     }
 
     @Test
-    void conversationIdsIncludesWebEvenWhenRepositoryReturnsEmpty() {
-        when(chatHistory.conversationIds()).thenReturn(List.of());
+    void aNewSessionShowsTheWelcomeMessage() throws IOException {
+        WebSocketSession session = openSession();
+        givenWebSessions(summary("s1", "New chat", true));
 
-        List<String> ids = chatChannel.conversationIds();
+        chatChannel.showWebChat();
 
-        assertThat(ids).containsExactly("web");
+        assertThat(sentHtml(session)).contains("How can I help you today?").contains(">New chat</h1>");
     }
 
     @Test
-    void conversationIdsIncludesOtherChannelsAfterWeb() {
-        when(chatHistory.conversationIds()).thenReturn(List.of("telegram-42", "telegram-99"));
+    void newChatCreatesASessionAndShowsIt() throws IOException {
+        WebSocketSession session = openSession();
+        givenWebSessions(summary("s3", "New chat", true));
 
-        List<String> ids = chatChannel.conversationIds();
+        chatChannel.newChat();
 
-        assertThat(ids).containsExactly("web", "telegram-42", "telegram-99");
+        verify(chatSessions).create(WEB, SessionKind.CHAT, SessionChannel.WEB, null);
+        assertThat(sentHtml(session)).contains("How can I help you today?");
     }
 
     @Test
-    void conversationIdsDeduplicatesWeb() {
-        when(chatHistory.conversationIds()).thenReturn(List.of("web", "telegram-42"));
+    void switchingLoadsThatSessionsHistory() throws IOException {
+        WebSocketSession session = openSession();
+        givenWebSessions(summary("s1", "Groceries", true), summary("s2", "Trip to Lisbon", false));
+        when(chatHistory.turns("s1")).thenReturn(List.of(question("Milk and eggs")));
 
-        List<String> ids = chatChannel.conversationIds();
+        chatChannel.switchTo("s1");
 
-        assertThat(ids.stream().filter("web"::equals)).hasSize(1);
+        verify(chatSessions).switchTo(WEB, "s1");
+        assertThat(sentHtml(session)).contains("Milk and eggs").contains(">Groceries</h1>");
+    }
+
+    @Test
+    void switchingToASessionOfAnotherConversationIsRefused() {
+        doThrow(new IllegalArgumentException("not web's")).when(chatSessions).switchTo(WEB, "telegram-42");
+
+        assertThatThrownBy(() -> chatChannel.switchTo("telegram-42")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void renameUpdatesTheHeaderAndTheSidebarButNotTheMessages() throws IOException {
+        WebSocketSession session = openSession();
+        givenWebSessions(summary("s1", "Trip to Lisbon", true));
+
+        chatChannel.rename("s1", "Trip to Lisbon");
+
+        verify(chatSessions).rename(WEB, "s1", "Trip to Lisbon");
+        assertThat(sentHtml(session))
+                .contains("id=\"chat-header\"")
+                .contains(">Trip to Lisbon</h1>")
+                .contains("id=\"chat-sessions\"")
+                .contains("<span class=\"ar-side__title\">Trip to Lisbon</span>")
+                .doesNotContain("id=\"chat-messages\"");
+    }
+
+    @Test
+    void aTitleSetInTheBackgroundShowsInTheHeaderAndSidebar() throws IOException {
+        WebSocketSession session = openSession();
+        givenWebSessions(summary("s1", "Weekend in Lisbon", true));
+
+        chatChannel.onSessionTitled(new SessionTitles.SessionTitled(WEB, "s1", "Weekend in Lisbon"));
+
+        assertThat(sentHtml(session)).contains(">Weekend in Lisbon</h1>").doesNotContain("id=\"chat-messages\"");
+    }
+
+    @Test
+    void anotherChannelsConversationIsShownReadOnlyWithoutRename() throws IOException {
+        WebSocketSession session = openSession();
+        when(chatSessions.summary("telegram-42"))
+                .thenReturn(new ChatSessions.Summary("telegram-42", "Weather", SessionChannel.TELEGRAM, NOW, false));
+        when(chatHistory.turns("telegram-42")).thenReturn(List.of(question("Rain tomorrow?")));
+
+        chatChannel.showChannel("telegram-42");
+
+        assertThat(sentHtml(session))
+                .contains("<span class=\"ar-chat-head__label\">Telegram</span>")
+                .contains(">Weather</h1>")
+                .doesNotContain("rename-btn")
+                .contains("Rain tomorrow?")
+                .contains("chat-readonly-notice")
+                .doesNotContain("<textarea");
+    }
+
+    // -----------------------------------------------------------------------
+    // /new in the web chat
+    // -----------------------------------------------------------------------
+
+    @Test
+    void newIsACommandThatNeverReachesTheAgent() throws IOException {
+        WebSocketSession session = openSession();
+        givenWebSessions(summary("s9", "Holiday", true));
+
+        assertThat(chatChannel.runCommand("/new Holiday")).isTrue();
+
+        verify(chatSessions).create(WEB, SessionKind.CHAT, SessionChannel.WEB, "Holiday");
+        verifyNoInteractions(agent);
+        assertThat(sentHtml(session)).contains("Started a new conversation.").contains(">Holiday</h1>")
+                .doesNotContain("How can I help you today?");
+    }
+
+    @Test
+    void anythingElseIsNotACommand() throws IOException {
+        assertThat(chatChannel.runCommand("/news please")).isFalse();
+
+        verify(chatSessions, never()).create(any(), any(), any(), any());
     }
 
     // -----------------------------------------------------------------------
@@ -200,7 +310,7 @@ class ChatChannelTest {
     }
 
     @Test
-    void loadHistoryUsesSuppliedConversationId() {
+    void loadHistoryUsesSuppliedSessionId() {
         when(chatHistory.turns("telegram-42")).thenReturn(List.of());
 
         chatChannel.loadHistoryAsHtml("telegram-42");
@@ -213,17 +323,10 @@ class ChatChannelTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void chatDelegatesToAgentWithConversationId() {
-        chatChannel.chat("web", "hello");
+    void chatDelegatesToAgentInTheWebConversation() {
+        chatChannel.chat("hello");
 
-        verify(agent).respondTo(eq(AgentRequest.chat("web", SessionChannel.WEB, "hello")), anyConsumer());
-    }
-
-    @Test
-    void chatUsesSuppliedConversationId() {
-        chatChannel.chat("telegram-42", "hello");
-
-        verify(agent).respondTo(eq(AgentRequest.chat("telegram-42", SessionChannel.WEB, "hello")), anyConsumer());
+        verify(agent).respondTo(eq(AgentRequest.chat(WEB, SessionChannel.WEB, "hello")), anyConsumer());
     }
 
     // -----------------------------------------------------------------------
@@ -330,7 +433,7 @@ class ChatChannelTest {
             events.accept(new AgentEvent.Done());
         });
 
-        chatChannel.chat("web", "hello");
+        chatChannel.chat("hello");
 
         List<Map<String, Object>> frames = capturedFrames(session, 3);
         assertThat(frames.get(0))
@@ -358,7 +461,7 @@ class ChatChannelTest {
             events.accept(new AgentEvent.Done());
         });
 
-        chatChannel.chat("web", "hello");
+        chatChannel.chat("hello");
 
         List<Map<String, Object>> frames = capturedFrames(session, 3);
         assertThat(frames.get(0))
@@ -378,7 +481,7 @@ class ChatChannelTest {
         WebSocketSession session = openSession();
         agentStreams(events -> events.accept(new AgentEvent.Failed("boom")));
 
-        chatChannel.chat("web", "hello");
+        chatChannel.chat("hello");
 
         List<Map<String, Object>> frames = capturedFrames(session, 1);
         assertThat(frames.get(0))
@@ -395,7 +498,7 @@ class ChatChannelTest {
         });
 
         // should not throw
-        chatChannel.chat("web", "hello");
+        chatChannel.chat("hello");
     }
 
     @SuppressWarnings("unchecked")
@@ -409,6 +512,11 @@ class ChatChannelTest {
         return new ChatHistory.Turn(question, T0, List.of(), answer, T0.plusSeconds(1));
     }
 
+    /** A turn with a question and no answer yet. */
+    private static ChatHistory.Turn question(String question) {
+        return new ChatHistory.Turn(question, T0, List.of(), "", null);
+    }
+
     /** The tool calls in an agent message's data-tools attribute, as the browser reads them. */
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> toolsData(String html) {
@@ -416,6 +524,23 @@ class ChatChannelTest {
         assertThat(m.find()).as("data-tools attribute").isTrue();
         String json = org.springframework.web.util.HtmlUtils.htmlUnescape(m.group(1));
         return new ObjectMapper().readValue(json, List.class);
+    }
+
+    private void givenWebSessions(ChatSessions.Summary... sessions) {
+        ChatSessions.Summary active = java.util.Arrays.stream(sessions).filter(ChatSessions.Summary::active).findFirst().orElseThrow();
+        lenient().when(chatSessions.active(WEB, SessionKind.CHAT, SessionChannel.WEB)).thenReturn(active.id());
+        lenient().when(chatSessions.list(WEB)).thenReturn(List.of(sessions));
+    }
+
+    private static ChatSessions.Summary summary(String id, String title, boolean active) {
+        return new ChatSessions.Summary(id, title, SessionChannel.WEB, NOW, active);
+    }
+
+    /** Everything sent to the browser as HTML, in one string. */
+    private static String sentHtml(WebSocketSession session) throws IOException {
+        var messageCaptor = org.mockito.ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, atLeastOnce()).sendMessage(messageCaptor.capture());
+        return messageCaptor.getAllValues().stream().map(TextMessage::getPayload).reduce("", String::concat);
     }
 
     private WebSocketSession openSession() {
@@ -429,7 +554,7 @@ class ChatChannelTest {
         doAnswer(invocation -> {
             progress.accept(invocation.getArgument(1));
             return null;
-        }).when(agent).respondTo(eq(AgentRequest.chat("web", SessionChannel.WEB, "hello")), anyConsumer());
+        }).when(agent).respondTo(eq(AgentRequest.chat(WEB, SessionChannel.WEB, "hello")), anyConsumer());
     }
 
     @SuppressWarnings("unchecked")

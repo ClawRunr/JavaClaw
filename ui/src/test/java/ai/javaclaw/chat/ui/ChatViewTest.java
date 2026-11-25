@@ -4,6 +4,9 @@ import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentRequest;
 import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.agent.ChatHistory;
+import ai.javaclaw.agent.ChatSessions;
+import ai.javaclaw.agent.ConversationKey;
+import ai.javaclaw.agent.SessionKind;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasText;
 import com.vaadin.flow.component.button.Button;
@@ -37,21 +40,28 @@ class ChatViewTest {
     /** The agent the view talks to; each test stubs only what it needs. */
     private final Agent agent = mock(Agent.class);
 
-    /** The agent's conversations, the view's only source of history. */
+    /** The agent's sessions, the view's only source of history. */
     private final ChatHistory history = mock(ChatHistory.class);
 
+    /** The web conversation's active session is {@code web-session}. */
+    private final ChatSessions sessions = mock(ChatSessions.class);
+
+    {
+        when(sessions.active(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB)).thenReturn("web-session");
+    }
+
     /**
-     * History comes from the {@code web} conversation, the one the HTMX chat also uses, in the
-     * order {@link ChatHistory} gives it. Reading another conversation would fail here.
+     * History comes from the active session of the {@code web} conversation, the one the HTMX chat
+     * also uses, in the order {@link ChatHistory} gives it. Reading another session would fail here.
      */
     @Test
     void showsTheWebConversationsUserAndAssistantMessagesInOrder() {
-        when(history.messages("web")).thenReturn(List.of(
+        when(history.messages("web-session")).thenReturn(List.of(
                 new UserMessage("first question"),
                 new AssistantMessage("first answer"),
                 new UserMessage("second question")));
 
-        ChatView view = new ChatView(agent, history);
+        ChatView view = new ChatView(agent, sessions, history);
 
         assertThat(transcript(view)).containsExactly(
                 "user: first question",
@@ -62,9 +72,9 @@ class ChatViewTest {
     /** A conversation that has not started yet is a normal state, not an error. */
     @Test
     void anEmptyConversationShowsAnEmptyTranscript() {
-        when(history.messages("web")).thenReturn(List.of());
+        when(history.messages("web-session")).thenReturn(List.of());
 
-        assertThat(transcript(new ChatView(agent, history))).isEmpty();
+        assertThat(transcript(new ChatView(agent, sessions, history))).isEmpty();
     }
 
     /**
@@ -73,14 +83,14 @@ class ChatViewTest {
      */
     @Test
     void sendingShowsTheQuestionAndTheAgentsBlockingReply() {
-        when(history.messages("web")).thenReturn(List.of());
-        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"))).thenReturn("hi there");
-        ChatView view = new ChatView(agent, history);
+        when(history.messages("web-session")).thenReturn(List.of());
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.web(), SessionChannel.WEB, "hello"))).thenReturn("hi there");
+        ChatView view = new ChatView(agent, sessions, history);
 
         composer(view).setValue("hello");
         send(view).click();
 
-        verify(agent).respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"));
+        verify(agent).respondTo(AgentRequest.chat(ConversationKey.web(), SessionChannel.WEB, "hello"));
         assertThat(transcript(view)).containsExactly("user: hello", "assistant: hi there");
         assertThat(composer(view).getValue()).isEmpty();
         assertThat(send(view).isEnabled()).isTrue();
@@ -89,8 +99,8 @@ class ChatViewTest {
     /** Whitespace is not a question: nothing reaches the agent and nothing is added. */
     @Test
     void blankInputIsNotSent() {
-        when(history.messages("web")).thenReturn(List.of());
-        ChatView view = new ChatView(agent, history);
+        when(history.messages("web-session")).thenReturn(List.of());
+        ChatView view = new ChatView(agent, sessions, history);
 
         composer(view).setValue("   \n ");
         send(view).click();
@@ -105,9 +115,9 @@ class ChatViewTest {
      */
     @Test
     void anAgentFailureShowsAGenericErrorAndLeavesTheComposerUsable() {
-        when(history.messages("web")).thenReturn(List.of());
-        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"))).thenThrow(new IllegalStateException("api key sk-secret rejected"));
-        ChatView view = new ChatView(agent, history);
+        when(history.messages("web-session")).thenReturn(List.of());
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.web(), SessionChannel.WEB, "hello"))).thenThrow(new IllegalStateException("api key sk-secret rejected"));
+        ChatView view = new ChatView(agent, sessions, history);
 
         composer(view).setValue("hello");
         send(view).click();
@@ -123,9 +133,9 @@ class ChatViewTest {
     /** {@link Agent#respondTo(String, String)} may return null; that must not break the page. */
     @Test
     void aNullReplyIsShownAsAnEmptyAnswerRatherThanFailing() {
-        when(history.messages("web")).thenReturn(List.of());
-        when(agent.respondTo(AgentRequest.chat("web", SessionChannel.WEB, "hello"))).thenReturn(null);
-        ChatView view = new ChatView(agent, history);
+        when(history.messages("web-session")).thenReturn(List.of());
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.web(), SessionChannel.WEB, "hello"))).thenReturn(null);
+        ChatView view = new ChatView(agent, sessions, history);
 
         composer(view).setValue("hello");
         send(view).click();
@@ -139,9 +149,9 @@ class ChatViewTest {
      */
     @Test
     void anUnreadableConversationShowsAnErrorInsteadOfBreakingThePage() {
-        when(history.messages("web")).thenThrow(new IllegalStateException("corrupt chat-web.yaml at /secret/path"));
+        when(history.messages("web-session")).thenThrow(new IllegalStateException("corrupt chat-web.yaml at /secret/path"));
 
-        ChatView view = new ChatView(agent, history);
+        ChatView view = new ChatView(agent, sessions, history);
 
         List<String> lines = transcript(view);
         assertThat(lines).hasSize(1);
@@ -155,9 +165,9 @@ class ChatViewTest {
      */
     @Test
     void markupInAMessageIsShownAsText() {
-        when(history.messages("web")).thenReturn(List.of(new AssistantMessage("<img src=x onerror=alert(1)>")));
+        when(history.messages("web-session")).thenReturn(List.of(new AssistantMessage("<img src=x onerror=alert(1)>")));
 
-        ChatView view = new ChatView(agent, history);
+        ChatView view = new ChatView(agent, sessions, history);
 
         assertThat(transcript(view)).containsExactly("assistant: <img src=x onerror=alert(1)>");
         assertThat(descendants(view)

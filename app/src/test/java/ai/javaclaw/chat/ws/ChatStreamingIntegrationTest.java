@@ -3,13 +3,10 @@ package ai.javaclaw.chat.ws;
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentEvent;
 import ai.javaclaw.agent.AgentRequest;
-import ai.javaclaw.agent.ChatHistory;
-
-import java.util.function.Consumer;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.chat.ChatChannel;
+import ai.javaclaw.chat.InMemoryChatSessions;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -31,6 +28,7 @@ import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -62,7 +60,6 @@ class ChatStreamingIntegrationTest {
         try {
             session.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
                     "type", "userMessage",
-                    "conversationId", "web",
                     "message", "hi"
             ))));
 
@@ -98,7 +95,7 @@ class ChatStreamingIntegrationTest {
     @Configuration(proxyBeanMethods = false)
     @ImportAutoConfiguration({TomcatServletWebServerAutoConfiguration.class,
             DispatcherServletAutoConfiguration.class, WebMvcAutoConfiguration.class})
-    @Import({WebSocketConfig.class, ChatWebSocketHandler.class, ChatChannel.class})
+    @Import({WebSocketConfig.class, ChatWebSocketHandler.class, ChatChannel.class, InMemoryChatSessions.class})
     static class TestConfig {
 
         @Bean
@@ -109,11 +106,6 @@ class ChatStreamingIntegrationTest {
         @Bean
         ChannelRegistry channelRegistry() {
             return new ChannelRegistry();
-        }
-
-        @Bean
-        ChatHistory chatHistory() {
-            return Mockito.mock(ChatHistory.class);
         }
 
         @Bean

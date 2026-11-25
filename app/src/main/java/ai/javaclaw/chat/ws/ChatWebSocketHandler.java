@@ -14,7 +14,6 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 
 @Component
@@ -36,16 +35,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         chatChannel.setWsSession(session);
         log.info("WebChat WebSocket connected: {}", session.getId());
 
-        List<String> ids = chatChannel.conversationIds();
-        String selectedId = ids.getFirst();
-
-        String conversationSelector = ChatHtml.conversationSelector(ids, selectedId);
-        String bubbles = String.join(System.lineSeparator(), chatChannel.loadHistoryAsHtml(selectedId));
-        String inputArea = ChatHtml.chatInputArea(selectedId);
-        chatChannel.sendHtml(
-                Htmx.oobInnerHtml("channel-selector", conversationSelector),
-                Htmx.oobInnerHtml("chat-messages", bubbles),
-                Htmx.oobInnerHtml("chat-input-area", inputArea));
+        chatChannel.showWebChat();
         chatChannel.flushPendingMessages();
     }
 
@@ -61,31 +51,36 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         Map<String, Object> payload = objectMapper.readValue(message.getPayload(), Map.class);
         String type = (String) payload.get("type");
 
-        if ("channelChanged".equals(type)) {
-            handleChannelChanged(payload);
-        } else if ("userMessage".equals(type)) {
-            handleUserMessage(payload);
+        try {
+            switch (type == null ? "" : type) {
+                case "userMessage" -> handleUserMessage(payload);
+                case "newChat" -> chatChannel.newChat();
+                case "switchSession" -> chatChannel.switchTo(text(payload, "sessionId"));
+                case "viewSession" -> chatChannel.showChannel(text(payload, "sessionId"));
+                case "renameSession" -> chatChannel.rename(text(payload, "sessionId"), text(payload, "title"));
+                default -> log.debug("Ignoring WebChat frame of type {}", type);
+            }
+        } catch (IllegalArgumentException e) {
+            // A session of another conversation, an unknown session or a blank title: nothing changes
+            log.warn("Refused WebChat {} request: {}", type, e.getMessage());
         }
     }
 
-    private void handleChannelChanged(Map<String, Object> payload) throws Exception {
-        String conversationId = (String) payload.get("conversationId");
-        if (conversationId == null || conversationId.isBlank()) return;
-
-        String bubbles = String.join(System.lineSeparator(), chatChannel.loadHistoryAsHtml(conversationId));
-        String inputArea = ChatHtml.chatInputArea(conversationId);
-        chatChannel.sendHtml(
-                Htmx.oobInnerHtml("chat-messages", bubbles),
-                Htmx.oobInnerHtml("chat-input-area", inputArea));
+    private static String text(Map<String, Object> payload, String name) {
+        Object value = payload.get(name);
+        if (!(value instanceof String text) || text.isBlank()) {
+            throw new IllegalArgumentException("No " + name);
+        }
+        return text;
     }
 
     private void handleUserMessage(Map<String, Object> payload) throws Exception {
-        String conversationId = (String) payload.get("conversationId");
         String userMessage = (String) payload.get("message");
 
         if (userMessage == null || userMessage.isBlank()) return;
         userMessage = userMessage.trim();
-        if (conversationId == null || conversationId.isBlank()) conversationId = "web";
+        // A command (/new) is answered here; it reaches neither the model nor the history
+        if (chatChannel.runCommand(userMessage)) return;
 
         // Echo user message + show typing indicator
         chatChannel.sendHtml(
@@ -95,10 +90,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         try {
             // Call agent (blocking — the response is streamed to the client as JSON frames
             // by ChatChannel while this call runs; background tasks may push messages too)
-            chatChannel.chat(conversationId, userMessage);
+            chatChannel.chat(userMessage);
             chatChannel.sendHtml(Htmx.oobReplace("typing-indicator", ""));
         } catch (RuntimeException ex) {
-            log.warn("Chat request failed for conversation {}", conversationId, ex);
+            log.warn("Chat request failed", ex);
             chatChannel.sendHtml(
                     Htmx.oobAppend("chat-messages", ChatHtml.agentError(genericUserFacingError(ex), Instant.now())),
                     Htmx.oobReplace("typing-indicator", ""));

@@ -2,6 +2,8 @@ package ai.javaclaw.channels.discord;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatCommands;
+import ai.javaclaw.agent.ConversationKey;
 import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
@@ -26,12 +28,14 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
 
     private final String allowedUserId;
     private final Agent agent;
+    private final ChatCommands chatCommands;
     private final ChannelRegistry channelRegistry;
     private volatile MessageChannel lastChannel;
 
-    public DiscordChannel(String allowedUserId, Agent agent, ChannelRegistry channelRegistry) {
+    public DiscordChannel(String allowedUserId, Agent agent, ChatCommands chatCommands, ChannelRegistry channelRegistry) {
         this.allowedUserId = normalizeUserId(allowedUserId);
         this.agent = agent;
+        this.chatCommands = chatCommands;
         this.channelRegistry = channelRegistry;
         channelRegistry.registerChannel(this);
         log.info("Started Discord integration");
@@ -59,7 +63,9 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
 
         lastChannel = channel;
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), content));
-        String response = agent.respondTo(AgentRequest.chat(getConversationId(channel.getId()), SessionChannel.DISCORD, content));
+        ConversationKey conversation = ConversationKey.discord(channel.getId());
+        String response = chatCommands.handle(conversation, SessionChannel.DISCORD, content).orElseGet(() ->
+                agent.respondTo(AgentRequest.chat(conversation, SessionChannel.DISCORD, content)));
         reply(channel, response);
     }
 
@@ -101,10 +107,6 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
         }
         content = content.trim();
         return content.isBlank() ? null : content;
-    }
-
-    private static String getConversationId(String channelId) {
-        return "discord-" + channelId;
     }
 
     private static String normalizeUserId(String userId) {

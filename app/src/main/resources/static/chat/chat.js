@@ -1,6 +1,7 @@
 // htmx handles: WebSocket connect/send, OOB DOM swaps, form reset and Enter-to-send.
 // This script handles what htmx cannot: the streamed JSON frames (text, tool calls, done, error),
-// the connection status, and rendering agent text as Markdown (markdown.js).
+// the connection status, rendering agent text as Markdown (markdown.js), filtering the chat list
+// and the rename field in the header.
 (function () {
     'use strict';
 
@@ -57,7 +58,58 @@
         renderHistoryTools(messages);
         md.renderPending(messages);
         times.renderAll(messages);
+        times.renderAll(document.getElementById('chat-sessions'));
+        filterChats();
         scrollToBottom();
+    });
+
+    // --- Sidebar: search -----------------------------------------------------
+    // Filters the chat list by title, in the browser; the server re-sends the list on every change,
+    // so the filter is applied again each time.
+    function filterChats() {
+        var search = document.getElementById('chat-search');
+        var list = document.getElementById('chat-list');
+        if (!search || !list) return;
+        var query = search.value.trim().toLocaleLowerCase();
+        var shown = 0;
+        list.querySelectorAll('li').forEach(function (item) {
+            var title = item.querySelector('.ar-side__title');
+            var match = !query || (title && title.textContent.toLocaleLowerCase().indexOf(query) !== -1);
+            item.hidden = !match;
+            if (match) shown++;
+        });
+        var empty = document.getElementById('chat-list-empty');
+        if (empty) empty.hidden = shown > 0 || !query;
+    }
+    document.body.addEventListener('input', function (e) {
+        if (e.target.id === 'chat-search') filterChats();
+    });
+
+    // --- Header: rename ------------------------------------------------------
+    // The rename button turns the title into a text field with Save and Cancel. Save sends the
+    // form over the WebSocket (ws-send); the server answers with the new header.
+    function setRenaming(renaming) {
+        var title = document.getElementById('chat-title');
+        var button = document.getElementById('rename-btn');
+        var form = document.getElementById('rename-form');
+        if (!title || !button || !form) return;
+        var input = document.getElementById('rename-input');
+        title.hidden = renaming;
+        button.hidden = renaming;
+        form.hidden = !renaming;
+        if (renaming) {
+            input.value = input.getAttribute('data-title');
+            input.focus();
+            input.select();
+        }
+    }
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest) return;
+        if (e.target.closest('#rename-btn')) setRenaming(true);
+        else if (e.target.closest('#rename-cancel')) setRenaming(false);
+    });
+    document.body.addEventListener('keydown', function (e) {
+        if (e.target.id === 'rename-input' && e.key === 'Escape') setRenaming(false);
     });
 
     // --- Streaming frames ----------------------------------------------------

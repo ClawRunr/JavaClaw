@@ -1,6 +1,7 @@
 package ai.javaclaw;
 
-import ai.javaclaw.agent.ChatHistory;
+import ai.javaclaw.agent.ChatSessions;
+import ai.javaclaw.agent.ConversationKey;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -37,7 +38,8 @@ class JavaClawApplicationTests {
 
     @Test
     void startsWithSessionsInTheirOwnDatabaseAndJobRunrOnTheApplicationDatabase() {
-        assertThat(context.getBean(ChatHistory.class).conversationIds()).isEmpty();
+        assertThat(context.getBean(ChatSessions.class).list(ConversationKey.web())).isEmpty();
+        assertThat(context.getBean(ChatSessions.class).otherConversations(ConversationKey.web())).isEmpty();
         assertThat(WORKSPACE.resolve("data/sessions.mv.db")).isRegularFile();
 
         assertThat(context.getBeansOfType(DataSource.class)).hasSize(1);

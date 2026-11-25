@@ -1,5 +1,7 @@
 package ai.javaclaw.chat;
 
+import ai.javaclaw.agent.ChatSessions;
+import ai.javaclaw.agent.SessionChannel;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -83,7 +85,7 @@ class ChatHtmlTest {
 
     @Test
     void webInputAreaHasLabelledTextareaAndSendButton() {
-        String html = ChatHtml.chatInputArea("web");
+        String html = ChatHtml.chatInputArea(true, null);
 
         assertThat(html)
                 .contains("<form id=\"chat-form\" class=\"ar-composer\" ws-send")
@@ -95,7 +97,7 @@ class ChatHtmlTest {
 
     @Test
     void otherConversationsAreReadOnlyWithEscapedLabel() {
-        String html = ChatHtml.chatInputArea("<x>");
+        String html = ChatHtml.chatInputArea(false, "<x>");
 
         assertThat(html)
                 .contains("chat-readonly-notice")
@@ -104,14 +106,49 @@ class ChatHtmlTest {
     }
 
     @Test
-    void conversationSelectorEscapesIdsAndMarksSelection() {
-        String html = ChatHtml.conversationSelector(List.of("web", "telegram-42", "\"><script>"), "telegram-42");
+    void sessionListsEscapeTitlesAndIdsAndMarkTheShownSession() {
+        Instant time = Instant.parse("2026-11-24T15:30:12Z");
+        String html = ChatHtml.sessionLists(
+                List.of(new ChatSessions.Summary("s1", "<b>bold</b>", SessionChannel.WEB, time, true),
+                        new ChatSessions.Summary("s2", "Other", SessionChannel.WEB, time, false)),
+                List.of(new ChatSessions.Summary("\"><script>", "Weather", SessionChannel.DISCORD, time, true)),
+                "s2");
 
         assertThat(html)
-                .startsWith("<select id=\"channel-select\" name=\"conversationId\"")
-                .contains("<option value=\"web\">Web Chat</option>")
-                .contains("<option value=\"telegram-42\" selected>Telegram (42)</option>")
-                .doesNotContain("<script>")
-                .contains("&quot;&gt;&lt;script&gt;");
+                .contains("<h2 class=\"ar-side__heading\">Chats</h2>")
+                .contains("&lt;b&gt;bold&lt;/b&gt;")
+                .doesNotContain("<b>bold</b>")
+                .contains("class=\"ar-side__item is-active\" aria-current=\"true\" ws-send hx-vals='{\"type\": \"switchSession\"}' name=\"sessionId\" value=\"s2\"")
+                .contains("<p class=\"ar-side__empty\" id=\"chat-list-empty\" hidden>No chats match.</p>")
+                .contains("<h2 class=\"ar-side__heading\">Channels</h2>")
+                .contains("value=\"&quot;&gt;&lt;script&gt;\"><span class=\"ar-side__channel\">Discord</span>")
+                .doesNotContain("<script>");
+    }
+
+    @Test
+    void sessionListsLeaveOutChannelsWhenThereAreNone() {
+        assertThat(ChatHtml.sessionLists(List.of(), List.of(), null)).doesNotContain("Channels");
+    }
+
+    @Test
+    void theHeaderOfAWebSessionCanRenameIt() {
+        String html = ChatHtml.chatHeader(new ChatSessions.Summary("s1", "Trip \"Lisbon\"", SessionChannel.WEB, Instant.now(), true), true);
+
+        assertThat(html)
+                .contains("<span class=\"ar-chat-head__label\">Web</span>")
+                .contains("<h1 class=\"ar-chat-head__title\" id=\"chat-title\">Trip &quot;Lisbon&quot;</h1>")
+                .contains("<form id=\"rename-form\" class=\"ar-rename\" ws-send hx-boost=\"false\" hx-vals='{\"type\": \"renameSession\"}' hidden>")
+                .contains("<input type=\"hidden\" name=\"sessionId\" value=\"s1\">")
+                .contains("name=\"title\" value=\"Trip &quot;Lisbon&quot;\"")
+                .contains("maxlength=\"60\"")
+                .contains(">Save</button>")
+                .contains(">Cancel</button>");
+    }
+
+    @Test
+    void theHeaderOfAnotherChannelHasNoRename() {
+        String html = ChatHtml.chatHeader(new ChatSessions.Summary("telegram-42", "Weather", SessionChannel.TELEGRAM, Instant.now(), true), false);
+
+        assertThat(html).contains(">Telegram</span>").contains(">Weather</h1>").doesNotContain("rename");
     }
 }

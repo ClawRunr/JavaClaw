@@ -103,6 +103,16 @@ The `workspace/` directory is the agent's home:
 
 Available at [http://localhost:8080/chat](http://localhost:8080/chat). Uses WebSocket for real-time delivery and falls back to REST polling when no WebSocket session is active.
 
+### Chats, titles and `/new`
+
+Every conversation (the web chat, a Telegram chat, a Discord channel, …) can have several chats; the one you used last is the active one, and new messages go there.
+
+- **New chat**: type `/new` in any channel, optionally followed by a name (`/new Trip to Lisbon`; on Telegram also `/new@yourbot`). It starts a fresh chat and keeps the old one. The command itself never reaches the model.
+- **Titles**: after the first exchange, the model gives the chat a short title in the background. If that fails, the first line of your first message becomes the title. Titles in a conversation are unique: a duplicate becomes `Title #2`.
+- **Web chat**: the sidebar lists your web chats (latest first) with a search field, and the other channels' conversations below them, read-only. Click a chat to switch to it, or use the pencil in the header to rename it.
+
+Chats from before this feature keep working as each conversation's first chat.
+
 ### Telegram
 
 Configure during onboarding or by setting:
