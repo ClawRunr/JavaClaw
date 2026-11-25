@@ -9,6 +9,7 @@ import org.springframework.ai.session.SessionAttributes;
 import org.springframework.ai.session.SessionEvent;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 
 import static ai.javaclaw.agent.SessionChannel.TELEGRAM;
@@ -171,7 +172,8 @@ class ChatSessionsTest {
         String older = sessions.create(WEB_CHAT, CHAT, WEB, "Older");
         String untitled = sessions.create(WEB_CHAT, CHAT, WEB, null);
         String newer = sessions.create(WEB_CHAT, CHAT, WEB, "Newer");
-        Instant now = Instant.now();
+        // H2 keeps microseconds; Instant.now() has nanoseconds on Linux
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
         append(older, now.plusSeconds(30), new UserMessage("latest message of all"));
         append(untitled, now.plusSeconds(10), new UserMessage("hi"));
         append(newer, now.plusSeconds(20), new UserMessage("hello"));
