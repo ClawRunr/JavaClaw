@@ -11,6 +11,7 @@ import ai.javaclaw.tools.CheckListTool;
 import ai.javaclaw.tools.McpTool;
 import ai.javaclaw.tools.ToolCallingManagers;
 import ai.javaclaw.tools.JavaClawTaskTool;
+import ai.javaclaw.usage.TokenUsageAdvisor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springaicommunity.agent.common.task.subagent.SubagentType;
@@ -62,6 +63,7 @@ public class MainChatClientProvider {
     private final ConfigurationManager configurationManager;
     private final SubagentStore subagentStore;
     private final Set<AutoDiscoveredTool<?>> autoDiscoveredTools;
+    private final TokenUsageAdvisor tokenUsageAdvisor;
     private final Resource workspace;
     private final List<Resource> skillPaths;
 
@@ -75,6 +77,7 @@ public class MainChatClientProvider {
                                   ConfigurationManager configurationManager,
                                   SubagentStore subagentStore,
                                   Set<AutoDiscoveredTool<?>> autoDiscoveredTools,
+                                  TokenUsageAdvisor tokenUsageAdvisor,
                                   @Value("${agent.workspace:Unknown}") Resource workspace,
                                   @Value("${agent.skills.paths}") List<Resource> skillPaths) {
         this.registry = registry;
@@ -85,6 +88,7 @@ public class MainChatClientProvider {
         this.configurationManager = configurationManager;
         this.subagentStore = subagentStore;
         this.autoDiscoveredTools = autoDiscoveredTools;
+        this.tokenUsageAdvisor = tokenUsageAdvisor;
         this.workspace = workspace;
         this.skillPaths = skillPaths;
         this.chatClient = build();
@@ -123,7 +127,8 @@ public class MainChatClientProvider {
                     .defaultAdvisors(toolCallAdvisor)
                     // The turn advisor wraps the tool loop; the memory advisor runs inside it, so every
                     // round's tool calls and results are stored
-                    .defaultAdvisors(SessionAdvisors.builder(sessionService).build());
+                    .defaultAdvisors(SessionAdvisors.builder(sessionService).build())
+                    .defaultAdvisors(tokenUsageAdvisor);
 
             ToolCallback subagentTaskTool = buildSubagentTaskTool();
             if (subagentTaskTool != null) {
@@ -153,7 +158,7 @@ public class MainChatClientProvider {
             // Agents reference their own provider entry by name, so builders are keyed by provider name.
             Map<String, ChatClient.Builder> builders = new LinkedHashMap<>();
             for (String name : registry.availableNames()) {
-                builders.put(name, registry.builderFor(name));
+                builders.put(name, registry.builderFor(name).defaultAdvisors(tokenUsageAdvisor));
             }
             if (builders.isEmpty()) {
                 return null;

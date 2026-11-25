@@ -85,6 +85,7 @@ User/Agent → TaskManager.create()
 - `workspace/context/`: Agent memory and context storage (e.g. `jobrunr.md`).
 - `workspace/skills/`: Extensible skill files (`SKILL.md` per skill, loaded dynamically by `SkillsTool`).
 - `workspace/tasks/`: Date-bucketed task files + `recurring/` sub-folder.
+- `workspace/usage/`: Per-model-call token usage records (YAML under date folders; for later UI / limits).
 - `workspace/agents/`: Subagent definition files (`<name>.md`) — see "Agents (Subagents)" below.
 
 ---
@@ -95,7 +96,7 @@ User/Agent → TaskManager.create()
 
 **Prompt construction** (`MainChatClientProvider.java`):
 - System prompt = `workspace/AGENT.private.md` (falls back to `workspace/AGENT.md`) + `workspace/INFO.md`
-- **Advisors**: `SimpleLoggerAdvisor`, `ToolSearchToolCallingAdvisor` (falls back to plain `ToolCallingAdvisor`), Spring AI session advisors (chat history in `workspace/data/sessions`, see `agent/session/SessionStoreConfiguration`)
+- **Advisors**: `SimpleLoggerAdvisor`, `ToolSearchToolCallingAdvisor` (falls back to plain `ToolCallingAdvisor`), Spring AI session advisors (chat history in `workspace/data/sessions`, see `agent/session/SessionStoreConfiguration`), `TokenUsageAdvisor` (persists token usage per model call / tool-loop round)
 
 **Default Tools** always injected:
 | Tool | Purpose |
