@@ -111,8 +111,6 @@ Every conversation (the web chat, a Telegram chat, a Discord channel, …) can h
 - **Titles**: after the first exchange, the model gives the chat a short title in the background. If that fails, the first line of your first message becomes the title. Titles in a conversation are unique: a duplicate becomes `Title #2`.
 - **Web chat**: the sidebar lists your web chats (latest first) with a search field, and the other channels' conversations below them, read-only. Click a chat to switch to it, or use the pencil in the header to rename it.
 
-Chats from before this feature keep working as each conversation's first chat.
-
 ### Telegram
 
 Configure during onboarding or by setting:

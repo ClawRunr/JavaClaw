@@ -71,7 +71,7 @@ public class ChatHtml {
         if (writable) {
             return """
                     <form id="chat-form" class="ar-composer" ws-send hx-boost="false"
-                          hx-vals='{"type": "userMessage"}'>
+                          hx-vals='js:{"type": "userMessage", "sessionId": document.getElementById("chat-messages").getAttribute("data-session-id")}'>
                         <label for="message-input" class="is-sr-only">Message JavaClaw</label>
                         <textarea id="message-input" class="ar-composer__input" name="message" rows="1"
                             placeholder="Message JavaClaw…"

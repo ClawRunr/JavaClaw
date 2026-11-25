@@ -17,7 +17,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -29,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 /**
  * The sessions of every conversation. A conversation ({@link ConversationKey}) can have several
@@ -54,10 +54,15 @@ public class ChatSessions {
     /** What an untitled session is called. */
     public static final String UNTITLED = "New chat";
     /** The longest title kept. */
-    public static final int MAX_TITLE_LENGTH = 60;
+    public static final int MAX_TITLE_LENGTH = 50;
 
     /** The {@link SessionAttributes#AGENT_NAME} every JavaClaw session is tagged with. */
     static final String AGENT_NAME = "javaclaw";
+
+    private static final Pattern TITLE_PREFIX = Pattern.compile("^title\\s*:\\s*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SURROUNDING_QUOTES = Pattern.compile("^[\"'`“”„‘’‚«»‹›]+|[\"'`“”„‘’‚«»‹›]+$");
+    private static final String OPENING_BRACKETS = "([{<";
+    private static final String CLOSING_BRACKETS = ")]}>";
 
     private static final DateTimeFormatter ID_TIME = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").withZone(ZoneOffset.UTC);
 
@@ -101,7 +106,7 @@ public class ChatSessions {
      */
     public String create(ConversationKey key, SessionKind kind, SessionChannel channel, String title) {
         return locked(key, () -> {
-            List<Session> sessions = adoptLegacy(key);
+            List<Session> sessions = sessions(key);
             String cleaned = cleanTitle(title);
             return newSession(key, kind, channel, cleaned == null ? null : uniqueTitle(sessions, cleaned, null)).id();
         });
@@ -113,7 +118,7 @@ public class ChatSessions {
      * @throws IllegalArgumentException if the session is not one of this conversation's
      */
     public void switchTo(ConversationKey key, String sessionId) {
-        locked(key, () -> save(sessionOf(adoptLegacy(key), key, sessionId), ACTIVATED_AT, clock.instant().toString()));
+        locked(key, () -> save(sessionOf(sessions(key), key, sessionId), ACTIVATED_AT, clock.instant().toString()));
     }
 
     /**
@@ -128,7 +133,7 @@ public class ChatSessions {
             throw new IllegalArgumentException("A title cannot be blank");
         }
         locked(key, () -> {
-            List<Session> sessions = adoptLegacy(key);
+            List<Session> sessions = sessions(key);
             return save(sessionOf(sessions, key, sessionId), TITLE, uniqueTitle(sessions, cleaned, sessionId));
         });
     }
@@ -144,7 +149,7 @@ public class ChatSessions {
             return false;
         }
         return locked(key, () -> {
-            List<Session> sessions = adoptLegacy(key);
+            List<Session> sessions = sessions(key);
             Session session = sessionOf(sessions, key, sessionId);
             if (title(session) != null) {
                 return false;
@@ -152,6 +157,24 @@ public class ChatSessions {
             save(session, TITLE, uniqueTitle(sessions, cleaned, sessionId));
             return true;
         });
+    }
+
+    /** Whether the session is one of the conversation's. */
+    public boolean isSessionOf(ConversationKey key, String sessionId) {
+        Session session = sessionId == null || sessionId.isBlank() ? null : sessionService.findById(sessionId);
+        return session != null && key.value().equals(session.metadata().get(CONVERSATION));
+    }
+
+    /**
+     * One session of the conversation, as {@link #list} shows it.
+     *
+     * @throws IllegalArgumentException if the session is not one of this conversation's
+     */
+    public Summary summary(ConversationKey key, String sessionId) {
+        return list(key).stream()
+                .filter(session -> session.id().equals(sessionId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Session " + sessionId + " is not one of " + key + "'s"));
     }
 
     /** The conversation's sessions, latest activity first. */
@@ -162,7 +185,7 @@ public class ChatSessions {
         }
         String activeId = active(sessions).id();
         return sessions.stream()
-                .map(session -> summary(session, session.id().equals(activeId)))
+                .map(session -> toSummary(session, session.id().equals(activeId)))
                 .sorted(Comparator.comparing(Summary::lastActivity).reversed())
                 .toList();
     }
@@ -178,17 +201,12 @@ public class ChatSessions {
                 continue;
             }
             Object conversation = session.metadata().get(CONVERSATION);
-            if (conversation == null) {
-                // Legacy: a session from before conversations had several is its conversation's only one
-                if (!session.id().equals(except.legacySessionId())) {
-                    byConversation.put("legacy:" + session.id(), List.of(session));
-                }
-            } else if (!except.value().equals(conversation)) {
+            if (conversation != null && !except.value().equals(conversation)) {
                 byConversation.computeIfAbsent(conversation.toString(), _ -> new ArrayList<>()).add(session);
             }
         }
         return byConversation.values().stream()
-                .map(sessions -> summary(active(sessions), true))
+                .map(sessions -> toSummary(active(sessions), true))
                 .sorted(Comparator.comparing(Summary::lastActivity).reversed())
                 .toList();
     }
@@ -199,7 +217,7 @@ public class ChatSessions {
         if (session == null || !isChat(session)) {
             throw new IllegalArgumentException("No chat session " + sessionId);
         }
-        return summary(session, false);
+        return toSummary(session, false);
     }
 
     /** The session's title, or null when it has none. */
@@ -208,14 +226,10 @@ public class ChatSessions {
         return title == null || title.toString().isBlank() ? null : title.toString();
     }
 
-    /** Whether the session was started before conversations could have several sessions. */
-    static boolean isLegacy(Session session) {
-        return !session.metadata().containsKey(CONVERSATION);
-    }
-
     /**
-     * A title as it is kept: one line, single spaces, no surrounding quotes and no trailing
-     * period, at most {@value #MAX_TITLE_LENGTH} characters.
+     * A title as it is kept, whether the model or a person gave it: the first non-blank line,
+     * single spaces, no {@code Title:} prefix, no surrounding quotes or brackets, no trailing
+     * period, at most {@value #MAX_TITLE_LENGTH} characters cut at a whole word.
      *
      * @return the title, null when nothing is left
      */
@@ -223,19 +237,69 @@ public class ChatSessions {
         if (title == null) {
             return null;
         }
-        String cleaned = title.strip().lines().filter(line -> !line.isBlank()).findFirst().orElse("")
-                .replaceAll("\\s+", " ").strip();
-        cleaned = stripQuotes(cleaned).replaceAll("\\.+$", "").strip();
-        cleaned = stripQuotes(cleaned);
-        if (cleaned.length() > MAX_TITLE_LENGTH) {
-            int cut = Character.isHighSurrogate(cleaned.charAt(MAX_TITLE_LENGTH - 1)) ? MAX_TITLE_LENGTH - 1 : MAX_TITLE_LENGTH;
-            cleaned = cleaned.substring(0, cut).strip();
-        }
+        String cleaned = title.lines().map(String::strip).filter(line -> !line.isEmpty()).findFirst().orElse("")
+                .replaceAll("\\s+", " ");
+        cleaned = TITLE_PREFIX.matcher(cleaned).replaceFirst("");
+        cleaned = unwrap(cleaned);
+        cleaned = cleaned.replaceAll("\\.+$", "").strip();
+        cleaned = unwrap(cleaned);
+        cleaned = cutAtWord(cleaned);
         return cleaned.isEmpty() ? null : cleaned;
     }
 
-    private static String stripQuotes(String text) {
-        return text.replaceAll("^[\"'`“”‘’«»*_]+|[\"'`“”‘’«»*_]+$", "").strip();
+    /**
+     * {@code text} without the quotes or brackets around it. Quotes go from either end; brackets
+     * only as a pair that encloses the whole text, so {@code Echo (tab B)} keeps its parentheses.
+     */
+    private static String unwrap(String text) {
+        String unwrapped = text;
+        while (true) {
+            String stripped = SURROUNDING_QUOTES.matcher(unwrapped).replaceAll("").strip();
+            if (encloses(stripped)) {
+                stripped = stripped.substring(1, stripped.length() - 1).strip();
+            }
+            if (stripped.equals(unwrapped)) {
+                return unwrapped;
+            }
+            unwrapped = stripped;
+        }
+    }
+
+    /** Whether the text's first and last characters are a pair of brackets around all of it. */
+    private static boolean encloses(String text) {
+        if (text.length() < 2) {
+            return false;
+        }
+        int kind = OPENING_BRACKETS.indexOf(text.charAt(0));
+        if (kind < 0 || CLOSING_BRACKETS.indexOf(text.charAt(text.length() - 1)) != kind) {
+            return false;
+        }
+        char open = OPENING_BRACKETS.charAt(kind);
+        char close = CLOSING_BRACKETS.charAt(kind);
+        int depth = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == open) {
+                depth++;
+            } else if (c == close && --depth == 0 && i < text.length() - 1) {
+                return false; // the first bracket closes before the end: "(a) and (b)"
+            }
+        }
+        return depth == 0;
+    }
+
+    /** {@code text} if it fits in {@value #MAX_TITLE_LENGTH} characters, else cut at the last whole word that does. */
+    private static String cutAtWord(String text) {
+        if (text.length() <= MAX_TITLE_LENGTH) {
+            return text;
+        }
+        int space = text.lastIndexOf(' ', MAX_TITLE_LENGTH);
+        if (space > 0) {
+            return text.substring(0, space).strip();
+        }
+        // One word longer than a title: cut it, but never between the two halves of a surrogate pair
+        int cut = Character.isHighSurrogate(text.charAt(MAX_TITLE_LENGTH - 1)) ? MAX_TITLE_LENGTH - 1 : MAX_TITLE_LENGTH;
+        return text.substring(0, cut);
     }
 
     /** A session's first user message, or null if it has none yet. */
@@ -260,45 +324,9 @@ public class ChatSessions {
 
     // --- Conversations ---------------------------------------------------------------------------
 
-    /**
-     * The conversation's sessions. A conversation none of whose sessions are tagged with it is the
-     * legacy session with its old fixed id, if there is one.
-     */
+    /** The conversation's sessions. */
     private List<Session> sessions(ConversationKey key) {
-        List<Session> sessions = sessionRepository.findByMetadata(CONVERSATION, key.value());
-        if (!sessions.isEmpty()) {
-            return sessions;
-        }
-        Session legacy = legacySession(key);
-        return legacy == null ? List.of() : List.of(legacy);
-    }
-
-    /**
-     * Legacy: the session a conversation had when each conversation had one session, under the
-     * fixed id derived from its key. It belongs to the conversation as long as no session is
-     * tagged with the conversation; {@link #adoptLegacy} tags it on its first change.
-     */
-    private Session legacySession(ConversationKey key) {
-        Session session = sessionService.findById(key.legacySessionId());
-        return session != null && isLegacy(session) ? session : null;
-    }
-
-    /**
-     * Legacy: before a conversation's sessions change, tags its legacy session with the
-     * conversation, so it stays one of them next to sessions created from now on.
-     *
-     * @return the conversation's sessions
-     */
-    private List<Session> adoptLegacy(ConversationKey key) {
-        List<Session> sessions = sessions(key);
-        if (sessions.size() == 1 && isLegacy(sessions.getFirst())) {
-            Session legacy = sessions.getFirst();
-            return List.of(save(copy(legacy)
-                    .metadata(CONVERSATION, key.value())
-                    .metadata(ACTIVATED_AT, legacy.createdAt().toString())
-                    .build()));
-        }
-        return sessions;
+        return sessionRepository.findByMetadata(CONVERSATION, key.value());
     }
 
     private static Session sessionOf(List<Session> sessions, ConversationKey key, String sessionId) {
@@ -318,15 +346,7 @@ public class ChatSessions {
     }
 
     private static Instant activatedAt(Session session) {
-        Object value = session.metadata().get(ACTIVATED_AT);
-        if (value != null) {
-            try {
-                return Instant.parse(value.toString());
-            } catch (DateTimeParseException ignored) {
-                // fall through to the creation time
-            }
-        }
-        return session.createdAt();
+        return Instant.parse(session.metadata().get(ACTIVATED_AT).toString());
     }
 
     private Session newSession(ConversationKey key, SessionKind kind, SessionChannel channel, String title) {
@@ -371,12 +391,8 @@ public class ChatSessions {
 
     // --- Summaries -------------------------------------------------------------------------------
 
-    private Summary summary(Session session, boolean active) {
+    private Summary toSummary(Session session, boolean active) {
         String title = title(session);
-        if (title == null && isLegacy(session)) {
-            // Legacy sessions were never titled; their first message says what they are about
-            title = cleanTitle(firstUserMessage(session.id()));
-        }
         return new Summary(session.id(), title == null ? UNTITLED : title, channel(session), lastActivity(session), active);
     }
 
@@ -395,12 +411,9 @@ public class ChatSessions {
         return null;
     }
 
-    /** A session created before sessions had a kind is a chat, unless its id is a task's. */
+    /** Whether the session is a conversation with the owner rather than a scheduled task's. */
     static boolean isChat(Session session) {
-        Object kind = session.metadata().get(SessionKind.ATTRIBUTE);
-        return kind == null
-                ? !session.id().startsWith(SessionKind.TASK_ID_PREFIX)
-                : SessionKind.CHAT.value().equals(kind);
+        return SessionKind.CHAT.value().equals(session.metadata().get(SessionKind.ATTRIBUTE));
     }
 
     // --- Storage ---------------------------------------------------------------------------------

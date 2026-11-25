@@ -47,6 +47,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -150,8 +152,7 @@ class ChatMarkdownBrowserTest {
         sessionRepository.findByMetadata(SessionAttributes.AGENT_NAME, "javaclaw").stream()
                 .map(Session::id)
                 .forEach(sessionRepository::delete);
-        agent.calls.set(0);
-        agent.toolEvents = List.of();
+        agent.reset();
         requests = new CopyOnWriteArrayList<>();
         failedResponses = new CopyOnWriteArrayList<>();
         page = newPage("en-US");
@@ -510,6 +511,144 @@ class ChatMarkdownBrowserTest {
         assertThat(visibleChats()).contains("Holiday");
     }
 
+    // --- Several tabs and stream frames ----------------------------------------------------
+
+    static final String HELD_ANSWER = "Partly sunny. The rest of the answer END-OF-ANSWER";
+
+    @Test
+    void twoTabsOnDifferentSessionsEachSendToTheSessionTheyShow() throws Exception {
+        String other = chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Other");
+        String main = chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Main");
+        Page second = newPage("en-US");
+        try {
+            open(page);
+            open(second);
+            clickChat(second, "Other");
+
+            agent.answer = "Main answer END-OF-ANSWER";
+            say("for main");
+            agent.finished = new CountDownLatch(1);
+            agent.answer = "Other answer END-OF-ANSWER";
+            say(second, "for other");
+
+            assertThat(sessions.getMessages(main)).extracting(Message::getText).containsExactly("for main", "Main answer END-OF-ANSWER");
+            assertThat(sessions.getMessages(other)).extracting(Message::getText).containsExactly("for other", "Other answer END-OF-ANSWER");
+            assertThat(page.textContent("#chat-messages")).doesNotContain("Other answer");
+            assertThat(second.textContent("#chat-messages")).doesNotContain("Main answer");
+        } finally {
+            second.close();
+        }
+    }
+
+    @Test
+    void anAnswerThatStreamsWhileTheTabSwitchesSessionStaysInItsOwnSession() throws Exception {
+        givenMainAndOther();
+        startHeldAnswer();
+
+        clickChat(page, "Other");
+        page.waitForFunction("() => document.getElementById('chat-title').textContent === 'Other'");
+        finishHeldAnswer();
+
+        assertNothingOfTheAnswerIsShown(page);
+        clickChat(page, "Main");
+        assertTheFullAnswerIsShown();
+    }
+
+    @Test
+    void anAnswerThatStreamsWhileTheTabStartsANewChatStaysInItsOwnSession() throws Exception {
+        givenMainAndOther();
+        startHeldAnswer();
+
+        page.fill("#message-input", "/new");
+        page.click("#send-btn");
+        page.waitForFunction("() => document.getElementById('chat-messages').textContent.includes('Started a new conversation.')");
+        finishHeldAnswer();
+
+        assertNothingOfTheAnswerIsShown(page);
+        clickChat(page, "Main");
+        assertTheFullAnswerIsShown();
+    }
+
+    @Test
+    void anAnswerThatStreamsWhileTheTabOpensAChannelStaysInItsOwnSession() throws Exception {
+        String telegram = chatSessions.create(ConversationKey.telegram(42, null), SessionKind.CHAT, SessionChannel.TELEGRAM, "Weather");
+        sessions.appendMessage(telegram, new UserMessage("Rain tomorrow?"));
+        givenMainAndOther();
+        startHeldAnswer();
+
+        page.click("#chat-sessions button[hx-vals*='viewSession']");
+        page.waitForFunction("() => document.getElementById('chat-title').textContent === 'Weather'");
+        finishHeldAnswer();
+
+        assertNothingOfTheAnswerIsShown(page);
+        assertThat(page.textContent("#chat-messages")).contains("Rain tomorrow?");
+        clickChat(page, "Main");
+        assertTheFullAnswerIsShown();
+    }
+
+    @Test
+    void aSecondTabShowingAnotherSessionReceivesNoneOfTheStream() throws Exception {
+        givenMainAndOther();
+        Page second = newPage("en-US");
+        try {
+            open(second);
+            clickChat(second, "Other");
+
+            startHeldAnswer();
+            finishHeldAnswer();
+            waitForAnswer();
+
+            assertNothingOfTheAnswerIsShown(second);
+            assertThat(lastAgentText().strip()).isEqualTo(HELD_ANSWER);
+        } finally {
+            second.close();
+        }
+    }
+
+    /** Two web chats, "Other" and then "Main", which is active; the page shows Main. */
+    private void givenMainAndOther() {
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Other");
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Main");
+        open();
+        assertThat(title()).isEqualTo("Main");
+    }
+
+    /** Sends a question whose answer stops after its first chunk until {@link #finishHeldAnswer()}. */
+    private void startHeldAnswer() {
+        agent.answer = HELD_ANSWER;
+        agent.hold = new CountDownLatch(1);
+        page.fill("#message-input", "weather?");
+        page.click("#send-btn");
+        page.waitForFunction("() => [...document.querySelectorAll('#chat-messages .ar-msg--agent .ar-md')]"
+                + ".some(md => md.textContent.startsWith('Par'))");
+    }
+
+    /** Lets the held answer finish, and gives any stray frame time to arrive. */
+    private void finishHeldAnswer() throws InterruptedException {
+        agent.hold.countDown();
+        assertThat(agent.finished.await(10, TimeUnit.SECONDS)).as("answer finished").isTrue();
+        page.waitForTimeout(300);
+    }
+
+    private static void assertNothingOfTheAnswerIsShown(Page page) {
+        assertThat(page.textContent("#chat-messages")).doesNotContain("Partly").doesNotContain("rest of the answer")
+                .doesNotContain("END-OF-ANSWER");
+        assertThat(page.innerHTML("#typing-indicator")).isEmpty();
+    }
+
+    private void assertTheFullAnswerIsShown() {
+        page.waitForFunction("() => document.getElementById('chat-title').textContent === 'Main'");
+        waitForAnswer();
+        assertThat(lastAgentText().strip()).isEqualTo(HELD_ANSWER);
+        assertThat(page.locator("#chat-messages .ar-msg--agent .ar-md").allTextContents())
+                .filteredOn(text -> text.contains("Par")).hasSize(1);
+    }
+
+    private static void clickChat(Page page, String title) {
+        page.click("#chat-list button:has(.ar-side__title:text-is('" + title + "'))");
+        page.waitForFunction("t => document.getElementById('chat-title').textContent === t", title);
+    }
+
     /** JavaClawTime.format in the page; Intl's narrow no-break spaces are read as spaces. */
     private static String formatTime(Page page, String date, String now) {
         String text = (String) page.evaluate("() => JavaClawTime.format(" + date + ", " + now + ")");
@@ -538,6 +677,10 @@ class ChatMarkdownBrowserTest {
     }
 
     private void open() {
+        open(page);
+    }
+
+    private void open(Page page) {
         page.navigate("http://localhost:" + port + "/chat");
         // On connect the server swaps in the header and a fresh input area in one frame; text typed
         // into the page's initial textarea before that swap would be thrown away.
@@ -547,9 +690,13 @@ class ChatMarkdownBrowserTest {
 
     /** Sends a message in the open page and waits for the whole answer. */
     private void say(String message) {
+        say(page, message);
+    }
+
+    private void say(Page page, String message) {
         page.fill("#message-input", message);
         page.click("#send-btn");
-        waitForAnswer();
+        waitForAnswer(page);
     }
 
     /** Stores a message in the web chat's active session, as if it had been sent at {@code time}. */
@@ -571,8 +718,12 @@ class ChatMarkdownBrowserTest {
 
     /** The answer is complete once its last line is rendered and the typing indicator is gone. */
     private void waitForAnswer() {
+        waitForAnswer(page);
+    }
+
+    private static void waitForAnswer(Page page) {
         try {
-            awaitAnswer();
+            awaitAnswer(page);
         } catch (com.microsoft.playwright.TimeoutError e) {
             System.out.println("[browser] chat at timeout: " + page.innerHTML("#chat-messages"));
             System.out.println("[browser] typing indicator: " + page.innerHTML("#typing-indicator"));
@@ -580,7 +731,7 @@ class ChatMarkdownBrowserTest {
         }
     }
 
-    private void awaitAnswer() {
+    private static void awaitAnswer(Page page) {
         page.waitForFunction("""
                 () => {
                     const md = [...document.querySelectorAll('#chat-messages .ar-msg--agent .ar-md')].pop();
@@ -644,10 +795,21 @@ class ChatMarkdownBrowserTest {
             final AtomicInteger calls = new AtomicInteger();
             volatile List<AgentEvent> toolEvents = List.of();
             volatile String answer = "";
+            /** When set, the answer waits after its first chunk until this is counted down. */
+            volatile CountDownLatch hold;
+            /** Counted down once an answer is complete and stored. */
+            volatile CountDownLatch finished = new CountDownLatch(1);
 
             FakeAgent(SessionService sessions, ChatSessions chatSessions) {
                 this.sessions = sessions;
                 this.chatSessions = chatSessions;
+            }
+
+            void reset() {
+                calls.set(0);
+                toolEvents = List.of();
+                hold = null;
+                finished = new CountDownLatch(1);
             }
 
             @Override
@@ -658,7 +820,9 @@ class ChatMarkdownBrowserTest {
             @Override
             public void respondTo(AgentRequest request, Consumer<AgentEvent> events) {
                 calls.incrementAndGet();
-                String sessionId = chatSessions.active(request.conversation(), request.kind(), request.channel());
+                String sessionId = request.sessionId() != null
+                        ? request.sessionId()
+                        : chatSessions.active(request.conversation(), request.kind(), request.channel());
                 sessions.appendMessage(sessionId, new UserMessage(request.input()));
                 for (AgentEvent event : toolEvents) {
                     switch (event) {
@@ -676,9 +840,18 @@ class ChatMarkdownBrowserTest {
                 }
                 for (int i = 0; i < answer.length(); i += 3) {
                     events.accept(new AgentEvent.Token(answer.substring(i, Math.min(answer.length(), i + 3))));
+                    CountDownLatch gate = hold;
+                    if (i == 0 && gate != null) {
+                        try {
+                            gate.await(30, TimeUnit.SECONDS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
                 }
                 sessions.appendMessage(sessionId, new AssistantMessage(answer));
                 events.accept(new AgentEvent.Done());
+                finished.countDown();
             }
 
             @Override

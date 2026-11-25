@@ -16,12 +16,13 @@ import ai.javaclaw.channels.ChannelRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.core.Ordered;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.util.HtmlUtils;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -32,17 +33,20 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * GUI channel for the web chat interface.
- * Pushes messages directly to the active WebSocket session when connected,
- * falling back to an in-memory queue for REST polling.
+ * GUI channel for the web chat interface, in any number of browser tabs.
  *
- * <p>The page shows one session at a time: the web conversation's active session, which it can
- * continue, or another channel's conversation, read-only. Every view sends the header, the sidebar,
- * the messages and the composer together.
+ * <p>Each tab (WebSocket session) shows one chat session of its own: a session of the web
+ * conversation, which it continues, or another channel's conversation, read-only. A new tab opens
+ * the web conversation's active session. Every view sends the header, the sidebar, the messages
+ * and the composer together, and marks the messages with the shown session's id.
+ *
+ * <p>An answer is streamed as JSON frames that carry the session id of the turn and go only to the
+ * tabs showing that session. Background messages go to every tab, or are buffered for REST polling
+ * while no tab is open.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -66,11 +70,8 @@ public class ChatChannel implements Channel {
     private final ChatHistory chatHistory;
     private final ObjectMapper objectMapper;
     private final ConcurrentLinkedQueue<String> pendingMessages = new ConcurrentLinkedQueue<>();
-    private final AtomicReference<WebSocketSession> wsSession = new AtomicReference<>();
-    /** The other channel's session the page shows read-only; null while it shows the web chat. */
-    private final AtomicReference<String> shownChannelSession = new AtomicReference<>();
-    /** A WebSocket session takes one message at a time; streaming, titles and tasks all send. */
-    private final Object sendLock = new Object();
+    /** Every open tab, by its WebSocket session's id. */
+    private final Map<String, Tab> tabs = new ConcurrentHashMap<>();
 
     public ChatChannel(Agent agent, ChannelRegistry channelRegistry, ChatSessions chatSessions,
                        ChatCommands chatCommands, ChatHistory chatHistory, ObjectMapper objectMapper) {
@@ -84,54 +85,86 @@ public class ChatChannel implements Channel {
         log.info("Started Web Chat channel");
     }
 
+    /**
+     * One browser tab: its WebSocket session and the chat session it shows.
+     *
+     * @param sessionId the shown chat session; null until the first view is sent
+     * @param readOnly  whether that is another channel's conversation
+     */
+    private record Tab(WebSocketSession socket, String sessionId, boolean readOnly) {
+
+        Tab showing(String sessionId, boolean readOnly) {
+            return new Tab(socket, sessionId, readOnly);
+        }
+    }
+
     @Override
     public String getName() {
         return "Web Chat Channel";
     }
 
-    /**
-     * Called by the WebSocket handler when a client connects.
-     */
-    public void setWsSession(WebSocketSession session) {
-        wsSession.set(session);
+    // --- Tabs ----------------------------------------------------------------------------------
+
+    /** A tab connected: it shows the web conversation's active session. */
+    public void open(WebSocketSession socket) throws IOException {
+        tabs.put(socket.getId(), new Tab(socket, null, false));
+        showWebSession(socket, activeWebSession());
+        flushPendingMessages();
     }
 
-    /**
-     * Called by the WebSocket handler when the client disconnects.
-     */
-    public void clearWsSession(WebSocketSession session) {
-        wsSession.compareAndSet(session, null);
+    /** A tab disconnected. */
+    public void close(WebSocketSession socket) {
+        tabs.remove(socket.getId());
     }
 
-    /**
-     * Sends a raw HTML fragment to the active WebSocket session.
-     * Used by the WebSocket handler to push user/agent bubbles and typing indicators.
-     */
-    public void sendHtml(String... html) throws IOException {
-        WebSocketSession session = wsSession.get();
-        synchronized (sendLock) {
-            if (session != null && session.isOpen()) {
-                session.sendMessage(new TextMessage(String.join(System.lineSeparator(), html)));
+    /** Whether the session is one of the web conversation's, which a tab may continue. */
+    public boolean isWebSession(String sessionId) {
+        return chatSessions.isSessionOf(WEB, sessionId);
+    }
+
+    /** Sends a raw HTML fragment to one tab, such as the echo of the question it sent. */
+    public void sendHtml(WebSocketSession socket, String... html) throws IOException {
+        send(socket, String.join(System.lineSeparator(), html));
+    }
+
+    /** Sends a raw HTML fragment to every tab that shows the session, such as the echo of a question. */
+    public void sendHtmlTo(String sessionId, String... html) {
+        String payload = String.join(System.lineSeparator(), html);
+        for (Tab tab : tabs.values()) {
+            if (!sessionId.equals(tab.sessionId())) {
+                continue;
+            }
+            try {
+                send(tab.socket(), payload);
+            } catch (IOException e) {
+                log.warn("WS push failed: {}", e.getMessage());
             }
         }
     }
 
     /**
-     * Delivers a background-task message. Pushes directly to WebSocket if a session
-     * is open, otherwise buffers for REST polling.
+     * Delivers a background-task message to every open tab, or buffers it for REST polling when
+     * no tab is open.
      */
     @Override
     public void sendMessage(String message) {
-        try {
-            sendHtml(buildBackgroundMessageHtml(message));
-        } catch (IOException e) {
-            log.warn("WS push failed, buffering message: {}", e.getMessage());
+        String html = Htmx.oobAppend("chat-messages", ChatHtml.agentBubble(message, Instant.now()));
+        boolean delivered = false;
+        for (Tab tab : tabs.values()) {
+            try {
+                send(tab.socket(), html);
+                delivered = true;
+            } catch (IOException e) {
+                log.warn("WS push failed: {}", e.getMessage());
+            }
+        }
+        if (!delivered) {
             pendingMessages.add(message);
         }
     }
 
     /**
-     * Delivers messages buffered while no WebSocket session was active.
+     * Delivers messages buffered while no tab was open.
      * Each buffered message is attempted once; a failed push re-buffers it.
      */
     public void flushPendingMessages() {
@@ -145,99 +178,113 @@ public class ChatChannel implements Channel {
     // --- Views ---------------------------------------------------------------------------------
 
     /**
-     * Shows the web conversation's active session, which the page continues.
+     * Shows a session of the web conversation in one tab, which then continues it.
      *
      * @param notices agent messages shown below the history that are not part of it, such as the
      *                reply to a command
+     * @throws IllegalArgumentException if it is not a session of the web conversation
      */
-    public void showWebChat(String... notices) throws IOException {
-        shownChannelSession.set(null);
-        String sessionId = webSession();
+    public void showWebSession(WebSocketSession socket, String sessionId, String... notices) throws IOException {
+        ChatSessions.Summary session = chatSessions.summary(WEB, sessionId);
         List<String> bubbles = new ArrayList<>(notices.length == 0 ? loadHistoryAsHtml(sessionId) : history(sessionId));
         for (String notice : notices) {
             bubbles.add(ChatHtml.agentBubble(notice, Instant.now()));
         }
-        ChatSessions.Summary session = webSessionSummary(sessionId);
-        sendView(ChatHtml.chatHeader(session, true), sessionId, bubbles, ChatHtml.chatInputArea(true, null));
+        Tab tab = show(socket, sessionId, false);
+        sendView(tab, ChatHtml.chatHeader(session, true), bubbles, ChatHtml.chatInputArea(true, null));
     }
 
-    /** Shows another channel's conversation, read-only, by the id of its active session. */
-    public void showChannel(String sessionId) throws IOException {
+    /** Shows another channel's conversation in one tab, read-only, by the id of its active session. */
+    public void showChannel(WebSocketSession socket, String sessionId) throws IOException {
         ChatSessions.Summary session = chatSessions.summary(sessionId);
-        shownChannelSession.set(sessionId);
         String label = ChatHtml.channelLabel(session.channel()) + " · " + session.title();
-        sendView(ChatHtml.chatHeader(session, false), sessionId, loadHistoryAsHtml(sessionId),
-                ChatHtml.chatInputArea(false, label));
+        Tab tab = show(socket, sessionId, true);
+        sendView(tab, ChatHtml.chatHeader(session, false), loadHistoryAsHtml(sessionId), ChatHtml.chatInputArea(false, label));
     }
 
-    /** Starts a new web chat session and shows it. */
-    public void newChat() throws IOException {
-        chatSessions.create(WEB, SessionKind.CHAT, SessionChannel.WEB, null);
-        showWebChat();
+    /** Starts a new web chat session, which becomes active, and shows it in this tab. */
+    public void newChat(WebSocketSession socket) throws IOException {
+        String sessionId = chatSessions.create(WEB, SessionKind.CHAT, SessionChannel.WEB, null);
+        showWebSession(socket, sessionId);
+        refreshSidebars();
     }
 
     /**
-     * Makes an earlier web chat session active and shows it.
+     * Makes an earlier web chat session active and shows it in this tab.
      *
      * @throws IllegalArgumentException if it is not a web chat session
      */
-    public void switchTo(String sessionId) throws IOException {
+    public void switchTo(WebSocketSession socket, String sessionId) throws IOException {
         chatSessions.switchTo(WEB, sessionId);
-        showWebChat();
+        showWebSession(socket, sessionId);
+        refreshSidebars();
     }
 
     /**
-     * Renames a web chat session; the header and the sidebar follow.
+     * Renames a web chat session; the header and the sidebar of every tab follow.
      *
      * @throws IllegalArgumentException if the title is blank or it is not a web chat session
      */
     public void rename(String sessionId, String title) throws IOException {
         chatSessions.rename(WEB, sessionId, title);
-        refreshTitles();
+        refreshSidebars();
     }
 
     /**
-     * Runs a chat command ({@link ChatCommands}) typed in the web chat, and shows the result.
+     * Runs a chat command ({@link ChatCommands}) typed in a tab, and shows the result there; other
+     * tabs keep what they show.
      *
      * @return whether {@code message} was a command; if not, it is for the agent
      */
-    public boolean runCommand(String message) throws IOException {
+    public boolean runCommand(WebSocketSession socket, String message) throws IOException {
         Optional<String> reply = chatCommands.handle(WEB, SessionChannel.WEB, message);
         if (reply.isEmpty()) {
             return false;
         }
-        showWebChat(reply.get());
+        // The command made its new session the active one
+        showWebSession(socket, activeWebSession(), reply.get());
+        refreshSidebars();
         return true;
     }
 
-    /** A session got its title in the background: the sidebar and the header show it. */
+    /** A session got its title in the background: the sidebar and the header of every tab show it. */
     @EventListener
     void onSessionTitled(SessionTitles.SessionTitled event) {
-        try {
-            refreshTitles();
-        } catch (IOException | RuntimeException e) {
-            log.warn("Could not show the new title of session {}: {}", event.sessionId(), e.getMessage());
+        refreshSidebars();
+    }
+
+    /** Sends every tab the header and the sidebar of what it shows, leaving its messages alone. */
+    private void refreshSidebars() {
+        for (Tab tab : tabs.values()) {
+            if (tab.sessionId() == null) {
+                continue;
+            }
+            try {
+                String header = tab.readOnly()
+                        ? ChatHtml.chatHeader(chatSessions.summary(tab.sessionId()), false)
+                        : ChatHtml.chatHeader(chatSessions.summary(WEB, tab.sessionId()), true);
+                sendHtml(tab.socket(),
+                        Htmx.oobInnerHtml("chat-header", header),
+                        Htmx.oobInnerHtml("chat-sessions", sessionLists(tab.sessionId())));
+            } catch (IOException | RuntimeException e) {
+                log.warn("Could not refresh the sidebar of tab {}: {}", tab.socket().getId(), e.getMessage());
+            }
         }
     }
 
-    /** Sends the header and the sidebar of what the page shows, leaving the messages alone. */
-    private void refreshTitles() throws IOException {
-        if (wsSession.get() == null) {
-            return;
-        }
-        String channelSession = shownChannelSession.get();
-        String shownId = channelSession == null ? webSession() : channelSession;
-        String header = channelSession == null
-                ? ChatHtml.chatHeader(webSessionSummary(shownId), true)
-                : ChatHtml.chatHeader(chatSessions.summary(channelSession), false);
-        sendHtml(Htmx.oobInnerHtml("chat-header", header), Htmx.oobInnerHtml("chat-sessions", sessionLists(shownId)));
+    private Tab show(WebSocketSession socket, String sessionId, boolean readOnly) {
+        return tabs.compute(socket.getId(), (_, tab) -> tab == null
+                ? new Tab(socket, sessionId, readOnly)
+                : tab.showing(sessionId, readOnly));
     }
 
-    private void sendView(String header, String shownId, List<String> bubbles, String inputArea) throws IOException {
-        sendHtml(
+    /** The messages carry the shown session's id, so the page ignores stream frames of any other. */
+    private void sendView(Tab tab, String header, List<String> bubbles, String inputArea) throws IOException {
+        sendHtml(tab.socket(),
                 Htmx.oobInnerHtml("chat-header", header),
-                Htmx.oobInnerHtml("chat-sessions", sessionLists(shownId)),
-                Htmx.oobInnerHtml("chat-messages", String.join(System.lineSeparator(), bubbles)),
+                Htmx.oobInnerHtml("chat-sessions", sessionLists(tab.sessionId())),
+                "<div id=\"chat-messages\" data-session-id=\"" + HtmlUtils.htmlEscape(tab.sessionId())
+                        + "\" hx-swap-oob=\"true\">" + String.join(System.lineSeparator(), bubbles) + "</div>",
                 Htmx.oobReplace("typing-indicator", ""),
                 Htmx.oobInnerHtml("chat-input-area", inputArea));
     }
@@ -246,15 +293,8 @@ public class ChatChannel implements Channel {
         return ChatHtml.sessionLists(chatSessions.list(WEB), chatSessions.otherConversations(WEB), shownId);
     }
 
-    private String webSession() {
+    private String activeWebSession() {
         return chatSessions.active(WEB, SessionKind.CHAT, SessionChannel.WEB);
-    }
-
-    private ChatSessions.Summary webSessionSummary(String sessionId) {
-        return chatSessions.list(WEB).stream()
-                .filter(session -> session.id().equals(sessionId))
-                .findFirst()
-                .orElseGet(() -> chatSessions.summary(sessionId));
     }
 
     /**
@@ -279,6 +319,8 @@ public class ChatChannel implements Channel {
         }
         return bubbles;
     }
+
+    // --- Answers -------------------------------------------------------------------------------
 
     /**
      * The tool calls as {@code chat.js} renders them: the fields of a live {@code toolCall} and
@@ -311,25 +353,35 @@ public class ChatChannel implements Channel {
     }
 
     /**
-     * Handles a chat message from the web UI: it goes to the web conversation's active session.
-     * The response is streamed to the WebSocket session as JSON frames
+     * Handles a chat message sent from a tab: it goes to the web chat session that tab shows, not
+     * necessarily the active one. The response is streamed as JSON frames
      * ({@code chunk}/{@code toolCall}/{@code toolResult}/{@code done}/{@code error}), each with the
-     * time it was sent; the page shows the first frame's time as the time of the answer.
+     * session id and the time it was sent, to the tabs showing that session; the page shows the
+     * first frame's time as the time of the answer.
+     *
+     * @throws IllegalArgumentException if the session is not one of the web conversation's
      */
-    public void chat(String message) {
+    public void chat(String sessionId, String message) {
+        if (!isWebSession(sessionId)) {
+            throw new IllegalArgumentException("Session " + sessionId + " is not one of the web chat's");
+        }
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), message));
 
-        String conversationId = WEB.value();
-        agent.respondTo(AgentRequest.chat(WEB, SessionChannel.WEB, message), event -> sendFrame(switch (event) {
-            case AgentEvent.Token t -> frame(StreamFrameType.CHUNK, conversationId, t.text());
-            case AgentEvent.ToolCall c -> frame(StreamFrameType.TOOL_CALL, conversationId,
+        agent.respondTo(AgentRequest.chat(WEB, sessionId, SessionChannel.WEB, message), event -> sendFrame(sessionId, switch (event) {
+            case AgentEvent.Token t -> frame(StreamFrameType.CHUNK, sessionId, t.text());
+            case AgentEvent.ToolCall c -> frame(StreamFrameType.TOOL_CALL, sessionId,
                     toolData(c.id(), c.name(), "input", c.input()));
-            case AgentEvent.ToolResult r -> frame(StreamFrameType.TOOL_RESULT, conversationId,
+            case AgentEvent.ToolResult r -> frame(StreamFrameType.TOOL_RESULT, sessionId,
                     toolData(r.id(), r.name(), "output", r.output()));
-            case AgentEvent.Done ignored -> frame(StreamFrameType.DONE, conversationId, null);
-            case AgentEvent.Failed f -> frame(StreamFrameType.ERROR, conversationId,
+            case AgentEvent.Done ignored -> frame(StreamFrameType.DONE, sessionId, null);
+            case AgentEvent.Failed f -> frame(StreamFrameType.ERROR, sessionId,
                     f.message() == null ? "Unknown error" : f.message());
         }));
+    }
+
+    /** Reports a turn that failed before it could stream, to the tabs showing its session. */
+    public void failed(String sessionId, String message) {
+        sendFrame(sessionId, frame(StreamFrameType.ERROR, sessionId, message));
     }
 
     private static Map<String, Object> toolData(String id, String name, String payloadKey, String payload) {
@@ -340,29 +392,36 @@ public class ChatChannel implements Channel {
         return data;
     }
 
-    private static Map<String, Object> frame(StreamFrameType type, String conversationId, Object payload) {
+    private static Map<String, Object> frame(StreamFrameType type, String sessionId, Object payload) {
         Map<String, Object> frame = new LinkedHashMap<>();
         frame.put("type", type.type());
         if (payload != null) frame.put("data", payload);
-        frame.put("conversationId", conversationId);
+        frame.put("sessionId", sessionId);
         frame.put("time", Instant.now().truncatedTo(ChronoUnit.SECONDS).toString());
         return frame;
     }
 
-    private void sendFrame(Map<String, Object> frame) {
-        WebSocketSession session = wsSession.get();
-        if (session == null || !session.isOpen()) return;
-        try {
-            String json = objectMapper.writeValueAsString(frame);
-            synchronized (sendLock) {
-                session.sendMessage(new TextMessage(json));
+    /** Sends a stream frame to the tabs that show its session now; the others never see it. */
+    private void sendFrame(String sessionId, Map<String, Object> frame) {
+        String json = objectMapper.writeValueAsString(frame);
+        for (Tab tab : tabs.values()) {
+            if (!sessionId.equals(tab.sessionId())) {
+                continue;
             }
-        } catch (IOException e) {
-            log.warn("WS push failed, dropping stream frame: {}", e.getMessage());
+            try {
+                send(tab.socket(), json);
+            } catch (IOException e) {
+                log.warn("WS push failed, dropping stream frame: {}", e.getMessage());
+            }
         }
     }
 
-    private static String buildBackgroundMessageHtml(String text) {
-        return Htmx.oobAppend("chat-messages", ChatHtml.agentBubble(text, Instant.now()));
+    /** A WebSocket session takes one message at a time; streaming, titles and tasks all send. */
+    private static void send(WebSocketSession socket, String payload) throws IOException {
+        synchronized (socket) {
+            if (socket.isOpen()) {
+                socket.sendMessage(new TextMessage(payload));
+            }
+        }
     }
 }

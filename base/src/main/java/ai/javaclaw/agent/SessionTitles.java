@@ -19,7 +19,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
-import java.util.regex.Pattern;
 
 /**
  * Titles a session in the background after its exchanges, so a reply is never delayed.
@@ -28,8 +27,9 @@ import java.util.regex.Pattern;
  * so the request is stored in no conversation. While a conversation has no topic yet the model
  * answers {@code NONE}, and the next exchange tries again. After {@value #MAX_ATTEMPTS} attempts
  * without a title, or when the call fails, the first line of the first user message is the title.
- * Legacy sessions get that first line without a model call. A title the user set is never
- * replaced. Each title saved is published as a {@link SessionTitled} event.
+ * A title the user set is never replaced. Model titles and the fallback go through the same
+ * cleanup as titles a person sets ({@link ChatSessions#cleanTitle}). Each title saved is published
+ * as a {@link SessionTitled} event.
  */
 @Component
 public class SessionTitles {
@@ -38,9 +38,6 @@ public class SessionTitles {
 
     /** Model calls per session before the first message becomes the title. */
     static final int MAX_ATTEMPTS = 3;
-
-    /** The longest title the model or the fallback may give. */
-    static final int MAX_LENGTH = 50;
 
     /** How much of each message the title request quotes. */
     private static final int EXCERPT_LENGTH = 1_000;
@@ -53,6 +50,7 @@ public class SessionTitles {
 
             Write one title for the conversation you're given:
             - 2 to 6 words, at most 50 characters.
+            - Always in English, whatever language the conversation is in.
             - Say what the user wants or is working on, not how they greeted or what the assistant replied.
             - Be specific: name the file, tool, library or topic when there is one. Avoid generic titles such as
               "Question", "Help request" or "Chat".
@@ -70,10 +68,6 @@ public class SessionTitles {
             what changed in spring ai 2.1? -> Spring AI 2.1 changes
             schedule a daily summary of my inbox at 8 -> Daily inbox summary at 8
             hello -> NONE""";
-
-    private static final Pattern TITLE_PREFIX = Pattern.compile("^title\\s*:\\s*", Pattern.CASE_INSENSITIVE);
-    private static final Pattern SURROUNDING_QUOTES =
-            Pattern.compile("^[\"'`“”„‘’‚«»‹›()\\[\\]{}<>]+|[\"'`“”„‘’‚«»‹›()\\[\\]{}<>]+$");
 
     private final ChatSessions chatSessions;
     private final Supplier<ChatModel> chatModel;
@@ -119,7 +113,7 @@ public class SessionTitles {
         if (firstMessage == null) {
             return;
         }
-        String title = ChatSessions.isLegacy(session) ? fallbackTitle(firstMessage) : askModel(sessionId, firstMessage);
+        String title = askModel(sessionId, firstMessage);
         if (title == null) {
             return; // no topic yet: the next exchange tries again
         }
@@ -181,37 +175,17 @@ public class SessionTitles {
     }
 
     /**
-     * The model's answer as a title: its first non-blank line, without a {@code Title:} prefix,
-     * surrounding quotes or brackets or a trailing period, cut at a whole word within
-     * {@value #MAX_LENGTH} characters.
+     * The model's answer as a title, cleaned like every title.
      *
      * @return the title, null when the answer has none ({@code NONE} or nothing)
      */
     static String cleanModelTitle(String answer) {
-        if (answer == null) {
-            return null;
-        }
-        String title = answer.lines().map(String::strip).filter(line -> !line.isEmpty()).findFirst().orElse("");
-        title = TITLE_PREFIX.matcher(title).replaceFirst("");
-        title = SURROUNDING_QUOTES.matcher(title).replaceAll("").strip();
-        title = title.replaceAll("\\.+$", "").strip();
-        title = SURROUNDING_QUOTES.matcher(title).replaceAll("").strip();
-        title = cutAtWord(title);
-        return title.isEmpty() || title.equalsIgnoreCase(NO_TITLE) ? null : title;
+        String title = ChatSessions.cleanTitle(answer);
+        return title == null || title.equalsIgnoreCase(NO_TITLE) ? null : title;
     }
 
-    /** The first line of the first user message, cut at a whole word within {@value #MAX_LENGTH} characters. */
-    static String fallbackTitle(String firstMessage) {
-        String firstLine = firstMessage.lines().map(String::strip).filter(line -> !line.isEmpty()).findFirst().orElse("");
-        return cutAtWord(firstLine.replaceAll("\\s+", " "));
-    }
-
-    /** {@code text} if it fits in {@value #MAX_LENGTH} characters, else cut at the last whole word that does. */
-    static String cutAtWord(String text) {
-        if (text.length() <= MAX_LENGTH) {
-            return text;
-        }
-        int space = text.lastIndexOf(' ', MAX_LENGTH);
-        return (space > 0 ? text.substring(0, space) : text.substring(0, MAX_LENGTH)).strip();
+    /** The first line of the first user message, cleaned like every title. */
+    private static String fallbackTitle(String firstMessage) {
+        return ChatSessions.cleanTitle(firstMessage);
     }
 }

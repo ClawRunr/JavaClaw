@@ -140,7 +140,7 @@ class ChatHtmlTest {
                 .contains("<form id=\"rename-form\" class=\"ar-rename\" ws-send hx-boost=\"false\" hx-vals='{\"type\": \"renameSession\"}' hidden>")
                 .contains("<input type=\"hidden\" name=\"sessionId\" value=\"s1\">")
                 .contains("name=\"title\" value=\"Trip &quot;Lisbon&quot;\"")
-                .contains("maxlength=\"60\"")
+                .contains("maxlength=\"50\"")
                 .contains(">Save</button>")
                 .contains(">Cancel</button>");
     }

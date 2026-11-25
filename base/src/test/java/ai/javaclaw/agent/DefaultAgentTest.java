@@ -17,6 +17,7 @@ import java.util.function.Consumer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.RETURNS_SELF;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -43,10 +44,10 @@ class DefaultAgentTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         agent = new DefaultAgent(chatClient, chatSessions, sessionTitles);
-        when(chatSessions.active(WEB_CHAT, SessionKind.CHAT, SessionChannel.WEB)).thenReturn("session-1");
-        when(chatClient.prompt("hello")).thenReturn(requestSpec);
-        when(requestSpec.advisors(any(Consumer.class))).thenReturn(requestSpec);
-        when(requestSpec.stream()).thenReturn(streamSpec);
+        lenient().when(chatSessions.active(WEB_CHAT, SessionKind.CHAT, SessionChannel.WEB)).thenReturn("session-1");
+        lenient().when(chatClient.prompt("hello")).thenReturn(requestSpec);
+        lenient().when(requestSpec.advisors(any(Consumer.class))).thenReturn(requestSpec);
+        lenient().when(requestSpec.stream()).thenReturn(streamSpec);
     }
 
     @Test
@@ -109,5 +110,35 @@ class DefaultAgentTest {
         ChatClient.AdvisorSpec spec = mock(ChatClient.AdvisorSpec.class, RETURNS_SELF);
         advisors.getValue().accept(spec);
         verify(spec).param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, "session-1");
+    }
+
+    @Test
+    void aRequestThatNamesASessionOfItsConversationGoesThere() {
+        when(streamSpec.content()).thenReturn(Flux.just("Hi"));
+        when(chatSessions.isSessionOf(WEB_CHAT, "session-2")).thenReturn(true);
+        ArgumentCaptor<Consumer<ChatClient.AdvisorSpec>> advisors = advisorCaptor();
+
+        agent.respondTo(AgentRequest.chat(WEB_CHAT, "session-2", SessionChannel.WEB, "hello"), events::add);
+
+        verify(requestSpec).advisors(advisors.capture());
+        ChatClient.AdvisorSpec spec = mock(ChatClient.AdvisorSpec.class, RETURNS_SELF);
+        advisors.getValue().accept(spec);
+        verify(spec).param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, "session-2");
+        verify(sessionTitles).afterExchange(WEB_CHAT, "session-2");
+    }
+
+    @Test
+    void aRequestThatNamesASessionOfAnotherConversationIsRefused() {
+        when(chatSessions.isSessionOf(WEB_CHAT, "telegram-session")).thenReturn(false);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        agent.respondTo(AgentRequest.chat(WEB_CHAT, "telegram-session", SessionChannel.WEB, "hello"), events::add))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(chatClient, org.mockito.Mockito.never()).prompt(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ArgumentCaptor<Consumer<ChatClient.AdvisorSpec>> advisorCaptor() {
+        return ArgumentCaptor.forClass(Consumer.class);
     }
 }

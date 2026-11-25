@@ -11,14 +11,12 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.session.CreateSessionRequest;
 import org.springframework.ai.session.SessionAttributes;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
-import java.util.Map;
 
 import static ai.javaclaw.agent.SessionChannel.WEB;
 import static ai.javaclaw.agent.SessionKind.CHAT;
@@ -50,6 +48,7 @@ class SessionTitlesTest {
             assertThat(messages.get(0)).isInstanceOf(SystemMessage.class);
             assertThat(messages.get(0).getText()).isEqualTo(SessionTitles.SYSTEM_PROMPT)
                     .startsWith("You name chat conversations so they're easy to find later in a list.")
+                    .contains("- 2 to 6 words, at most 50 characters.\n- Always in English, whatever language the conversation is in.\n")
                     .endsWith("hello -> NONE");
             assertThat(messages.get(1)).isInstanceOf(UserMessage.class);
             assertThat(messages.get(1).getText()).isEqualTo("""
@@ -219,21 +218,6 @@ class SessionTitlesTest {
         titles.afterExchange(WEB_CHAT, id);
 
         assertThat(titleOf(id)).isEqualTo("Lisbon weekend #2");
-    }
-
-    @Test
-    void aLegacySessionIsTitledWithItsFirstMessageWithoutAskingTheModel() {
-        store.service.create(CreateSessionRequest.builder().id("web")
-                .metadata(Map.of(SessionAttributes.AGENT_NAME, ChatSessions.AGENT_NAME, SessionKind.ATTRIBUTE, "chat"))
-                .build());
-        store.service.appendMessage("web", new UserMessage("What did I ask before?"));
-        store.service.appendMessage("web", new AssistantMessage("Many things."));
-
-        titles.afterExchange(WEB_CHAT, "web");
-
-        assertThat(titleOf("web")).isEqualTo("What did I ask before?");
-        assertThat(model.prompts).isEmpty();
-        assertThat(store.chatSessions.list(WEB_CHAT)).extracting(ChatSessions.Summary::id).containsExactly("web");
     }
 
     private String sessionWithFirstExchange(String question, String answer) {

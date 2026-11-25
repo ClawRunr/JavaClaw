@@ -204,82 +204,83 @@ class ChatSessionsTest {
         assertThat(sessions.list(TELEGRAM_CHAT)).extracting(ChatSessions.Summary::id).contains(oldTelegram);
     }
 
-    // --- Legacy sessions ---------------------------------------------------------------------
-
     @Test
-    void aLegacyFixedIdSessionIsItsConversationsSession() {
-        legacySession("telegram-42", TELEGRAM);
-        store.service.appendMessage("telegram-42", new UserMessage("What is the weather in Paris?\nAnd tomorrow?"));
-
-        assertThat(sessions.active(TELEGRAM_CHAT, CHAT, TELEGRAM)).isEqualTo("telegram-42");
-        assertThat(sessions.list(TELEGRAM_CHAT))
-                .extracting(ChatSessions.Summary::id, ChatSessions.Summary::title, ChatSessions.Summary::active)
-                .containsExactly(tuple("telegram-42", "What is the weather in Paris?", true));
-        assertThat(sessions.otherConversations(WEB_CHAT)).extracting(ChatSessions.Summary::id).containsExactly("telegram-42");
-    }
-
-    @Test
-    void aLegacySessionStaysInItsConversationNextToNewSessions() {
-        legacySession("web", WEB);
-        store.service.appendMessage("web", new UserMessage("Old question"));
-
-        String created = sessions.create(WEB_CHAT, CHAT, WEB, null);
-
-        assertThat(sessions.active(WEB_CHAT, CHAT, WEB)).isEqualTo(created);
-        assertThat(sessions.list(WEB_CHAT)).extracting(ChatSessions.Summary::id).containsExactlyInAnyOrder("web", created);
-        sessions.switchTo(WEB_CHAT, "web");
-        assertThat(sessions.active(WEB_CHAT, CHAT, WEB)).isEqualTo("web");
-        assertThat(store.service.getMessages("web")).extracting(m -> m.getText()).containsExactly("Old question");
-    }
-
-    @Test
-    void theLegacyWebSessionIsNotAnotherConversation() {
-        legacySession("web", WEB);
-
-        assertThat(sessions.otherConversations(WEB_CHAT)).isEmpty();
-    }
-
-    @Test
-    void aSessionWithTheLegacyIdThatBelongsToAConversationIsNotTakenForALegacySession() {
-        legacySession("discord-7", SessionChannel.DISCORD);
-        sessions.create(ConversationKey.discord("7"), CHAT, SessionChannel.DISCORD, null);
-
-        // Adopted by the Discord conversation, it is no session of any other
-        assertThat(sessions.list(ConversationKey.discord("7"))).hasSize(2);
-        assertThat(sessions.otherConversations(WEB_CHAT)).hasSize(1);
-    }
-
-    @Test
-    void aSessionWithoutAKindIsAChatUnlessItsIdIsATasks() {
-        Map<String, Object> beforeKinds = Map.of(SessionAttributes.AGENT_NAME, ChatSessions.AGENT_NAME);
-        store.service.create(CreateSessionRequest.builder().id("discord-7").metadata(beforeKinds).build());
-        store.service.create(CreateSessionRequest.builder().id("task-2026-11-13-174009-check").metadata(beforeKinds).build());
+    void onlyChatSessionsAreConversationsWithTheOwner() {
+        sessions.active(TELEGRAM_CHAT, CHAT, TELEGRAM);
+        sessions.active(ConversationKey.task("/workspace/tasks/recurring/check.md"), SessionKind.TASK, SessionChannel.INTERNAL);
         store.service.create(CreateSessionRequest.builder().id("someone-else").build());
 
-        assertThat(sessions.otherConversations(WEB_CHAT)).extracting(ChatSessions.Summary::id).containsExactly("discord-7");
+        assertThat(sessions.otherConversations(WEB_CHAT)).extracting(ChatSessions.Summary::channel).containsExactly(TELEGRAM);
+    }
+
+    // --- Which conversation a session belongs to ---------------------------------------------
+
+    @Test
+    void knowsWhichConversationASessionBelongsTo() {
+        String web = sessions.active(WEB_CHAT, CHAT, WEB);
+        String telegram = sessions.active(TELEGRAM_CHAT, CHAT, TELEGRAM);
+
+        assertThat(sessions.isSessionOf(WEB_CHAT, web)).isTrue();
+        assertThat(sessions.isSessionOf(WEB_CHAT, telegram)).isFalse();
+        assertThat(sessions.isSessionOf(WEB_CHAT, "no-such-session")).isFalse();
+        assertThat(sessions.isSessionOf(WEB_CHAT, null)).isFalse();
+    }
+
+    @Test
+    void summaryOfASessionOfTheConversation() {
+        String older = sessions.create(WEB_CHAT, CHAT, WEB, "Older");
+        String telegram = sessions.active(TELEGRAM_CHAT, CHAT, TELEGRAM);
+        sessions.create(WEB_CHAT, CHAT, WEB, "Newer");
+
+        assertThat(sessions.summary(WEB_CHAT, older))
+                .extracting(ChatSessions.Summary::title, ChatSessions.Summary::active)
+                .containsExactly("Older", false);
+        assertThatThrownBy(() -> sessions.summary(WEB_CHAT, telegram)).isInstanceOf(IllegalArgumentException.class);
     }
 
     // --- Titles as they are kept -------------------------------------------------------------
 
     @Test
     void cleansTitles() {
-        assertThat(ChatSessions.cleanTitle("\"Planning a trip to Lisbon.\"")).isEqualTo("Planning a trip to Lisbon");
-        assertThat(ChatSessions.cleanTitle("**Weather in Paris**\n\nmore")).isEqualTo("Weather in Paris");
-        assertThat(ChatSessions.cleanTitle("x".repeat(80))).hasSize(60);
+        assertThat(ChatSessions.cleanTitle("Title: \"Spring AI 2.1 changes.\"")).isEqualTo("Spring AI 2.1 changes");
+        assertThat(ChatSessions.cleanTitle("TITLE: «Daily inbox summary»")).isEqualTo("Daily inbox summary");
+        assertThat(ChatSessions.cleanTitle("“Lisbon weekend”")).isEqualTo("Lisbon weekend");
+        assertThat(ChatSessions.cleanTitle("`Gradle build`")).isEqualTo("Gradle build");
+        assertThat(ChatSessions.cleanTitle("[Gradle build]")).isEqualTo("Gradle build");
+        assertThat(ChatSessions.cleanTitle("(\"Gradle build.\")")).isEqualTo("Gradle build");
+        assertThat(ChatSessions.cleanTitle("\n\n  Lisbon   weekend  \nBecause the user asked")).isEqualTo("Lisbon weekend");
         assertThat(ChatSessions.cleanTitle("  \n ")).isNull();
+        assertThat(ChatSessions.cleanTitle("\"\"")).isNull();
         assertThat(ChatSessions.cleanTitle(null)).isNull();
+    }
+
+    @Test
+    void bracketsThatBelongToTheTitleStay() {
+        assertThat(ChatSessions.cleanTitle("Echoing the text bananas (tab B)")).isEqualTo("Echoing the text bananas (tab B)");
+        assertThat(ChatSessions.cleanTitle("(Lisbon) trip (day 2)")).isEqualTo("(Lisbon) trip (day 2)");
+        assertThat(ChatSessions.cleanTitle("[draft] Release notes")).isEqualTo("[draft] Release notes");
+    }
+
+    @Test
+    void aLongTitleIsCutAtAWholeWordWithin50Characters() {
+        String seventy = "Planning a long weekend in Lisbon with museums food and evening walks!!";
+
+        assertThat(ChatSessions.cleanTitle(seventy)).isEqualTo("Planning a long weekend in Lisbon with museums");
+        assertThat(ChatSessions.cleanTitle("x".repeat(80))).hasSize(50);
+    }
+
+    @Test
+    void aTitleSetByAPersonIsCleanedTheSameWay() {
+        String named = sessions.create(WEB_CHAT, CHAT, WEB, "Title: \"Trip to Lisbon.\"");
+        String renamed = sessions.create(WEB_CHAT, CHAT, WEB, null);
+        sessions.rename(WEB_CHAT, renamed, "Planning a long weekend in Lisbon with museums food and evening walks");
+
+        assertThat(titleOf(named)).isEqualTo("Trip to Lisbon");
+        assertThat(titleOf(renamed)).isEqualTo("Planning a long weekend in Lisbon with museums");
     }
 
     private String titleOf(String sessionId) {
         return ChatSessions.title(store.service.findById(sessionId));
-    }
-
-    private void legacySession(String id, SessionChannel channel) {
-        store.service.create(CreateSessionRequest.builder().id(id)
-                .metadata(Map.of(SessionAttributes.AGENT_NAME, ChatSessions.AGENT_NAME,
-                        SessionKind.ATTRIBUTE, CHAT.value(),
-                        SessionChannel.ATTRIBUTE, channel.value()))
-                .build());
     }
 
     private void append(String sessionId, Instant timestamp, Message message) {

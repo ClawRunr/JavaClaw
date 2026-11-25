@@ -57,9 +57,19 @@ public class DefaultAgent implements Agent {
         return ask(request, sessionOf(request), _ -> {}).call().entity(result);
     }
 
-    /** The conversation's active session, which the request goes to. */
+    /**
+     * The session the request goes to: the one it names, or else the conversation's active session.
+     *
+     * @throws IllegalArgumentException if the request names a session of another conversation
+     */
     private String sessionOf(AgentRequest request) {
-        return chatSessions.active(request.conversation(), request.kind(), request.channel());
+        if (request.sessionId() == null) {
+            return chatSessions.active(request.conversation(), request.kind(), request.channel());
+        }
+        if (!chatSessions.isSessionOf(request.conversation(), request.sessionId())) {
+            throw new IllegalArgumentException("Session " + request.sessionId() + " is not one of " + request.conversation() + "'s");
+        }
+        return request.sessionId();
     }
 
     /** A chat session gets a title after its first exchange; tasks' sessions are never listed. */

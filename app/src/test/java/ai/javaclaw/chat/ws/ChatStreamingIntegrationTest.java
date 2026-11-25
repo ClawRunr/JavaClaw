@@ -29,6 +29,8 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -60,6 +62,7 @@ class ChatStreamingIntegrationTest {
         try {
             session.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
                     "type", "userMessage",
+                    "sessionId", shownSessionId(received),
                     "message", "hi"
             ))));
 
@@ -72,6 +75,20 @@ class ChatStreamingIntegrationTest {
             session.close();
         }
     }
+
+    /** The session the first view shows: the tab sends its messages there. */
+    private static String shownSessionId(BlockingQueue<String> received) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            String payload = received.poll(500, TimeUnit.MILLISECONDS);
+            if (payload == null) continue;
+            Matcher view = SHOWN_SESSION.matcher(payload);
+            if (view.find()) return view.group(1);
+        }
+        throw new AssertionError("No view arrived");
+    }
+
+    private static final Pattern SHOWN_SESSION = Pattern.compile("id=\"chat-messages\" data-session-id=\"([^\"]+)\"");
 
     /**
      * Collects the {@code type} of every JSON frame until the done frame arrives.

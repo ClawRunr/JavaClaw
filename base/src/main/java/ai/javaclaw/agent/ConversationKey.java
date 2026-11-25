@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
  */
 public final class ConversationKey {
 
-    private static final ConversationKey WEB = new ConversationKey("web", "web");
+    private static final ConversationKey WEB = new ConversationKey("web");
 
     private static final String TASK_FILE_EXTENSION = ".md";
     /** The character set task file names are already restricted to by {@code FileSystemTaskRepository}. */
@@ -21,11 +21,9 @@ public final class ConversationKey {
     private static final Pattern REPEATED_SEPARATORS = Pattern.compile("_{2,}");
 
     private final String value;
-    private final String legacySessionId;
 
-    private ConversationKey(String value, String legacySessionId) {
+    private ConversationKey(String value) {
         this.value = value;
-        this.legacySessionId = legacySessionId;
     }
 
     /** The web chat, at {@code /chat} and {@code /ui}: there is one. */
@@ -35,42 +33,60 @@ public final class ConversationKey {
 
     /** A Telegram chat, or one topic of it when {@code threadId} is not null. */
     public static ConversationKey telegram(long chatId, Integer threadId) {
-        return threadId == null
-                ? new ConversationKey("telegram:" + chatId, "telegram-" + chatId)
-                : new ConversationKey("telegram:" + chatId + ":" + threadId, "telegram-" + chatId + "-" + threadId);
+        return new ConversationKey("telegram:" + chatId + (threadId == null ? "" : ":" + threadId));
     }
 
     /** A Discord channel, a direct message channel included. */
     public static ConversationKey discord(String channelId) {
-        return new ConversationKey("discord:" + require(channelId), "discord-" + channelId);
+        return new ConversationKey("discord:" + require(channelId));
     }
 
     /** A WhatsApp chat, by its JID. */
     public static ConversationKey whatsApp(String jid) {
-        return new ConversationKey("whatsapp:" + require(jid), jid);
+        return new ConversationKey("whatsapp:" + require(jid));
     }
 
     /** A Microsoft Teams conversation. */
     public static ConversationKey teams(String conversationId) {
-        return new ConversationKey("teams:" + require(conversationId), "teams-" + conversationId);
+        return new ConversationKey("teams:" + require(conversationId));
     }
 
-    /** The conversation a task runs in, by the task's id (the absolute path of its file). */
+    /**
+     * The conversation a task runs in, by the task's id (the absolute path of its file).
+     *
+     * <p>The key is built from the file's last two path segments, not the whole path, so it does not
+     * depend on where the workspace is. Tasks are stored as {@code {date}/{time}-{name}.md} and
+     * recurring ones as {@code recurring/{name}.md}, so the pair is unique and stays readable:
+     * {@code task:recurring-daily-summary}. Characters outside the set task file names already use
+     * are replaced.
+     *
+     * @throws IllegalArgumentException if the task id names no file
+     */
     public static ConversationKey task(String taskId) {
-        return new ConversationKey("task:" + require(taskId), legacyTaskSessionId(taskId));
+        if (taskId == null || taskId.isBlank()) {
+            throw new IllegalArgumentException("Cannot derive a conversation from an empty task id");
+        }
+        Path taskFile = Path.of(taskId).normalize();
+        Path fileName = taskFile.getFileName();
+        Path parent = taskFile.getParent();
+        if (fileName == null) {
+            throw new IllegalArgumentException("Cannot derive a conversation from a task id that names no file");
+        }
+        String name = fileName.toString();
+        if (name.endsWith(TASK_FILE_EXTENSION)) {
+            name = name.substring(0, name.length() - TASK_FILE_EXTENSION.length());
+        }
+        String group = parent == null || parent.getFileName() == null ? "" : parent.getFileName().toString();
+        if (name.isBlank() && group.isBlank()) {
+            throw new IllegalArgumentException("Cannot derive a conversation from a task id that names no file");
+        }
+        String readable = group.isBlank() ? name : group + "-" + name;
+        return new ConversationKey("task:" + REPEATED_SEPARATORS.matcher(UNSAFE_CHARACTERS.matcher(readable).replaceAll("_")).replaceAll("_"));
     }
 
     /** The key as stored in session metadata. */
     public String value() {
         return value;
-    }
-
-    /**
-     * Legacy: the fixed id this conversation's one session had before conversations could have
-     * several. Read only by {@link ChatSessions}.
-     */
-    String legacySessionId() {
-        return legacySessionId;
     }
 
     @Override
@@ -93,36 +109,5 @@ public final class ConversationKey {
             throw new IllegalArgumentException("A conversation needs an id");
         }
         return id;
-    }
-
-    /**
-     * Legacy: the session id a task ran in before sessions had generated ids.
-     *
-     * <p>A task's id is the absolute path of its markdown file. The last two path segments carry
-     * everything needed: tasks are stored as {@code {date}/{time}-{name}.md} and recurring ones as
-     * {@code recurring/{name}.md}, so the pair is unique across days and stays readable.
-     *
-     * @throws IllegalArgumentException if the task id names no file
-     */
-    private static String legacyTaskSessionId(String taskId) {
-        if (taskId == null || taskId.isBlank()) {
-            throw new IllegalArgumentException("Cannot derive a conversation from an empty task id");
-        }
-        Path taskFile = Path.of(taskId).normalize();
-        Path fileName = taskFile.getFileName();
-        Path parent = taskFile.getParent();
-        if (fileName == null) {
-            throw new IllegalArgumentException("Cannot derive a conversation from a task id that names no file");
-        }
-        String name = fileName.toString();
-        if (name.endsWith(TASK_FILE_EXTENSION)) {
-            name = name.substring(0, name.length() - TASK_FILE_EXTENSION.length());
-        }
-        String group = parent == null || parent.getFileName() == null ? "" : parent.getFileName().toString();
-        if (name.isBlank() && group.isBlank()) {
-            throw new IllegalArgumentException("Cannot derive a conversation from a task id that names no file");
-        }
-        String id = SessionKind.TASK_ID_PREFIX + (group.isBlank() ? name : group + "-" + name);
-        return REPEATED_SEPARATORS.matcher(UNSAFE_CHARACTERS.matcher(id).replaceAll("_")).replaceAll("_");
     }
 }
