@@ -10,8 +10,6 @@ import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -127,22 +125,45 @@ public class ChatChannel implements Channel {
     }
 
     /**
-     * Loads conversation history for the given conversationId as HTML bubbles.
-     * Returns a single welcome bubble if no history exists yet.
+     * Loads conversation history for the given conversationId as HTML messages, one turn at a time:
+     * the user message, then one agent message with the turn's tool calls and all its text, the way
+     * a live answer looks. Returns a single welcome bubble if no history exists yet.
      */
     public List<String> loadHistoryAsHtml(String conversationId) {
-        List<ChatHistory.Entry> history = chatHistory.entries(conversationId);
-        if (history.isEmpty()) {
+        List<ChatHistory.Turn> turns = chatHistory.turns(conversationId);
+        if (turns.isEmpty()) {
             return List.of(ChatHtml.agentBubble("Hi! I'm your JavaClaw assistant. How can I help you today?", null));
         }
         List<String> bubbles = new ArrayList<>();
-        for (ChatHistory.Entry entry : history) {
-            Message msg = entry.message();
-            bubbles.add(msg instanceof UserMessage
-                    ? ChatHtml.userBubble(msg.getText(), entry.timestamp())
-                    : ChatHtml.agentBubble(msg.getText(), entry.timestamp()));
+        for (ChatHistory.Turn turn : turns) {
+            if (turn.question() != null) {
+                bubbles.add(ChatHtml.userBubble(turn.question(), turn.askedAt()));
+            }
+            if (turn.hasAnswer()) {
+                bubbles.add(ChatHtml.agentBubble(turn.answer(), toolsJson(turn.toolCalls()), turn.answeredAt()));
+            }
         }
         return bubbles;
+    }
+
+    /**
+     * The tool calls as {@code chat.js} renders them: the fields of a live {@code toolCall} and
+     * {@code toolResult} frame, plus the times of the call and the result. A call without a result
+     * has neither {@code output} nor {@code resultAt}. {@code null} for no calls.
+     */
+    private String toolsJson(List<ChatHistory.ToolCall> toolCalls) {
+        if (toolCalls.isEmpty()) return null;
+        List<Map<String, Object>> tools = new ArrayList<>();
+        for (ChatHistory.ToolCall call : toolCalls) {
+            Map<String, Object> tool = toolData(call.id(), call.name(), "input", call.arguments());
+            tool.put("calledAt", call.calledAt().toString());
+            if (call.resultAt() != null) {
+                tool.put("output", call.result() == null ? "" : call.result());
+                tool.put("resultAt", call.resultAt().toString());
+            }
+            tools.add(tool);
+        }
+        return objectMapper.writeValueAsString(tools);
     }
 
     /**

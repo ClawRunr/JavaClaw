@@ -73,8 +73,17 @@ class SessionStoreConfigurationTest {
 
             ChatHistory history = new ChatHistory(context.getBean(SessionService.class));
             assertThat(history.conversationIds()).containsExactly("web");
-            assertThat(history.messages("web")).extracting(Message::getText)
-                    .containsExactly("Weather in Paris?", "It is sunny.");
+            assertThat(history.turns("web")).singleElement().satisfies(turn -> {
+                assertThat(turn.question()).isEqualTo("Weather in Paris?");
+                assertThat(turn.answer()).isEqualTo("It is sunny.");
+                assertThat(turn.toolCalls()).singleElement().satisfies(stored -> {
+                    assertThat(stored.id()).isEqualTo(call.id());
+                    assertThat(stored.name()).isEqualTo("weather");
+                    assertThat(stored.arguments()).isEqualTo(call.arguments());
+                    assertThat(stored.result()).isEqualTo("\"sunny\"");
+                    assertThat(stored.resultAt()).isAfterOrEqualTo(stored.calledAt());
+                });
+            });
         });
     }
 

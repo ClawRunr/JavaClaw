@@ -17,19 +17,35 @@ import java.util.List;
  * <p>Message times go out as UTC ISO-8601 in an empty {@code <time class="ar-msg__time">}; the page
  * ({@code /chat/time.js}) writes them out in the browser's locale and time zone. A message without a
  * time (the welcome message) has no such element.
+ *
+ * <p>Tool calls of a message from history go out as JSON in the message's {@code data-tools}
+ * attribute; the page ({@code /chat/chat.js}) builds the tool group from it with the same code that
+ * renders live tool calls, so the cards look the same live and after a reload.
  */
 public class ChatHtml {
 
     private ChatHtml() {}
 
     public static String agentBubble(String text, Instant time) {
-        return agentMessage("ar-msg--agent", time, """
-                <div class="ar-md" data-md>%s</div>""".formatted(HtmlUtils.htmlEscape(text)));
+        return agentBubble(text, null, time);
+    }
+
+    /**
+     * An agent message with the tool calls of its turn.
+     *
+     * @param text      the Markdown source; no text element when empty
+     * @param toolsJson the tool calls as a JSON array for {@code chat.js}; {@code null} for none
+     */
+    public static String agentBubble(String text, String toolsJson, Instant time) {
+        String content = text.isEmpty() ? "" : """
+                <div class="ar-md" data-md>%s</div>""".formatted(HtmlUtils.htmlEscape(text));
+        String attributes = toolsJson == null ? "" : " data-tools=\"" + HtmlUtils.htmlEscape(toolsJson) + "\"";
+        return agentMessage("ar-msg--agent", attributes, time, content);
     }
 
     /** An agent message that reports a failure; plain text, never Markdown. */
     public static String agentError(String text, Instant time) {
-        return agentMessage("ar-msg--agent ar-msg--error", time, """
+        return agentMessage("ar-msg--agent ar-msg--error", "", time, """
                 <div class="ar-msg__error">%s</div>""".formatted(HtmlUtils.htmlEscape(text)));
     }
 
@@ -88,10 +104,10 @@ public class ChatHtml {
         return sb.toString();
     }
 
-    private static String agentMessage(String modifiers, Instant time, String content) {
+    private static String agentMessage(String modifiers, String attributes, Instant time, String content) {
         return """
-                <article class="ar-msg %s">%s<div class="ar-msg__body">%s</div></article>"""
-                .formatted(modifiers, agentHead(time), content);
+                <article class="ar-msg %s"%s>%s<div class="ar-msg__body">%s</div></article>"""
+                .formatted(modifiers, attributes, agentHead(time), content);
     }
 
     private static String agentHead(Instant time) {

@@ -51,9 +51,10 @@
     });
     // HTML frames (history, background messages, errors) carry agent text as plain text;
     // render it with the same renderer a streamed answer uses. Their times are filled in the
-    // same way as a streamed answer's.
+    // same way as a streamed answer's, and their tool calls with the same cards.
     document.body.addEventListener('htmx:wsAfterMessage', function () {
         var messages = document.getElementById('chat-messages');
+        renderHistoryTools(messages);
         md.renderPending(messages);
         times.renderAll(messages);
         scrollToBottom();
@@ -165,8 +166,7 @@
         Object.keys(toolCalls).forEach(function (callId) {
             var entry = toolCalls[callId];
             if (entry.conversationId !== conversationId) return;
-            entry.el.classList.add(unfinishedClass);
-            entry.el.querySelector('.ar-tool__time').textContent = unfinishedLabel;
+            showToolUnfinished(entry.el, unfinishedClass, unfinishedLabel);
             delete toolCalls[callId];
         });
         if (turn) {
@@ -177,22 +177,15 @@
     }
 
     // --- Tool calls ----------------------------------------------------------
+    // Live tool calls and tool calls from history are built by the same functions below
+    // (addToolGroup, addToolRow, showToolResult, showToolUnfinished), so a card looks the same
+    // live and after a reload.
     function renderToolCall(conversationId, data) {
         var turn = currentTurn(conversationId);
         flushSegment(turn);
-        if (!turn.group) {
-            turn.group = cloneTemplate('tool-group-template');
-            turn.group.startedAt = Date.now();
-            turn.body.insertBefore(turn.group, turn.body.firstChild);
-        }
+        if (!turn.group) turn.group = addToolGroup(turn.body, Date.now());
 
-        var el = cloneTemplate('tool-call-template');
-        el.querySelector('.ar-tool__name').textContent = data.name || 'tool';
-        el.querySelector('.ar-tool__args').textContent = summarize(data.input);
-        el.querySelector('.ar-tool__input').textContent = pretty(data.input);
-        turn.group.querySelector('.ar-tools__list').appendChild(el);
-        updateGroup(turn.group);
-
+        var el = addToolRow(turn.group, data);
         if (data.id) {
             toolCalls[data.id] = { el: el, turn: turn, conversationId: conversationId, startedAt: Date.now() };
         }
@@ -201,16 +194,74 @@
     function renderToolResult(data) {
         var entry = data.id ? toolCalls[data.id] : null;
         if (!entry || !entry.el.isConnected) return;
-        var el = entry.el;
-        el.classList.add('ar-tool--done');
-        el.querySelector('.ar-tool__time').textContent = elapsed(Date.now() - entry.startedAt);
-        el.querySelector('.ar-tool__output').textContent = pretty(data.output);
-        el.querySelector('.ar-tool__output-section').hidden = false;
+        showToolResult(entry.el, Date.now() - entry.startedAt, data.output);
         if (entry.turn.group) {
             entry.turn.group.endedAt = Date.now();
             updateGroup(entry.turn.group);
         }
         delete toolCalls[data.id];
+    }
+
+    // A message from history carries its turn's tool calls as JSON in data-tools: per call the
+    // fields of a live toolCall/toolResult frame (id, name, input, output) and the stored times
+    // of the call and the result (calledAt, resultAt). A call without a result has neither.
+    function renderHistoryTools(root) {
+        if (!root) return;
+        root.querySelectorAll('.ar-msg[data-tools]').forEach(function (article) {
+            var calls;
+            try {
+                calls = JSON.parse(article.getAttribute('data-tools'));
+            } catch (err) {
+                calls = [];
+            }
+            article.removeAttribute('data-tools');
+            if (!Array.isArray(calls) || !calls.length) return;
+
+            var group = addToolGroup(article.querySelector('.ar-msg__body'), Date.parse(calls[0].calledAt));
+            calls.forEach(function (call) {
+                var el = addToolRow(group, call);
+                if (call.resultAt) {
+                    var resultAt = Date.parse(call.resultAt);
+                    showToolResult(el, resultAt - Date.parse(call.calledAt), call.output);
+                    group.endedAt = Math.max(group.endedAt || resultAt, resultAt);
+                } else {
+                    showToolUnfinished(el, 'ar-tool--unanswered', 'no result');
+                }
+            });
+            updateGroup(group);
+        });
+    }
+
+    /** A new, empty tool group on top of a message body. */
+    function addToolGroup(body, startedAt) {
+        var group = cloneTemplate('tool-group-template');
+        group.startedAt = startedAt;
+        body.insertBefore(group, body.firstChild);
+        return group;
+    }
+
+    /** A row for one tool call, waiting for its result. */
+    function addToolRow(group, data) {
+        var el = cloneTemplate('tool-call-template');
+        el.querySelector('.ar-tool__name').textContent = data.name || 'tool';
+        el.querySelector('.ar-tool__args').textContent = summarize(data.input);
+        el.querySelector('.ar-tool__input').textContent = pretty(data.input);
+        group.querySelector('.ar-tools__list').appendChild(el);
+        updateGroup(group);
+        return el;
+    }
+
+    function showToolResult(el, ms, output) {
+        el.classList.add('ar-tool--done');
+        el.querySelector('.ar-tool__time').textContent = elapsed(ms);
+        el.querySelector('.ar-tool__output').textContent = pretty(output);
+        el.querySelector('.ar-tool__output-section').hidden = false;
+    }
+
+    /** A call that will never get a result: the answer ended without one, or failed. */
+    function showToolUnfinished(el, unfinishedClass, label) {
+        el.classList.add(unfinishedClass);
+        el.querySelector('.ar-tool__time').textContent = label;
     }
 
     function updateGroup(group) {
@@ -254,6 +305,8 @@
     }
 
     function elapsed(ms) {
+        if (!isFinite(ms)) return '';
+        ms = Math.max(0, Math.round(ms));
         if (ms < 1000) return ms + 'ms';
         return (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + 's';
     }
