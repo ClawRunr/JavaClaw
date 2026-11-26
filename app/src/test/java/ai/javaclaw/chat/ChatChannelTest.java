@@ -11,8 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.ObjectMapper;
@@ -86,7 +84,7 @@ class ChatChannelTest {
 
     @Test
     void loadHistoryReturnsWelcomeBubbleWhenNoHistory() {
-        when(chatHistory.entries("web")).thenReturn(List.of());
+        when(chatHistory.turns("web")).thenReturn(List.of());
 
         List<String> bubbles = chatChannel.loadHistoryAsHtml("web");
 
@@ -96,26 +94,24 @@ class ChatChannelTest {
     }
 
     @Test
-    void loadHistoryRendersUserAndAgentBubbles() {
-        when(chatHistory.entries("web")).thenReturn(List.of(
-                entry(new UserMessage("Hello")),
-                entry(new AssistantMessage("Hi there"))
-        ));
+    void aTurnWithoutToolsIsAUserBubbleAndAnAgentBubbleAsBefore() {
+        when(chatHistory.turns("web")).thenReturn(List.of(turn("Hello", "Hi there")));
 
         List<String> bubbles = chatChannel.loadHistoryAsHtml("web");
 
-        assertThat(bubbles).hasSize(2);
+        assertThat(bubbles).containsExactly(
+                ChatHtml.userBubble("Hello", T0),
+                ChatHtml.agentBubble("Hi there", T0.plusSeconds(1)));
         assertThat(bubbles.get(0)).contains("ar-msg--user").contains("<div class=\"ar-msg__bubble\">Hello</div>");
         // Agent text goes to the browser as Markdown source, rendered there like a streamed answer
-        assertThat(bubbles.get(1)).contains("ar-msg--agent").contains("<div class=\"ar-md\" data-md>Hi there</div>");
+        assertThat(bubbles.get(1)).contains("ar-msg--agent").contains("<div class=\"ar-md\" data-md>Hi there</div>")
+                .doesNotContain("data-tools");
     }
 
     @Test
     void loadHistoryShowsTheStoredTimeOfEachMessageAsUtc() {
-        when(chatHistory.entries("web")).thenReturn(List.of(
-                new ChatHistory.Entry(new UserMessage("Hello"), Instant.parse("2026-11-14T10:42:05.123456Z")),
-                new ChatHistory.Entry(new AssistantMessage("Hi there"), Instant.parse("2026-11-14T10:43:00Z"))
-        ));
+        when(chatHistory.turns("web")).thenReturn(List.of(new ChatHistory.Turn(
+                "Hello", Instant.parse("2026-11-14T10:42:05.123456Z"), List.of(), "Hi there", Instant.parse("2026-11-14T10:43:00Z"))));
 
         List<String> bubbles = chatChannel.loadHistoryAsHtml("web");
 
@@ -127,10 +123,7 @@ class ChatChannelTest {
 
     @Test
     void loadHistoryEscapesHtmlInMessages() {
-        when(chatHistory.entries("web")).thenReturn(List.of(
-                entry(new UserMessage("<script>alert('xss')</script>")),
-                entry(new AssistantMessage("<img src=x onerror=alert(1)>"))
-        ));
+        when(chatHistory.turns("web")).thenReturn(List.of(turn("<script>alert('xss')</script>", "<img src=x onerror=alert(1)>")));
 
         List<String> bubbles = chatChannel.loadHistoryAsHtml("web");
 
@@ -139,12 +132,80 @@ class ChatChannelTest {
     }
 
     @Test
+    void aTurnWithToolsIsOneAgentMessageWithTheCallsAsDataAndAllTheText() throws Exception {
+        ChatHistory.ToolCall paris = new ChatHistory.ToolCall("call-1", "weather", "{\"city\":\"Paris\"}",
+                T0.plusSeconds(1), "\"sunny\"", T0.plusMillis(3250));
+        ChatHistory.ToolCall rome = new ChatHistory.ToolCall("call-2", "weather", "{\"city\":\"Rome\"}",
+                T0.plusSeconds(4), null, null);
+        when(chatHistory.turns("web")).thenReturn(List.of(new ChatHistory.Turn(
+                "Weather?", T0, List.of(paris, rome), "Checking.\n\nParis is sunny.", T0.plusSeconds(1))));
+
+        List<String> bubbles = chatChannel.loadHistoryAsHtml("web");
+
+        assertThat(bubbles).hasSize(2);
+        String agent = bubbles.get(1);
+        assertThat(agent).contains("<div class=\"ar-md\" data-md>Checking.\n\nParis is sunny.</div>");
+        // No tool card HTML from the server: chat.js builds the cards from the data
+        assertThat(agent).doesNotContain("ar-tool");
+        assertThat(toolsData(agent)).containsExactly(
+                Map.of("id", "call-1", "name", "weather", "input", "{\"city\":\"Paris\"}",
+                        "calledAt", "2026-11-14T10:42:06Z", "output", "\"sunny\"", "resultAt", "2026-11-14T10:42:08.250Z"),
+                // A call without a result has neither output nor result time
+                Map.of("id", "call-2", "name", "weather", "input", "{\"city\":\"Rome\"}",
+                        "calledAt", "2026-11-14T10:42:09Z"));
+    }
+
+    @Test
+    void aLongToolOutputIsCutAndMarked() throws Exception {
+        String output = "x".repeat(50_000);
+        ChatHistory.ToolCall call = new ChatHistory.ToolCall("call-1", "read", "{}", T0, output, T0.plusSeconds(1));
+        when(chatHistory.turns("web")).thenReturn(List.of(new ChatHistory.Turn("Read it", T0, List.of(call), "", T0)));
+
+        assertThat(toolsData(chatChannel.loadHistoryAsHtml("web").get(1))).singleElement().satisfies(tool -> {
+            assertThat(tool.get("output")).isEqualTo("x".repeat(20_000));
+            assertThat(tool).containsEntry("truncated", true);
+        });
+    }
+
+    @Test
+    void aTurnWithOnlyToolCallsHasNoTextElement() {
+        ChatHistory.ToolCall call = new ChatHistory.ToolCall("call-1", "weather", "{}", T0.plusSeconds(1), null, null);
+        when(chatHistory.turns("web")).thenReturn(List.of(new ChatHistory.Turn("Weather?", T0, List.of(call), "", T0.plusSeconds(1))));
+
+        assertThat(chatChannel.loadHistoryAsHtml("web").get(1)).contains("data-tools=").doesNotContain("data-md");
+    }
+
+    @Test
+    void toolArgumentsAndResultsWithHtmlAreEscapedInTheAttribute() throws Exception {
+        String input = "{\"html\":\"<img src=x onerror=alert(1)>\"}";
+        String output = "<script>alert('out')</script> & \"quotes\"";
+        ChatHistory.ToolCall call = new ChatHistory.ToolCall("call-1", "fetch", input, T0, output, T0.plusSeconds(1));
+        when(chatHistory.turns("web")).thenReturn(List.of(new ChatHistory.Turn("Hi", T0, List.of(call), "", T0)));
+
+        String agent = chatChannel.loadHistoryAsHtml("web").get(1);
+
+        assertThat(agent).doesNotContain("<img src=x").doesNotContain("<script")
+                .contains("&lt;img src=x").contains("&lt;script&gt;");
+        assertThat(toolsData(agent)).singleElement().satisfies(tool -> {
+            assertThat(tool.get("input")).isEqualTo(input);
+            assertThat(tool.get("output")).isEqualTo(output);
+        });
+    }
+
+    @Test
+    void aTurnWithoutAnAnswerIsOnlyTheUserMessage() {
+        when(chatHistory.turns("web")).thenReturn(List.of(new ChatHistory.Turn("Hello", T0, List.of(), "", null)));
+
+        assertThat(chatChannel.loadHistoryAsHtml("web")).containsExactly(ChatHtml.userBubble("Hello", T0));
+    }
+
+    @Test
     void loadHistoryUsesSuppliedConversationId() {
-        when(chatHistory.entries("telegram-42")).thenReturn(List.of());
+        when(chatHistory.turns("telegram-42")).thenReturn(List.of());
 
         chatChannel.loadHistoryAsHtml("telegram-42");
 
-        verify(chatHistory).entries("telegram-42");
+        verify(chatHistory).turns("telegram-42");
     }
 
     // -----------------------------------------------------------------------
@@ -342,8 +403,19 @@ class ChatChannelTest {
         return any(java.util.function.Consumer.class);
     }
 
-    private static ChatHistory.Entry entry(org.springframework.ai.chat.messages.Message message) {
-        return new ChatHistory.Entry(message, Instant.parse("2026-11-14T10:42:00Z"));
+    private static final Instant T0 = Instant.parse("2026-11-14T10:42:05Z");
+
+    private static ChatHistory.Turn turn(String question, String answer) {
+        return new ChatHistory.Turn(question, T0, List.of(), answer, T0.plusSeconds(1));
+    }
+
+    /** The tool calls in an agent message's data-tools attribute, as the browser reads them. */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> toolsData(String html) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("data-tools=\"([^\"]*)\"").matcher(html);
+        assertThat(m.find()).as("data-tools attribute").isTrue();
+        String json = org.springframework.web.util.HtmlUtils.htmlUnescape(m.group(1));
+        return new ObjectMapper().readValue(json, List.class);
     }
 
     private WebSocketSession openSession() {

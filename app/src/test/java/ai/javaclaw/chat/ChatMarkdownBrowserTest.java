@@ -20,8 +20,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -35,6 +33,8 @@ import org.springframework.context.annotation.Import;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -89,6 +89,8 @@ class ChatMarkdownBrowserTest {
 
             END-OF-ANSWER""";
 
+    static final String HTML_TOOL_OUTPUT = "<script>window.__xss='output'</script><b onmouseover=\"window.__xss='b'\">bold</b>";
+
     static Playwright playwright;
     static Browser browser;
 
@@ -99,7 +101,7 @@ class ChatMarkdownBrowserTest {
     TestConfig.FakeAgent agent;
 
     @Autowired
-    List<ChatHistory.Entry> history;
+    List<ChatHistory.Turn> history;
 
     Page page;
 
@@ -131,6 +133,7 @@ class ChatMarkdownBrowserTest {
     @BeforeEach
     void openPage() {
         history.clear();
+        agent.toolEvents = List.of();
         requests = new CopyOnWriteArrayList<>();
         failedResponses = new CopyOnWriteArrayList<>();
         page = newPage("en-US");
@@ -259,8 +262,8 @@ class ChatMarkdownBrowserTest {
 
     @Test
     void aMessageFromHistoryShowsItsStoredTimeInTheBrowsersTimeZone() {
-        history.add(new ChatHistory.Entry(new UserMessage("Old question"), Instant.parse("2024-03-05T10:42:05Z")));
-        history.add(new ChatHistory.Entry(new AssistantMessage("Old answer END-OF-ANSWER"), Instant.parse("2024-03-05T10:43:59Z")));
+        history.add(new ChatHistory.Turn("Old question", Instant.parse("2024-03-05T10:42:05Z"), List.of(),
+                "Old answer END-OF-ANSWER", Instant.parse("2024-03-05T10:43:59Z")));
 
         page.navigate("http://localhost:" + port + "/chat");
         waitForAnswer();
@@ -298,6 +301,105 @@ class ChatMarkdownBrowserTest {
         } finally {
             german.close();
         }
+    }
+
+    @Test
+    void toolCallsLookTheSameLiveAndAfterAReload() {
+        agent.toolEvents = List.of(
+                new AgentEvent.ToolCall("call-1", "weather", "{\"city\":\"Paris\"}"),
+                new AgentEvent.ToolResult("call-1", "weather", "\"sunny\""),
+                new AgentEvent.Token("Paris is sunny. "),
+                // A round with two calls, answered in another order
+                new AgentEvent.ToolCall("call-2", "weather", "{\"city\":\"Rome\"}"),
+                new AgentEvent.ToolCall("call-3", "clock", "{\"city\":\"Rome\",\"format\":\"24h\"}"),
+                new AgentEvent.ToolResult("call-3", "clock", "{\"time\":\"10:42\"}"),
+                new AgentEvent.ToolResult("call-2", "weather", "\"rainy\""),
+                // Never answered
+                new AgentEvent.ToolCall("call-4", "notify", "{\"to\":\"me\"}"));
+        agent.answer = "Rome is rainy. END-OF-ANSWER";
+
+        send("weather in Paris and Rome?");
+        List<Map<String, Object>> live = toolRows();
+        String liveTitle = (String) page.evaluate("() => document.querySelector('.ar-tools__title').textContent");
+
+        page.reload();
+        waitForAnswer();
+        List<Map<String, Object>> fromHistory = toolRows();
+
+        assertThat(live).extracting(row -> row.get("name")).containsExactly("weather", "weather", "clock", "notify");
+        assertThat(live.get(2)).containsEntry("args", "Rome +1")
+                .containsEntry("input", "{\n  \"city\": \"Rome\",\n  \"format\": \"24h\"\n}")
+                .containsEntry("output", "{\n  \"time\": \"10:42\"\n}")
+                .containsEntry("state", "done");
+        assertThat(live.get(1)).containsEntry("output", "rainy");
+        assertThat(live.get(3)).containsEntry("state", "unanswered no result").containsEntry("outputShown", false);
+        assertThat(fromHistory).isEqualTo(live);
+
+        // One agent message per turn, with one tool group on top and the turn's text below it
+        assertThat(page.locator("#chat-messages .ar-msg--agent").count()).isEqualTo(1);
+        assertThat(page.locator("#chat-messages .ar-tools").count()).isEqualTo(1);
+        assertThat(page.evaluate("() => document.querySelector('.ar-msg--agent .ar-msg__body').firstElementChild.className"))
+                .isEqualTo("ar-tools");
+        assertThat(page.evaluate("() => document.querySelector('.ar-tools__title').textContent")).isEqualTo(liveTitle)
+                .isEqualTo("Used 4 tools");
+        assertThat((String) page.evaluate("() => document.querySelector('.ar-msg--agent .ar-msg__body').textContent"))
+                .contains("Paris is sunny.").contains("Rome is rainy. END-OF-ANSWER");
+        // Times come from the stored call and result times
+        assertThat((String) page.evaluate("() => document.querySelectorAll('.ar-tool__time')[0].textContent"))
+                .matches("\\d+ms|\\d+(\\.\\d)?s");
+
+        // A row opens to show its input and output
+        page.locator(".ar-tool__row").nth(2).click();
+        assertThat(page.locator(".ar-tool__detail").nth(2).isVisible()).isTrue();
+        assertThat(page.locator(".ar-tool__input").nth(2).innerText()).contains("\"format\": \"24h\"");
+        assertThat(page.locator(".ar-tool__output").nth(2).innerText()).contains("\"time\": \"10:42\"");
+    }
+
+    @Test
+    void htmlInToolArgumentsAndResultsRendersAsText() {
+        String input = "{\"html\":\"<img src=x onerror=\\\"window.__xss='input'\\\">\"}";
+        agent.toolEvents = List.of(
+                new AgentEvent.ToolCall("call-1", "fetch", input),
+                new AgentEvent.ToolResult("call-1", "fetch", HTML_TOOL_OUTPUT));
+        agent.answer = "Fetched. END-OF-ANSWER";
+
+        send("fetch it");
+        assertToolHtmlIsText();
+
+        page.reload();
+        waitForAnswer();
+        assertToolHtmlIsText();
+    }
+
+    private void assertToolHtmlIsText() {
+        assertNothingRan();
+        assertThat(page.locator(".ar-tools :is(img, script, b)").count()).isZero();
+        assertThat(toolRows()).singleElement().satisfies(row -> {
+            assertThat(row.get("args")).isEqualTo("<img src=x onerror=\"window.__xss='input'\">");
+            assertThat(row.get("input")).isEqualTo("{\n  \"html\": \"<img src=x onerror=\\\"window.__xss='input'\\\">\"\n}");
+            assertThat(row.get("output")).isEqualTo(HTML_TOOL_OUTPUT);
+        });
+    }
+
+    /**
+     * The tool rows of the last agent message as a person sees them: name, collapsed hint, input,
+     * output, whether the output shows, and the state. A finished row's time depends on when it ran,
+     * so it is left out; an unfinished row's label is part of its state.
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> toolRows() {
+        return (List<Map<String, Object>>) page.evaluate("""
+                () => [...[...document.querySelectorAll('#chat-messages .ar-msg--agent')].pop().querySelectorAll('.ar-tool')]
+                    .map(el => ({
+                        name: el.querySelector('.ar-tool__name').textContent,
+                        args: el.querySelector('.ar-tool__args').textContent,
+                        input: el.querySelector('.ar-tool__input').textContent,
+                        output: el.querySelector('.ar-tool__output').textContent,
+                        outputShown: !el.querySelector('.ar-tool__output-section').hidden,
+                        state: el.classList.contains('ar-tool--done') ? 'done'
+                            : ['unanswered', 'failed'].filter(s => el.classList.contains('ar-tool--' + s)).join(' ')
+                              + ' ' + el.querySelector('.ar-tool__time').textContent
+                    }))""");
     }
 
     /** JavaClawTime.format in the page; Intl's narrow no-break spaces are read as spaces. */
@@ -390,30 +492,35 @@ class ChatMarkdownBrowserTest {
         }
 
         @Bean
-        List<ChatHistory.Entry> history() {
+        List<ChatHistory.Turn> history() {
             return new CopyOnWriteArrayList<>();
         }
 
         @Bean
-        ChatHistory chatHistory(List<ChatHistory.Entry> history) {
+        ChatHistory chatHistory(List<ChatHistory.Turn> history) {
             ChatHistory chatHistory = Mockito.mock(ChatHistory.class);
             when(chatHistory.conversationIds()).thenReturn(List.of("web"));
-            when(chatHistory.entries(anyString())).thenAnswer(_ -> List.copyOf(history));
+            when(chatHistory.turns(anyString())).thenAnswer(_ -> List.copyOf(history));
             return chatHistory;
         }
 
         @Bean
-        FakeAgent agent(List<ChatHistory.Entry> history) {
+        FakeAgent agent(List<ChatHistory.Turn> history) {
             return new FakeAgent(history);
         }
 
-        /** Streams {@link #answer} in small chunks that split words and Markdown syntax, then keeps the turn. */
+        /**
+         * Streams {@link #toolEvents}, then {@link #answer} in small chunks that split words and
+         * Markdown syntax, and keeps the turn the way session memory stores it: each tool call with
+         * the time it was made and its result with the time it came back, and all the text.
+         */
         static class FakeAgent implements Agent {
 
-            private final List<ChatHistory.Entry> history;
+            private final List<ChatHistory.Turn> history;
+            volatile List<AgentEvent> toolEvents = List.of();
             volatile String answer = "";
 
-            FakeAgent(List<ChatHistory.Entry> history) {
+            FakeAgent(List<ChatHistory.Turn> history) {
                 this.history = history;
             }
 
@@ -425,11 +532,25 @@ class ChatMarkdownBrowserTest {
             @Override
             public void respondTo(AgentRequest request, Consumer<AgentEvent> events) {
                 Instant started = Instant.now();
+                Map<String, ChatHistory.ToolCall> calls = new LinkedHashMap<>();
+                List<String> texts = new ArrayList<>();
+                for (AgentEvent event : toolEvents) {
+                    switch (event) {
+                        case AgentEvent.ToolCall c -> calls.put(c.id(),
+                                new ChatHistory.ToolCall(c.id(), c.name(), c.input(), Instant.now(), null, null));
+                        case AgentEvent.ToolResult r -> calls.computeIfPresent(r.id(), (_, c) ->
+                                new ChatHistory.ToolCall(c.id(), c.name(), c.arguments(), c.calledAt(), r.output(), Instant.now()));
+                        case AgentEvent.Token t -> texts.add(t.text());
+                        default -> { }
+                    }
+                    events.accept(event);
+                }
                 for (int i = 0; i < answer.length(); i += 3) {
                     events.accept(new AgentEvent.Token(answer.substring(i, Math.min(answer.length(), i + 3))));
                 }
-                history.add(new ChatHistory.Entry(new UserMessage(request.input()), started));
-                history.add(new ChatHistory.Entry(new AssistantMessage(answer), started));
+                texts.add(answer);
+                history.add(new ChatHistory.Turn(request.input(), started, List.copyOf(calls.values()),
+                        String.join("\n\n", texts), started));
                 events.accept(new AgentEvent.Done());
             }
 
