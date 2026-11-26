@@ -205,6 +205,7 @@
     // A message from history carries its turn's tool calls as JSON in data-tools: per call the
     // fields of a live toolCall/toolResult frame (id, name, input, output) and the stored times
     // of the call and the result (calledAt, resultAt). A call without a result has neither.
+    // A long output comes cut, with truncated: true.
     function renderHistoryTools(root) {
         if (!root) return;
         root.querySelectorAll('.ar-msg[data-tools]').forEach(function (article) {
@@ -223,6 +224,12 @@
                 if (call.resultAt) {
                     var resultAt = Date.parse(call.resultAt);
                     showToolResult(el, resultAt - Date.parse(call.calledAt), call.output);
+                    if (call.truncated) {
+                        var note = document.createElement('div');
+                        note.className = 'ar-tool__truncated';
+                        note.textContent = '(output truncated)';
+                        el.querySelector('.ar-tool__output-section').appendChild(note);
+                    }
                     group.endedAt = Math.max(group.endedAt || resultAt, resultAt);
                 } else {
                     showToolUnfinished(el, 'ar-tool--unanswered', 'no result');

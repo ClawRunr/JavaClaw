@@ -80,6 +80,16 @@ class ChatHistoryTest {
     }
 
     @Test
+    void callsWithBlankIdsAreAllShown() {
+        open("web");
+        at("web", 0, new UserMessage("Weather?"));
+        at("web", 1, toolCalls("", call("", "weather", "{\"city\":\"Paris\"}"), call(" ", "weather", "{\"city\":\"Rome\"}")));
+
+        assertThat(history.turns("web").getFirst().toolCalls()).extracting(ChatHistory.ToolCall::arguments)
+                .containsExactly("{\"city\":\"Paris\"}", "{\"city\":\"Rome\"}");
+    }
+
+    @Test
     void aCallWithoutAStoredResultHasNoResult() {
         open("web");
         at("web", 0, new UserMessage("Weather?"));

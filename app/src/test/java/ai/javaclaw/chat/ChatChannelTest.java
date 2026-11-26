@@ -156,6 +156,18 @@ class ChatChannelTest {
     }
 
     @Test
+    void aLongToolOutputIsCutAndMarked() throws Exception {
+        String output = "x".repeat(50_000);
+        ChatHistory.ToolCall call = new ChatHistory.ToolCall("call-1", "read", "{}", T0, output, T0.plusSeconds(1));
+        when(chatHistory.turns("web")).thenReturn(List.of(new ChatHistory.Turn("Read it", T0, List.of(call), "", T0)));
+
+        assertThat(toolsData(chatChannel.loadHistoryAsHtml("web").get(1))).singleElement().satisfies(tool -> {
+            assertThat(tool.get("output")).isEqualTo("x".repeat(20_000));
+            assertThat(tool).containsEntry("truncated", true);
+        });
+    }
+
+    @Test
     void aTurnWithOnlyToolCallsHasNoTextElement() {
         ChatHistory.ToolCall call = new ChatHistory.ToolCall("call-1", "weather", "{}", T0.plusSeconds(1), null, null);
         when(chatHistory.turns("web")).thenReturn(List.of(new ChatHistory.Turn("Weather?", T0, List.of(call), "", T0.plusSeconds(1))));

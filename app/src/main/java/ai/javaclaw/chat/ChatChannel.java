@@ -40,6 +40,9 @@ public class ChatChannel implements Channel {
 
     private static final Logger log = LoggerFactory.getLogger(ChatChannel.class);
 
+    /** The longest tool output a history message carries; live tool results are not cut. */
+    static final int MAX_HISTORY_TOOL_OUTPUT = 20_000;
+
     private final Agent agent;
     private final ChannelRegistry channelRegistry;
     private final ChatHistory chatHistory;
@@ -149,7 +152,9 @@ public class ChatChannel implements Channel {
     /**
      * The tool calls as {@code chat.js} renders them: the fields of a live {@code toolCall} and
      * {@code toolResult} frame, plus the times of the call and the result. A call without a result
-     * has neither {@code output} nor {@code resultAt}. {@code null} for no calls.
+     * has neither {@code output} nor {@code resultAt}. An output longer than
+     * {@value #MAX_HISTORY_TOOL_OUTPUT} characters is cut to that length and marked
+     * {@code "truncated": true}. {@code null} for no calls.
      */
     private String toolsJson(List<ChatHistory.ToolCall> toolCalls) {
         if (toolCalls.isEmpty()) return null;
@@ -158,7 +163,15 @@ public class ChatChannel implements Channel {
             Map<String, Object> tool = toolData(call.id(), call.name(), "input", call.arguments());
             tool.put("calledAt", call.calledAt().toString());
             if (call.resultAt() != null) {
-                tool.put("output", call.result() == null ? "" : call.result());
+                String output = call.result() == null ? "" : call.result();
+                if (output.length() > MAX_HISTORY_TOOL_OUTPUT) {
+                    // Don't split a surrogate pair
+                    int end = Character.isHighSurrogate(output.charAt(MAX_HISTORY_TOOL_OUTPUT - 1))
+                            ? MAX_HISTORY_TOOL_OUTPUT - 1 : MAX_HISTORY_TOOL_OUTPUT;
+                    output = output.substring(0, end);
+                    tool.put("truncated", true);
+                }
+                tool.put("output", output);
                 tool.put("resultAt", call.resultAt().toString());
             }
             tools.add(tool);

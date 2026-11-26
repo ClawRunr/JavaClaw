@@ -142,7 +142,10 @@ public class ChatHistory {
 
         private final String question;
         private final Instant askedAt;
-        /** By tool call id, in call order. */
+        /**
+         * In call order, by tool call id; a call with a blank or repeated id is kept under its
+         * position in the turn instead, so it never replaces another call.
+         */
         private final Map<String, ToolCall> toolCalls = new LinkedHashMap<>();
         private final List<String> texts = new ArrayList<>();
         private Instant answeredAt;
@@ -158,7 +161,12 @@ public class ChatHistory {
             if (answeredAt == null) answeredAt = time;
             if (hasText) texts.add(message.getText());
             for (AssistantMessage.ToolCall call : message.getToolCalls()) {
-                toolCalls.putIfAbsent(call.id(), new ToolCall(call.id(), call.name(), call.arguments(), time, null, null));
+                ToolCall toolCall = new ToolCall(call.id(), call.name(), call.arguments(), time, null, null);
+                boolean hasId = call.id() != null && !call.id().isBlank();
+                if (!hasId || toolCalls.putIfAbsent(call.id(), toolCall) != null) {
+                    // NUL never appears in a real id, so this key cannot replace a call either
+                    toolCalls.put("\0" + toolCalls.size(), toolCall);
+                }
             }
         }
 
