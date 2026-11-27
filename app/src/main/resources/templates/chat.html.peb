@@ -15,54 +15,66 @@
 {% block content %}
 <div class="chat-page" hx-ext="ws" ws-connect="/ws/chat">
 
-    <header class="ar-header" role="banner">
-        <div class="ar-header__brand">
+    <aside class="ar-side" aria-label="Chats">
+        <div class="ar-header__brand ar-side__brand">
             <img class="brand-mascot" src="/brand/icon-192.png" alt="ClawRunr" width="30" height="30" draggable="false">
             <div class="brand-lockup">
                 <p class="brand-word"><span class="brand-agent">Java</span><span class="brand-runr">Claw</span></p>
             </div>
         </div>
-        <div class="ar-conv">
-            <label class="ar-conv__label" for="channel-select">Conversation</label>
-            <div id="channel-selector"></div>
+        <button type="button" class="ar-side__new" id="new-chat" ws-send hx-vals='{"type": "newChat"}'>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            New chat
+        </button>
+        <label for="chat-search" class="is-sr-only">Search chats</label>
+        <input type="search" id="chat-search" class="ar-side__search" placeholder="Search chats" autocomplete="off">
+        <div id="chat-sessions" class="ar-side__lists"></div>
+        <div class="ar-side__footer">
+            <nav class="ar-nav" aria-label="main navigation">
+                <a href="/settings/agents" class="ar-nav__link" hx-boost="false">Agents</a>
+                <a href="/onboarding" class="ar-nav__link" hx-boost="false">Settings</a>
+                <a href="http://localhost:{{ jobrunrDashboardPort }}" target="_blank" rel="noopener noreferrer" class="ar-nav__link">JobRunr Dashboard</a>
+            </nav>
+            <span id="status-tag" class="ar-status ar-status--ok" role="status">
+                <span class="ar-status__dot" aria-hidden="true"></span><span class="ar-status__text">Connected</span>
+            </span>
         </div>
-        <nav class="ar-nav" aria-label="main navigation">
-            <a href="/settings/agents" class="ar-nav__link" hx-boost="false">Agents</a>
-            <a href="/onboarding" class="ar-nav__link" hx-boost="false">Settings</a>
-            <a href="http://localhost:{{ jobrunrDashboardPort }}" target="_blank" rel="noopener noreferrer" class="ar-nav__link">JobRunr Dashboard</a>
-        </nav>
-        <span id="status-tag" class="ar-status ar-status--ok" role="status">
-            <span class="ar-status__dot" aria-hidden="true"></span><span class="ar-status__text">Connected</span>
-        </span>
-    </header>
+    </aside>
 
-    <main class="chat-body">
-        <div class="ar-column">
-            <div id="chat-messages">
+    <div class="ar-main">
+        <header class="ar-header" role="banner">
+            <div id="chat-header" class="ar-chat-head"></div>
+        </header>
+
+        <main class="chat-body">
+            <div class="ar-column">
+                <div id="chat-messages">
+                </div>
+                <div id="typing-indicator"></div>
             </div>
-            <div id="typing-indicator"></div>
-        </div>
-    </main>
+        </main>
 
-    <footer class="chat-footer">
-        <div class="ar-column" id="chat-input-area">
-            <form id="chat-form" class="ar-composer" ws-send hx-boost="false"
-                  hx-vals='js:{"type": "userMessage", "conversationId": document.getElementById("channel-select") ? document.getElementById("channel-select").value : "web"}'>
-                <label for="message-input" class="is-sr-only">Message JavaClaw</label>
-                <textarea id="message-input" class="ar-composer__input" name="message" rows="1"
-                    placeholder="Message JavaClaw…"
-                    autocomplete="off" spellcheck="true" autofocus
-                    hx-trigger="keydown[key=='Enter'&&!shiftKey] consume"
-                    ws-send></textarea>
-                <button id="send-btn" type="submit" class="ar-composer__send" title="Send (Enter)" aria-label="Send">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-                         stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M12 19V5M5 12l7-7 7 7"/>
-                    </svg>
-                </button>
-            </form>
-        </div>
-    </footer>
+        <footer class="chat-footer">
+            <div class="ar-column" id="chat-input-area">
+                <form id="chat-form" class="ar-composer" ws-send hx-boost="false"
+                      hx-vals='js:{"type": "userMessage", "sessionId": document.getElementById("chat-messages").getAttribute("data-session-id")}'>
+                    <label for="message-input" class="is-sr-only">Message JavaClaw</label>
+                    <textarea id="message-input" class="ar-composer__input" name="message" rows="1"
+                        placeholder="Message JavaClaw…"
+                        autocomplete="off" spellcheck="true" autofocus
+                        hx-trigger="keydown[key=='Enter'&&!shiftKey] consume"
+                        ws-send></textarea>
+                    <button id="send-btn" type="submit" class="ar-composer__send" title="Send (Enter)" aria-label="Send">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 19V5M5 12l7-7 7 7"/>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+        </footer>
+    </div>
 
     {# Markup the streaming script clones; it fills in text with textContent only. #}
     <template id="agent-message-template">

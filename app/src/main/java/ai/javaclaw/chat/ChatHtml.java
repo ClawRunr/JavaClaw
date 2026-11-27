@@ -1,5 +1,7 @@
 package ai.javaclaw.chat;
 
+import ai.javaclaw.agent.ChatSessions;
+import ai.javaclaw.agent.SessionChannel;
 import org.springframework.web.util.HtmlUtils;
 
 import java.time.Instant;
@@ -64,11 +66,12 @@ public class ChatHtml {
                 </div>""".formatted(agentHead(null));
     }
 
-    public static String chatInputArea(String conversationId) {
-        if ("web".equals(conversationId)) {
+    /** The composer for the web chat; a read-only notice for another channel's conversation. */
+    public static String chatInputArea(boolean writable, String label) {
+        if (writable) {
             return """
                     <form id="chat-form" class="ar-composer" ws-send hx-boost="false"
-                          hx-vals='js:{"type": "userMessage", "conversationId": document.getElementById("channel-select") ? document.getElementById("channel-select").value : "web"}'>
+                          hx-vals='js:{"type": "userMessage", "sessionId": document.getElementById("chat-messages").getAttribute("data-session-id")}'>
                         <label for="message-input" class="is-sr-only">Message JavaClaw</label>
                         <textarea id="message-input" class="ar-composer__input" name="message" rows="1"
                             placeholder="Message JavaClaw…"
@@ -83,25 +86,89 @@ public class ChatHtml {
                         </button>
                     </form>""";
         }
-        String label = HtmlUtils.htmlEscape(labelFor(conversationId));
+        String escaped = HtmlUtils.htmlEscape(label);
         return """
                 <p class="chat-readonly-notice">This is a read-only view of <strong>%s</strong>. \
-                Open %s to continue the conversation.</p>""".formatted(label, label);
+                Open %s to continue the conversation.</p>""".formatted(escaped, escaped);
     }
 
-    public static String conversationSelector(List<String> ids, String selectedId) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("""
-                <select id="channel-select" name="conversationId" \
-                ws-send hx-trigger="change" \
-                hx-vals='{"type": "channelChanged"}'>""");
-        for (String id : ids) {
-            sb.append("<option value=\"").append(HtmlUtils.htmlEscape(id)).append("\"");
-            if (id.equals(selectedId)) sb.append(" selected");
-            sb.append(">").append(HtmlUtils.htmlEscape(labelFor(id))).append("</option>");
+    /**
+     * The header of the shown session: its title and channel and, for a web chat, a rename button
+     * that turns the title into a text field with Save and Cancel ({@code /chat/chat.js}).
+     */
+    public static String chatHeader(ChatSessions.Summary session, boolean renamable) {
+        String title = HtmlUtils.htmlEscape(session.title());
+        StringBuilder html = new StringBuilder("""
+                <span class="ar-chat-head__label">%s</span>\
+                <h1 class="ar-chat-head__title" id="chat-title">%s</h1>""".formatted(
+                HtmlUtils.htmlEscape(channelLabel(session.channel())), title));
+        if (renamable) {
+            html.append("""
+                    <button type="button" class="ar-chat-head__rename" id="rename-btn" title="Rename" aria-label="Rename chat">\
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" \
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/>\
+                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>\
+                    <form id="rename-form" class="ar-rename" ws-send hx-boost="false" hx-vals='{"type": "renameSession"}' hidden>\
+                    <input type="hidden" name="sessionId" value="%s">\
+                    <label for="rename-input" class="is-sr-only">Chat title</label>\
+                    <input id="rename-input" class="ar-rename__input" name="title" value="%s" data-title="%s" \
+                    maxlength="%d" required autocomplete="off">\
+                    <button type="submit" class="ar-rename__button ar-rename__button--save">Save</button>\
+                    <button type="button" class="ar-rename__button" id="rename-cancel">Cancel</button>\
+                    </form>""".formatted(HtmlUtils.htmlEscape(session.id()), title, title, ChatSessions.MAX_TITLE_LENGTH));
         }
-        sb.append("</select>");
-        return sb.toString();
+        return html.toString();
+    }
+
+    /**
+     * The sidebar's lists: the web chat's sessions, each switching to it, and the other channels'
+     * conversations, each opening the read-only view of its active session.
+     *
+     * @param shownId the session the page shows, highlighted
+     */
+    public static String sessionLists(List<ChatSessions.Summary> chats, List<ChatSessions.Summary> channels, String shownId) {
+        StringBuilder html = new StringBuilder("""
+                <h2 class="ar-side__heading">Chats</h2><ul class="ar-side__list" id="chat-list">""");
+        for (ChatSessions.Summary chat : chats) {
+            html.append(sessionItem("switchSession", chat, null, chat.id().equals(shownId)));
+        }
+        html.append("""
+                </ul><p class="ar-side__empty" id="chat-list-empty" hidden>No chats match.</p>""");
+        if (!channels.isEmpty()) {
+            html.append("""
+                    <h2 class="ar-side__heading">Channels</h2><ul class="ar-side__list">""");
+            for (ChatSessions.Summary channel : channels) {
+                html.append(sessionItem("viewSession", channel, channelLabel(channel.channel()), channel.id().equals(shownId)));
+            }
+            html.append("</ul>");
+        }
+        return html.toString();
+    }
+
+    private static String sessionItem(String frameType, ChatSessions.Summary session, String label, boolean shown) {
+        return """
+                <li><button type="button" class="ar-side__item%s"%s ws-send hx-vals='{"type": "%s"}' \
+                name="sessionId" value="%s">%s<span class="ar-side__title">%s</span>%s</button></li>""".formatted(
+                shown ? " is-active" : "",
+                shown ? " aria-current=\"true\"" : "",
+                frameType,
+                HtmlUtils.htmlEscape(session.id()),
+                label == null ? "" : "<span class=\"ar-side__channel\">" + HtmlUtils.htmlEscape(label) + "</span>",
+                HtmlUtils.htmlEscape(session.title()),
+                timeTag(session.lastActivity()));
+    }
+
+    /** What a channel is called in the chat. */
+    public static String channelLabel(SessionChannel channel) {
+        if (channel == null) return "Chat";
+        return switch (channel) {
+            case WEB -> "Web";
+            case TELEGRAM -> "Telegram";
+            case DISCORD -> "Discord";
+            case WHATSAPP -> "WhatsApp";
+            case TEAMS -> "Teams";
+            case INTERNAL -> "JavaClaw";
+        };
     }
 
     private static String agentMessage(String modifiers, String attributes, Instant time, String content) {
@@ -122,12 +189,5 @@ public class ChatHtml {
     private static String timeTag(Instant time) {
         if (time == null) return "";
         return "<time class=\"ar-msg__time\" datetime=\"" + time.truncatedTo(ChronoUnit.SECONDS) + "\"></time>";
-    }
-
-    private static String labelFor(String conversationId) {
-        if ("web".equals(conversationId)) return "Web Chat";
-        if (conversationId.startsWith("discord-")) return "Discord (" + conversationId.substring("discord-".length()) + ")";
-        if (conversationId.startsWith("telegram-")) return "Telegram (" + conversationId.substring("telegram-".length()) + ")";
-        return conversationId;
     }
 }

@@ -1,6 +1,7 @@
 package ai.javaclaw.tasks;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.ConversationKey;
 import ai.javaclaw.agent.SessionKind;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.tasks.Task.Status;
@@ -70,8 +71,8 @@ class TaskManagerTest {
         Task saved = new Task("some-id", "handle-email", Instant.now(), Task.Status.todo, "Process unread email messages");
         when(taskRepositoryMock.save(any(Task.class))).thenReturn(saved);
         when(taskRepositoryMock.getTaskById("some-id")).thenReturn(saved);
-        // The agent is called with the task's conversation id, not with the task id itself
-        when(agentMock.prompt(argThat(request -> request.conversationId().equals("task-some-id")
+        // The agent is called in the task's own conversation
+        when(agentMock.prompt(argThat(request -> request.conversation().equals(ConversationKey.task("some-id"))
                 && request.kind() == SessionKind.TASK), any())).thenReturn(new TaskResult(Status.completed, "All mail was summarized!"));
 
         taskManager.create("handle-email", "Process unread email messages");

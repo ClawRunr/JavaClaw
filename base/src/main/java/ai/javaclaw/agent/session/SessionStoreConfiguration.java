@@ -1,5 +1,6 @@
 package ai.javaclaw.agent.session;
 
+import ai.javaclaw.agent.ChatSessions;
 import org.springframework.ai.session.SessionAttributes;
 import org.springframework.ai.session.jdbc.JdbcSessionRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,6 +19,13 @@ import java.util.Set;
 @Configuration(proxyBeanMethods = false)
 public class SessionStoreConfiguration {
 
+    /**
+     * The metadata attributes sessions are found by. SessionService cannot list all sessions; the
+     * chat lists them by the agent name, and a conversation's sessions by their conversation key.
+     */
+    public static final Set<String> INDEXED_ATTRIBUTES =
+            Set.of(SessionAttributes.AGENT_NAME, ChatSessions.CONVERSATION, ChatSessions.TITLE);
+
     @Bean(destroyMethod = "close")
     SessionDatabase sessionDatabase(@Value("${agent.workspace}") Resource workspace) throws IOException {
         return new SessionDatabase(workspace.getFilePath().resolve("data"));
@@ -27,8 +35,7 @@ public class SessionStoreConfiguration {
     JdbcSessionRepository sessionRepository(SessionDatabase sessionDatabase) {
         return JdbcSessionRepository.builder()
                 .dataSource(sessionDatabase.dataSource())
-                // SessionService cannot list all sessions; the chat lists them by this attribute
-                .indexedAttributes(Set.of(SessionAttributes.AGENT_NAME))
+                .indexedAttributes(INDEXED_ATTRIBUTES)
                 .build();
     }
 }

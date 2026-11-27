@@ -2,6 +2,8 @@ package ai.javaclaw.channels.teams;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatCommands;
+import ai.javaclaw.agent.ConversationKey;
 import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.slf4j.Logger;
@@ -27,15 +29,18 @@ public class TeamsWebhookController {
     private final TeamsProperties properties;
     private final ChannelRegistry channelRegistry;
     private final Agent agent;
+    private final ChatCommands chatCommands;
     private final TeamsChannel channel;
     private final BotFrameworkJwtValidator jwtValidator;
     private final Executor executor;
 
     public TeamsWebhookController(TeamsProperties properties, ChannelRegistry channelRegistry,
-                                  Agent agent, TeamsChannel channel, BotFrameworkJwtValidator jwtValidator) {
+                                  Agent agent, ChatCommands chatCommands, TeamsChannel channel,
+                                  BotFrameworkJwtValidator jwtValidator) {
         this.properties = properties;
         this.channelRegistry = channelRegistry;
         this.agent = agent;
+        this.chatCommands = chatCommands;
         this.channel = channel;
         this.jwtValidator = jwtValidator;
         this.executor = Executors.newSingleThreadExecutor(r -> {
@@ -90,12 +95,13 @@ public class TeamsWebhookController {
     }
 
     private void handleMessage(TeamsConversationReference reference, String text) {
-        String conversationId = getConversationId(reference.conversationId());
+        ConversationKey conversation = ConversationKey.teams(reference.conversationId());
         try {
-            String response = agent.respondTo(AgentRequest.chat(conversationId, SessionChannel.TEAMS, text));
+            String response = chatCommands.handle(conversation, SessionChannel.TEAMS, text).orElseGet(() ->
+                    agent.respondTo(AgentRequest.chat(conversation, SessionChannel.TEAMS, text)));
             channel.sendMessage(reference, response);
         } catch (RuntimeException e) {
-            LOGGER.error("Failed to handle Teams message for conversation '{}'", conversationId, e);
+            LOGGER.error("Failed to handle Teams message for conversation '{}'", conversation, e);
             sendErrorMessage(reference);
         }
     }
@@ -131,9 +137,5 @@ public class TeamsWebhookController {
         }
         String token = authHeader.substring("Bearer ".length()).trim();
         return jwtValidator.isValid(token, serviceUrl);
-    }
-
-    private static String getConversationId(String teamsConversationId) {
-        return "teams-" + teamsConversationId;
     }
 }

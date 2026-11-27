@@ -2,6 +2,10 @@ package ai.javaclaw.channels.whatsapp;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatCommands;
+import ai.javaclaw.agent.ChatSessions;
+import ai.javaclaw.agent.ConversationKey;
+import ai.javaclaw.agent.SessionKind;
 import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.channels.whatsapp.WhatsAppChannel.WhatsAppChannelMessageReceivedEvent;
@@ -34,11 +38,14 @@ class WhatsAppChannelTest {
     @Mock
     private ChannelRegistry channelRegistry;
 
+    @Mock
+    private ChatSessions chatSessions;
+
     private WhatsAppChannel channel;
 
     @BeforeEach
     void setUp() {
-        channel = new WhatsAppChannel(whatsApp, channelRegistry, agent);
+        channel = new WhatsAppChannel(whatsApp, channelRegistry, agent, new ChatCommands(chatSessions));
     }
 
     @Test
@@ -78,7 +85,7 @@ class WhatsAppChannelTest {
 
     @Test
     void answersWhatTheAgentReplies() {
-        when(agent.respondTo(AgentRequest.chat(ALLOWED_JID, SessionChannel.WHATSAPP, "hello"))).thenReturn("hi there");
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.whatsApp(ALLOWED_JID), SessionChannel.WHATSAPP, "hello"))).thenReturn("hi there");
 
         channel.onMessage(ALLOWED_JID, "hello");
 
@@ -87,7 +94,7 @@ class WhatsAppChannelTest {
 
     @Test
     void publishesAnEventNamingTheChatAsTheConversation() {
-        when(agent.respondTo(AgentRequest.chat(ALLOWED_JID, SessionChannel.WHATSAPP, "hello"))).thenReturn("hi there");
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.whatsApp(ALLOWED_JID), SessionChannel.WHATSAPP, "hello"))).thenReturn("hi there");
 
         channel.onMessage(ALLOWED_JID, "hello");
 
@@ -103,7 +110,7 @@ class WhatsAppChannelTest {
     void publishesTheEventBeforeAskingTheAgent() {
         // The agent turn takes seconds; the registry has to know which channel is live before then,
         // or a task finishing mid-turn would have its reply routed somewhere else.
-        when(agent.respondTo(AgentRequest.chat(ALLOWED_JID, SessionChannel.WHATSAPP, "hello"))).thenAnswer(invocation -> {
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.whatsApp(ALLOWED_JID), SessionChannel.WHATSAPP, "hello"))).thenAnswer(invocation -> {
             verify(channelRegistry).publishMessageReceivedEvent(any());
             return "hi there";
         });
@@ -115,10 +122,19 @@ class WhatsAppChannelTest {
 
     @Test
     void swallowsAgentFailures() {
-        when(agent.respondTo(AgentRequest.chat(ALLOWED_JID, SessionChannel.WHATSAPP, "hello"))).thenThrow(new RuntimeException("boom"));
+        when(agent.respondTo(AgentRequest.chat(ConversationKey.whatsApp(ALLOWED_JID), SessionChannel.WHATSAPP, "hello"))).thenThrow(new RuntimeException("boom"));
 
         channel.onMessage(ALLOWED_JID, "hello");
 
         verify(whatsApp, never()).sendMessage(anyString());
+    }
+
+    @Test
+    void newStartsANewSessionInsteadOfAskingTheAgent() {
+        channel.onMessage(ALLOWED_JID, "/NEW");
+
+        verify(chatSessions).create(ConversationKey.whatsApp(ALLOWED_JID), SessionKind.CHAT, SessionChannel.WHATSAPP, null);
+        verify(agent, never()).respondTo(any(AgentRequest.class));
+        verify(whatsApp).sendMessage("Started a new conversation.");
     }
 }

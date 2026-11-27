@@ -3,7 +3,10 @@ package ai.javaclaw.chat;
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentEvent;
 import ai.javaclaw.agent.AgentRequest;
-import ai.javaclaw.agent.ChatHistory;
+import ai.javaclaw.agent.ChatSessions;
+import ai.javaclaw.agent.ConversationKey;
+import ai.javaclaw.agent.SessionChannel;
+import ai.javaclaw.agent.SessionKind;
 import ai.javaclaw.channels.ChannelRegistry;
 import ai.javaclaw.chat.ws.ChatWebSocketHandler;
 import ai.javaclaw.chat.ws.WebSocketConfig;
@@ -19,7 +22,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.session.InMemorySessionRepository;
+import org.springframework.ai.session.Session;
+import org.springframework.ai.session.SessionAttributes;
+import org.springframework.ai.session.SessionEvent;
+import org.springframework.ai.session.SessionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,23 +43,25 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.when;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Runs the web chat page in headless Chromium against the real chat WebSocket handler, with an
- * agent that streams a fixed answer and a history that keeps it, to check the page's Markdown
- * rendering: model output can never run script, and a message renders the same streamed and
- * loaded from history. Pages run with a fixed locale and time zone (en-US, Asia/Tokyo: UTC+9, no
+ * agent that streams a fixed answer and keeps it in the web chat's active session (an in-memory
+ * session store), to check the page's Markdown rendering — model output can never run script, and
+ * a message renders the same streamed and loaded from history — and its chat sessions: new chat,
+ * switching, renaming and searching. Pages run with a fixed locale and time zone (en-US, Asia/Tokyo: UTC+9, no
  * daylight saving) so message times can be checked exactly.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -101,7 +114,13 @@ class ChatMarkdownBrowserTest {
     TestConfig.FakeAgent agent;
 
     @Autowired
-    List<ChatHistory.Turn> history;
+    SessionService sessions;
+
+    @Autowired
+    InMemorySessionRepository sessionRepository;
+
+    @Autowired
+    ChatSessions chatSessions;
 
     Page page;
 
@@ -132,8 +151,10 @@ class ChatMarkdownBrowserTest {
 
     @BeforeEach
     void openPage() {
-        history.clear();
-        agent.toolEvents = List.of();
+        sessionRepository.findByMetadata(SessionAttributes.AGENT_NAME, "javaclaw").stream()
+                .map(Session::id)
+                .forEach(sessionRepository::delete);
+        agent.reset();
         requests = new CopyOnWriteArrayList<>();
         failedResponses = new CopyOnWriteArrayList<>();
         page = newPage("en-US");
@@ -262,8 +283,8 @@ class ChatMarkdownBrowserTest {
 
     @Test
     void aMessageFromHistoryShowsItsStoredTimeInTheBrowsersTimeZone() {
-        history.add(new ChatHistory.Turn("Old question", Instant.parse("2024-03-05T10:42:05Z"), List.of(),
-                "Old answer END-OF-ANSWER", Instant.parse("2024-03-05T10:43:59Z")));
+        remember(new UserMessage("Old question"), Instant.parse("2024-03-05T10:42:05Z"));
+        remember(new AssistantMessage("Old answer END-OF-ANSWER"), Instant.parse("2024-03-05T10:43:59Z"));
 
         page.navigate("http://localhost:" + port + "/chat");
         waitForAnswer();
@@ -278,7 +299,7 @@ class ChatMarkdownBrowserTest {
     @Test
     void timesReadAsTodayYesterdayOrDateInTheBrowsersLocale() {
         page.navigate("http://localhost:" + port + "/chat");
-        page.waitForSelector("#channel-select");
+        page.waitForSelector("#chat-title");
         // Just after midnight, so "yesterday" is minutes ago and "today" is not "the last 24 hours"
         String now = "new Date(2026, 10, 21, 0, 30)";
 
@@ -295,7 +316,7 @@ class ChatMarkdownBrowserTest {
         Page german = newPage("de-DE");
         try {
             german.navigate("http://localhost:" + port + "/chat");
-            german.waitForSelector("#channel-select");
+            german.waitForSelector("#chat-title");
             assertThat(formatTime(german, "new Date(2026, 10, 21, 11, 42)", now)).isEqualTo("11:42");
             assertThat(formatTime(german, "new Date(2026, 10, 20, 11, 42)", now)).isEqualTo("Gestern 11:42");
         } finally {
@@ -402,6 +423,287 @@ class ChatMarkdownBrowserTest {
                     }))""");
     }
 
+    // --- Chat sessions ----------------------------------------------------------------------
+
+    @Test
+    void aNewChatStartsEmptyAndSwitchingBackLoadsTheEarlierSessionsHistory() {
+        agent.answer = "First answer END-OF-ANSWER";
+        send("first question");
+        assertThat(title()).isEqualTo("New chat");
+
+        page.click("#new-chat");
+        page.waitForFunction("() => document.querySelectorAll('#chat-list li').length === 2");
+        assertThat(page.textContent("#chat-messages")).contains("How can I help you today?").doesNotContain("first question");
+
+        agent.answer = "Second answer END-OF-ANSWER";
+        say("second question");
+
+        // Latest activity first: the session just used is on top, the first one below it
+        page.click("#chat-list li:nth-child(2) button");
+        page.waitForFunction("() => document.getElementById('chat-messages').textContent.includes('first question')");
+        assertThat(page.textContent("#chat-messages")).doesNotContain("second question");
+        assertThat(page.locator("#chat-list .is-active").count()).isOne();
+
+        // The switch is the server's: a reload shows the same session
+        page.reload();
+        page.waitForFunction("() => document.getElementById('chat-messages').textContent.includes('first question')");
+    }
+
+    @Test
+    void eachSessionShowsItsOwnToolCardsWhenSwitchingAndAfterAReload() {
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Paris");
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Rome");
+        open();
+        assertThat(title()).isEqualTo("Rome");
+        agent.toolEvents = List.of(
+                new AgentEvent.ToolCall("call-rome", "clock", "{\"city\":\"Rome\"}"),
+                new AgentEvent.ToolResult("call-rome", "clock", "{\"time\":\"10:42\"}"));
+        agent.answer = "It is 10:42 in Rome. END-OF-ANSWER";
+        say("time in Rome?");
+        List<Map<String, Object>> rome = toolRows();
+
+        clickChat(page, "Paris");
+        agent.toolEvents = List.of(
+                new AgentEvent.ToolCall("call-paris", "weather", "{\"city\":\"Paris\"}"),
+                new AgentEvent.ToolResult("call-paris", "weather", "\"sunny\""));
+        agent.answer = "Paris is sunny. END-OF-ANSWER";
+        say("weather in Paris?");
+        List<Map<String, Object>> paris = toolRows();
+
+        assertThat(rome).singleElement().satisfies(row -> assertThat(row)
+                .containsEntry("name", "clock").containsEntry("args", "Rome").containsEntry("state", "done"));
+        assertThat(paris).singleElement().satisfies(row -> assertThat(row)
+                .containsEntry("name", "weather").containsEntry("output", "sunny").containsEntry("state", "done"));
+
+        // Switching shows the history of the session switched to, with its own cards only
+        clickChat(page, "Rome");
+        waitForAnswer();
+        assertThat(toolRows()).isEqualTo(rome);
+        assertThat(page.locator("#chat-messages .ar-tool").count()).isOne();
+
+        // The switch made Rome active, so a reload shows it again
+        page.reload();
+        waitForAnswer();
+        assertThat(title()).isEqualTo("Rome");
+        assertThat(toolRows()).isEqualTo(rome);
+        assertThat(page.locator("#chat-messages .ar-tool").count()).isOne();
+
+        clickChat(page, "Paris");
+        waitForAnswer();
+        assertThat(toolRows()).isEqualTo(paris);
+        assertThat(page.locator("#chat-messages .ar-tool").count()).isOne();
+
+        page.reload();
+        waitForAnswer();
+        assertThat(title()).isEqualTo("Paris");
+        assertThat(toolRows()).isEqualTo(paris);
+        assertThat(page.locator("#chat-messages .ar-tool").count()).isOne();
+    }
+
+    @Test
+    void renamingUpdatesTheHeaderAndTheSidebar() {
+        open();
+
+        page.click("#rename-btn");
+        assertThat(page.isVisible("#rename-input")).isTrue();
+        assertThat(page.isVisible("#chat-title")).isFalse();
+        page.fill("#rename-input", "Trip to Lisbon");
+        page.click(".ar-rename__button--save");
+
+        page.waitForFunction("() => document.getElementById('chat-title').textContent === 'Trip to Lisbon'");
+        assertThat(page.isVisible("#chat-title")).isTrue();
+        assertThat(page.textContent("#chat-list .is-active .ar-side__title")).isEqualTo("Trip to Lisbon");
+    }
+
+    @Test
+    void cancellingARenameKeepsTheTitle() {
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Groceries");
+        open();
+
+        page.click("#rename-btn");
+        page.fill("#rename-input", "Something else");
+        page.click("#rename-cancel");
+
+        assertThat(page.isVisible("#chat-title")).isTrue();
+        assertThat(page.isVisible("#rename-input")).isFalse();
+        assertThat(title()).isEqualTo("Groceries");
+    }
+
+    @Test
+    void searchFiltersTheChatsByTitle() {
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Groceries");
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Trip to Lisbon");
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Lisbon restaurants");
+        open();
+        assertThat(visibleChats()).hasSize(3);
+
+        page.fill("#chat-search", "lisbon");
+        assertThat(visibleChats()).containsExactlyInAnyOrder("Trip to Lisbon", "Lisbon restaurants");
+        assertThat(page.isVisible("#chat-list-empty")).isFalse();
+
+        page.fill("#chat-search", "zebra");
+        assertThat(visibleChats()).isEmpty();
+        assertThat(page.isVisible("#chat-list-empty")).isTrue();
+        assertThat(page.textContent("#chat-list-empty")).isEqualTo("No chats match.");
+
+        page.fill("#chat-search", "");
+        assertThat(visibleChats()).hasSize(3);
+    }
+
+    @Test
+    void newTypedInTheChatStartsANamedSessionWithoutAskingTheAgent() {
+        agent.answer = "First answer END-OF-ANSWER";
+        send("first question");
+
+        page.fill("#message-input", "/new Holiday");
+        page.click("#send-btn");
+
+        page.waitForFunction("() => document.getElementById('chat-title').textContent === 'Holiday'");
+        assertThat(page.textContent("#chat-messages")).contains("Started a new conversation.").doesNotContain("/new");
+        assertThat(agent.calls).hasValue(1);
+        assertThat(visibleChats()).contains("Holiday");
+    }
+
+    // --- Several tabs and stream frames ----------------------------------------------------
+
+    static final String HELD_ANSWER = "Partly sunny. The rest of the answer END-OF-ANSWER";
+
+    @Test
+    void twoTabsOnDifferentSessionsEachSendToTheSessionTheyShow() throws Exception {
+        String other = chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Other");
+        String main = chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Main");
+        Page second = newPage("en-US");
+        try {
+            open(page);
+            open(second);
+            clickChat(second, "Other");
+
+            agent.answer = "Main answer END-OF-ANSWER";
+            say("for main");
+            agent.finished = new CountDownLatch(1);
+            agent.answer = "Other answer END-OF-ANSWER";
+            say(second, "for other");
+
+            assertThat(sessions.getMessages(main)).extracting(Message::getText).containsExactly("for main", "Main answer END-OF-ANSWER");
+            assertThat(sessions.getMessages(other)).extracting(Message::getText).containsExactly("for other", "Other answer END-OF-ANSWER");
+            assertThat(page.textContent("#chat-messages")).doesNotContain("Other answer");
+            assertThat(second.textContent("#chat-messages")).doesNotContain("Main answer");
+        } finally {
+            second.close();
+        }
+    }
+
+    @Test
+    void anAnswerThatStreamsWhileTheTabSwitchesSessionStaysInItsOwnSession() throws Exception {
+        givenMainAndOther();
+        startHeldAnswer();
+
+        clickChat(page, "Other");
+        page.waitForFunction("() => document.getElementById('chat-title').textContent === 'Other'");
+        finishHeldAnswer(page);
+
+        clickChat(page, "Main");
+        assertTheFullAnswerIsShown();
+    }
+
+    @Test
+    void anAnswerThatStreamsWhileTheTabStartsANewChatStaysInItsOwnSession() throws Exception {
+        givenMainAndOther();
+        startHeldAnswer();
+
+        page.fill("#message-input", "/new");
+        page.click("#send-btn");
+        page.waitForFunction("() => document.getElementById('chat-messages').textContent.includes('Started a new conversation.')");
+        finishHeldAnswer(page);
+
+        clickChat(page, "Main");
+        assertTheFullAnswerIsShown();
+    }
+
+    @Test
+    void anAnswerThatStreamsWhileTheTabOpensAChannelStaysInItsOwnSession() throws Exception {
+        String telegram = chatSessions.create(ConversationKey.telegram(42, null), SessionKind.CHAT, SessionChannel.TELEGRAM, "Weather");
+        sessions.appendMessage(telegram, new UserMessage("Rain tomorrow?"));
+        givenMainAndOther();
+        startHeldAnswer();
+
+        page.click("#chat-sessions button[hx-vals*='viewSession']");
+        page.waitForFunction("() => document.getElementById('chat-title').textContent === 'Weather'");
+        finishHeldAnswer(page);
+
+        assertThat(page.textContent("#chat-messages")).contains("Rain tomorrow?");
+        clickChat(page, "Main");
+        assertTheFullAnswerIsShown();
+    }
+
+    @Test
+    void aSecondTabShowingAnotherSessionReceivesNoneOfTheStream() throws Exception {
+        givenMainAndOther();
+        Page second = newPage("en-US");
+        try {
+            open(second);
+            clickChat(second, "Other");
+
+            startHeldAnswer();
+            finishHeldAnswer(second);
+            waitForAnswer();
+
+            assertNothingOfTheAnswerIsShown(second);
+            assertThat(lastAgentText().strip()).isEqualTo(HELD_ANSWER);
+        } finally {
+            second.close();
+        }
+    }
+
+    /** Two web chats, "Other" and then "Main", which is active; the page shows Main. */
+    private void givenMainAndOther() {
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Other");
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Main");
+        open();
+        assertThat(title()).isEqualTo("Main");
+    }
+
+    /** Sends a question whose answer stops after its first chunk until {@link #finishHeldAnswer()}. */
+    private void startHeldAnswer() {
+        agent.answer = HELD_ANSWER;
+        agent.hold = new CountDownLatch(1);
+        page.fill("#message-input", "weather?");
+        page.click("#send-btn");
+        page.waitForFunction("() => [...document.querySelectorAll('#chat-messages .ar-msg--agent .ar-md')]"
+                + ".some(md => md.textContent.startsWith('Par'))");
+    }
+
+    /**
+     * Lets the held answer finish, then checks for a while that none of it reaches {@code tab}: a
+     * stray frame would arrive within that time. Polls on the test thread, as Playwright requires.
+     */
+    private void finishHeldAnswer(Page tab) throws InterruptedException {
+        agent.hold.countDown();
+        assertThat(agent.finished.await(10, TimeUnit.SECONDS)).as("answer finished").isTrue();
+        await("no stray frame").pollInSameThread()
+                .during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertNothingOfTheAnswerIsShown(tab));
+    }
+
+    private static void assertNothingOfTheAnswerIsShown(Page page) {
+        assertThat(page.textContent("#chat-messages")).doesNotContain("Partly").doesNotContain("rest of the answer")
+                .doesNotContain("END-OF-ANSWER");
+        assertThat(page.innerHTML("#typing-indicator")).isEmpty();
+    }
+
+    private void assertTheFullAnswerIsShown() {
+        page.waitForFunction("() => document.getElementById('chat-title').textContent === 'Main'");
+        waitForAnswer();
+        assertThat(lastAgentText().strip()).isEqualTo(HELD_ANSWER);
+        assertThat(page.locator("#chat-messages .ar-msg--agent .ar-md").allTextContents())
+                .filteredOn(text -> text.contains("Par")).hasSize(1);
+    }
+
+    private static void clickChat(Page page, String title) {
+        page.click("#chat-list button:has(.ar-side__title:text-is('" + title + "'))");
+        page.waitForFunction("t => document.getElementById('chat-title').textContent === t", title);
+    }
+
     /** JavaClawTime.format in the page; Intl's narrow no-break spaces are read as spaces. */
     private static String formatTime(Page page, String date, String now) {
         String text = (String) page.evaluate("() => JavaClawTime.format(" + date + ", " + now + ")");
@@ -425,20 +727,58 @@ class ChatMarkdownBrowserTest {
     }
 
     private void send(String message) {
+        open();
+        say(message);
+    }
+
+    private void open() {
+        open(page);
+    }
+
+    private void open(Page page) {
         page.navigate("http://localhost:" + port + "/chat");
-        // On connect the server swaps in the selector and a fresh input area in one frame; text typed
+        // On connect the server swaps in the header and a fresh input area in one frame; text typed
         // into the page's initial textarea before that swap would be thrown away.
-        page.waitForSelector("#channel-select");
+        page.waitForSelector("#chat-title");
         page.waitForSelector("#message-input:not([disabled])");
+    }
+
+    /** Sends a message in the open page and waits for the whole answer. */
+    private void say(String message) {
+        say(page, message);
+    }
+
+    private void say(Page page, String message) {
         page.fill("#message-input", message);
         page.click("#send-btn");
-        waitForAnswer();
+        waitForAnswer(page);
+    }
+
+    /** Stores a message in the web chat's active session, as if it had been sent at {@code time}. */
+    private void remember(Message message, Instant time) {
+        String sessionId = chatSessions.active(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB);
+        sessions.appendEvent(SessionEvent.builder().sessionId(sessionId).timestamp(time).message(message).build());
+    }
+
+    private String title() {
+        return page.textContent("#chat-title");
+    }
+
+    /** The titles of the chats the search leaves visible. */
+    @SuppressWarnings("unchecked")
+    private List<String> visibleChats() {
+        return (List<String>) page.evaluate("() => [...document.querySelectorAll('#chat-list li')]"
+                + ".filter(li => !li.hidden).map(li => li.querySelector('.ar-side__title').textContent)");
     }
 
     /** The answer is complete once its last line is rendered and the typing indicator is gone. */
     private void waitForAnswer() {
+        waitForAnswer(page);
+    }
+
+    private static void waitForAnswer(Page page) {
         try {
-            awaitAnswer();
+            awaitAnswer(page);
         } catch (com.microsoft.playwright.TimeoutError e) {
             System.out.println("[browser] chat at timeout: " + page.innerHTML("#chat-messages"));
             System.out.println("[browser] typing indicator: " + page.innerHTML("#typing-indicator"));
@@ -446,7 +786,7 @@ class ChatMarkdownBrowserTest {
         }
     }
 
-    private void awaitAnswer() {
+    private static void awaitAnswer(Page page) {
         page.waitForFunction("""
                 () => {
                     const md = [...document.querySelectorAll('#chat-messages .ar-msg--agent .ar-md')].pop();
@@ -466,19 +806,23 @@ class ChatMarkdownBrowserTest {
     }
 
     private void assertNothingRan() {
-        // Give event handlers (onerror on a broken image, say) the chance to fire
-        page.waitForTimeout(300);
-        assertThat(page.evaluate("() => window.__xss")).as("script run by model output").isNull();
-        assertThat(page.locator("#chat-messages .ar-md img").count()).isZero();
-        assertThat(page.locator("#chat-messages script").count()).isZero();
-        assertThat(page.locator("#chat-messages [onerror], #chat-messages [onmouseover]").count()).isZero();
-        assertThat(page.locator("#chat-messages a[href^='javascript']").count()).isZero();
+        // Keep checking long enough for event handlers (onerror on a broken image, say) to fire
+        await("nothing ran").pollInSameThread()
+                .during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> {
+                    assertThat(page.evaluate("() => window.__xss")).as("script run by model output").isNull();
+                    assertThat(page.locator("#chat-messages .ar-md img").count()).isZero();
+                    assertThat(page.locator("#chat-messages script").count()).isZero();
+                    assertThat(page.locator("#chat-messages [onerror], #chat-messages [onmouseover]").count()).isZero();
+                    assertThat(page.locator("#chat-messages a[href^='javascript']").count()).isZero();
+                });
     }
 
     @Configuration(proxyBeanMethods = false)
     @ImportAutoConfiguration({TomcatServletWebServerAutoConfiguration.class,
             DispatcherServletAutoConfiguration.class, WebMvcAutoConfiguration.class, PebbleAutoConfiguration.class})
-    @Import({WebSocketConfig.class, ChatWebSocketHandler.class, ChatChannel.class, ChatController.class})
+    @Import({WebSocketConfig.class, ChatWebSocketHandler.class, ChatChannel.class, ChatController.class,
+            InMemoryChatSessions.class})
     static class TestConfig {
 
         @Bean
@@ -492,36 +836,38 @@ class ChatMarkdownBrowserTest {
         }
 
         @Bean
-        List<ChatHistory.Turn> history() {
-            return new CopyOnWriteArrayList<>();
-        }
-
-        @Bean
-        ChatHistory chatHistory(List<ChatHistory.Turn> history) {
-            ChatHistory chatHistory = Mockito.mock(ChatHistory.class);
-            when(chatHistory.conversationIds()).thenReturn(List.of("web"));
-            when(chatHistory.turns(anyString())).thenAnswer(_ -> List.copyOf(history));
-            return chatHistory;
-        }
-
-        @Bean
-        FakeAgent agent(List<ChatHistory.Turn> history) {
-            return new FakeAgent(history);
+        FakeAgent agent(SessionService sessions, ChatSessions chatSessions) {
+            return new FakeAgent(sessions, chatSessions);
         }
 
         /**
          * Streams {@link #toolEvents}, then {@link #answer} in small chunks that split words and
-         * Markdown syntax, and keeps the turn the way session memory stores it: each tool call with
-         * the time it was made and its result with the time it came back, and all the text.
+         * Markdown syntax, and keeps the turn in the conversation's active session the way session
+         * memory stores it: each tool call and each result as it happens, the text of the tool
+         * rounds, and the answer.
          */
         static class FakeAgent implements Agent {
 
-            private final List<ChatHistory.Turn> history;
+            private final SessionService sessions;
+            private final ChatSessions chatSessions;
+            final AtomicInteger calls = new AtomicInteger();
             volatile List<AgentEvent> toolEvents = List.of();
             volatile String answer = "";
+            /** When set, the answer waits after its first chunk until this is counted down. */
+            volatile CountDownLatch hold;
+            /** Counted down once an answer is complete and stored. */
+            volatile CountDownLatch finished = new CountDownLatch(1);
 
-            FakeAgent(List<ChatHistory.Turn> history) {
-                this.history = history;
+            FakeAgent(SessionService sessions, ChatSessions chatSessions) {
+                this.sessions = sessions;
+                this.chatSessions = chatSessions;
+            }
+
+            void reset() {
+                calls.set(0);
+                toolEvents = List.of();
+                hold = null;
+                finished = new CountDownLatch(1);
             }
 
             @Override
@@ -531,27 +877,39 @@ class ChatMarkdownBrowserTest {
 
             @Override
             public void respondTo(AgentRequest request, Consumer<AgentEvent> events) {
-                Instant started = Instant.now();
-                Map<String, ChatHistory.ToolCall> calls = new LinkedHashMap<>();
-                List<String> texts = new ArrayList<>();
+                calls.incrementAndGet();
+                String sessionId = request.sessionId() != null
+                        ? request.sessionId()
+                        : chatSessions.active(request.conversation(), request.kind(), request.channel());
+                sessions.appendMessage(sessionId, new UserMessage(request.input()));
                 for (AgentEvent event : toolEvents) {
                     switch (event) {
-                        case AgentEvent.ToolCall c -> calls.put(c.id(),
-                                new ChatHistory.ToolCall(c.id(), c.name(), c.input(), Instant.now(), null, null));
-                        case AgentEvent.ToolResult r -> calls.computeIfPresent(r.id(), (_, c) ->
-                                new ChatHistory.ToolCall(c.id(), c.name(), c.arguments(), c.calledAt(), r.output(), Instant.now()));
-                        case AgentEvent.Token t -> texts.add(t.text());
+                        case AgentEvent.ToolCall c -> sessions.appendMessage(sessionId, AssistantMessage.builder()
+                                .content("")
+                                .toolCalls(List.of(new AssistantMessage.ToolCall(c.id(), "function", c.name(), c.input())))
+                                .build());
+                        case AgentEvent.ToolResult r -> sessions.appendMessage(sessionId, ToolResponseMessage.builder()
+                                .responses(List.of(new ToolResponseMessage.ToolResponse(r.id(), r.name(), r.output())))
+                                .build());
+                        case AgentEvent.Token t -> sessions.appendMessage(sessionId, new AssistantMessage(t.text()));
                         default -> { }
                     }
                     events.accept(event);
                 }
                 for (int i = 0; i < answer.length(); i += 3) {
                     events.accept(new AgentEvent.Token(answer.substring(i, Math.min(answer.length(), i + 3))));
+                    CountDownLatch gate = hold;
+                    if (i == 0 && gate != null) {
+                        try {
+                            gate.await(30, TimeUnit.SECONDS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
                 }
-                texts.add(answer);
-                history.add(new ChatHistory.Turn(request.input(), started, List.copyOf(calls.values()),
-                        String.join("\n\n", texts), started));
+                sessions.appendMessage(sessionId, new AssistantMessage(answer));
                 events.accept(new AgentEvent.Done());
+                finished.countDown();
             }
 
             @Override

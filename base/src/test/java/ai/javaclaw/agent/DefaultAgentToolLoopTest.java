@@ -32,7 +32,7 @@ class DefaultAgentToolLoopTest {
 
     @Test
     void reportsToolCallAndResultBetweenTheTokensOfAStreamedAnswer() {
-        agentFor(new WeatherModel(true)).respondTo(AgentRequest.chat("web", SessionChannel.WEB, "Weather in Paris?"), events::add);
+        agentFor(new WeatherModel(true)).respondTo(AgentRequest.chat(ConversationKey.web(), SessionChannel.WEB, "Weather in Paris?"), events::add);
 
         assertThat(events).containsExactly(
                 new AgentEvent.Token("Let me check. "),
@@ -45,7 +45,7 @@ class DefaultAgentToolLoopTest {
 
     @Test
     void reportsToolCallAndResultWhenTheModelCannotStream() {
-        agentFor(new WeatherModel(false)).respondTo(AgentRequest.chat("web", SessionChannel.WEB, "Weather in Paris?"), events::add);
+        agentFor(new WeatherModel(false)).respondTo(AgentRequest.chat(ConversationKey.web(), SessionChannel.WEB, "Weather in Paris?"), events::add);
 
         assertThat(events).containsExactly(
                 new AgentEvent.ToolCall("call-1", "weather", WEATHER_ARGS),
@@ -55,10 +55,13 @@ class DefaultAgentToolLoopTest {
     }
 
     private static DefaultAgent agentFor(ChatModel model) {
+        TestSessionStore store = new TestSessionStore();
         return new DefaultAgent(ChatClient.builder(model)
                 .defaultTools(new WeatherTools())
                 .defaultAdvisors(ToolCallingAdvisor.builder().build())
-                .build());
+                .build(),
+                store.chatSessions,
+                new SessionTitles(store.chatSessions, () -> null, _ -> {}, Runnable::run));
     }
 
     static class WeatherTools {

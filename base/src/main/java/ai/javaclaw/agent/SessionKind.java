@@ -15,9 +15,6 @@ public enum SessionKind {
     /** The session metadata attribute that holds the kind. */
     public static final String ATTRIBUTE = "kind";
 
-    /** The prefix of every task conversation's id. */
-    public static final String TASK_ID_PREFIX = "task-";
-
     private final String value;
 
     SessionKind(String value) {

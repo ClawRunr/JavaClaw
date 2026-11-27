@@ -2,8 +2,15 @@ package ai.javaclaw.agent.session;
 
 import ai.javaclaw.agent.AgentRequest;
 import ai.javaclaw.agent.ChatHistory;
+import ai.javaclaw.agent.ChatSessions;
+import ai.javaclaw.agent.ConversationKey;
 import ai.javaclaw.agent.DefaultAgent;
 import ai.javaclaw.agent.SessionChannel;
+import ai.javaclaw.agent.SessionKind;
+import ai.javaclaw.agent.SessionTitles;
+import ai.javaclaw.llm.ChatClientRegistry;
+import org.mockito.Mockito;
+import org.springframework.ai.session.SessionRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.ai.chat.client.ChatClient;
@@ -57,10 +64,13 @@ class SessionStoreConfigurationTest {
 
     @Test
     void aConversationWithItsToolCallsAndResultsSurvivesARestartInOrder() {
-        runner().run(context -> agent(context).respondTo(AgentRequest.chat("web", SessionChannel.WEB, "Weather in Paris?")));
+        runner().run(context -> agent(context).respondTo(AgentRequest.chat(ConversationKey.web(), SessionChannel.WEB, "Weather in Paris?")));
 
         runner().run(context -> {
-            List<Message> log = context.getBean(SessionService.class).getMessages("web");
+            ChatSessions chatSessions = chatSessions(context);
+            assertThat(chatSessions.list(ConversationKey.web())).hasSize(1);
+            String sessionId = chatSessions.active(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB);
+            List<Message> log = context.getBean(SessionService.class).getMessages(sessionId);
 
             assertThat(log).extracting(Message::getMessageType).containsExactly(
                     MessageType.USER, MessageType.ASSISTANT, MessageType.TOOL, MessageType.ASSISTANT);
@@ -72,8 +82,7 @@ class SessionStoreConfigurationTest {
             assertThat(log.get(3).getText()).isEqualTo("It is sunny.");
 
             ChatHistory history = new ChatHistory(context.getBean(SessionService.class));
-            assertThat(history.conversationIds()).containsExactly("web");
-            assertThat(history.turns("web")).singleElement().satisfies(turn -> {
+            assertThat(history.turns(sessionId)).singleElement().satisfies(turn -> {
                 assertThat(turn.question()).isEqualTo("Weather in Paris?");
                 assertThat(turn.answer()).isEqualTo("It is sunny.");
                 assertThat(turn.toolCalls()).singleElement().satisfies(stored -> {
@@ -90,7 +99,7 @@ class SessionStoreConfigurationTest {
     @Test
     void theSessionsDatabaseIsItsOwnAndNotADataSourceBean() {
         runner().run(context -> {
-            agent(context).respondTo(AgentRequest.chat("web", SessionChannel.WEB, "Weather in Paris?"));
+            agent(context).respondTo(AgentRequest.chat(ConversationKey.web(), SessionChannel.WEB, "Weather in Paris?"));
 
             assertThat(context.getBeansOfType(DataSource.class)).hasSize(1);
             JdbcTemplate app = new JdbcTemplate(context.getBean(DataSource.class));
@@ -105,11 +114,19 @@ class SessionStoreConfigurationTest {
 
     /** The agent wired as the application wires it: tool loop first, session advisors around and inside it. */
     private static DefaultAgent agent(ApplicationContext context) {
+        ChatSessions chatSessions = chatSessions(context);
         return new DefaultAgent(ChatClient.builder(new WeatherModel())
                 .defaultTools(new WeatherTools())
                 .defaultAdvisors(ToolCallingAdvisor.builder().build())
                 .defaultAdvisors(SessionAdvisors.builder(context.getBean(SessionService.class)).build())
-                .build());
+                .build(),
+                chatSessions,
+                new SessionTitles(chatSessions, Mockito.mock(ChatClientRegistry.class), context));
+    }
+
+    /** The conversations' sessions on the session store as the application configures it. */
+    private static ChatSessions chatSessions(ApplicationContext context) {
+        return new ChatSessions(context.getBean(SessionService.class), context.getBean(SessionRepository.class));
     }
 
     static class WeatherTools {

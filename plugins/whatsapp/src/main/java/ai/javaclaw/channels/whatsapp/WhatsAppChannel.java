@@ -2,6 +2,8 @@ package ai.javaclaw.channels.whatsapp;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatCommands;
+import ai.javaclaw.agent.ConversationKey;
 import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
@@ -24,11 +26,13 @@ public class WhatsAppChannel implements Channel {
     private final WhatsApp whatsApp;
     private final ChannelRegistry channelRegistry;
     private final Agent agent;
+    private final ChatCommands chatCommands;
 
-    public WhatsAppChannel(WhatsApp whatsApp, ChannelRegistry channelRegistry, Agent agent) {
+    public WhatsAppChannel(WhatsApp whatsApp, ChannelRegistry channelRegistry, Agent agent, ChatCommands chatCommands) {
         this.whatsApp = whatsApp;
         this.channelRegistry = channelRegistry;
         this.agent = agent;
+        this.chatCommands = chatCommands;
     }
 
     @Override
@@ -60,7 +64,9 @@ public class WhatsAppChannel implements Channel {
     void onMessage(String fromJidId, String message) {
         channelRegistry.publishMessageReceivedEvent(new WhatsAppChannelMessageReceivedEvent(getName(), message, fromJidId));
         try {
-            whatsApp.sendMessage(agent.respondTo(AgentRequest.chat(fromJidId, SessionChannel.WHATSAPP, message)));
+            ConversationKey conversation = ConversationKey.whatsApp(fromJidId);
+            whatsApp.sendMessage(chatCommands.handle(conversation, SessionChannel.WHATSAPP, message).orElseGet(() ->
+                    agent.respondTo(AgentRequest.chat(conversation, SessionChannel.WHATSAPP, message))));
         } catch (RuntimeException e) {
             LOGGER.error("Failed to handle WhatsApp message for chat '{}'", fromJidId, e);
         }

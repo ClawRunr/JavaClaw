@@ -4,8 +4,6 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.session.Session;
-import org.springframework.ai.session.SessionAttributes;
 import org.springframework.ai.session.SessionEvent;
 import org.springframework.ai.session.SessionService;
 import org.springframework.stereotype.Component;
@@ -17,13 +15,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The conversations as a person reads them, for every chat UI.
+ * Sessions as a person reads them, for every chat UI. Which session is which conversation's is
+ * {@link ChatSessions}' business.
  */
 @Component
 public class ChatHistory {
-
-    /** The {@link SessionAttributes#AGENT_NAME} every JavaClaw session is tagged with. */
-    static final String AGENT_NAME = "javaclaw";
 
     private final SessionService sessionService;
 
@@ -31,37 +27,14 @@ public class ChatHistory {
         this.sessionService = sessionService;
     }
 
-    /** Session metadata for a new conversation, so {@link #conversationIds()} finds it. */
-    static Map<String, Object> sessionMetadata(SessionKind kind, SessionChannel channel) {
-        return Map.of(SessionAttributes.AGENT_NAME, AGENT_NAME,
-                SessionKind.ATTRIBUTE, kind.value(),
-                SessionChannel.ATTRIBUTE, channel.value());
-    }
-
-    /** The ids of all chat conversations, oldest first; scheduled tasks' conversations are left out. */
-    public List<String> conversationIds() {
-        return sessionService.findByMetadata(SessionAttributes.AGENT_NAME, AGENT_NAME).stream()
-                .filter(ChatHistory::isChat)
-                .map(Session::id)
-                .toList();
-    }
-
-    /** A session created before sessions had a kind is a chat, unless its id is a task's. */
-    private static boolean isChat(Session session) {
-        Object kind = session.metadata().get(SessionKind.ATTRIBUTE);
-        return kind == null
-                ? !session.id().startsWith(SessionKind.TASK_ID_PREFIX)
-                : SessionKind.CHAT.value().equals(kind);
-    }
-
     /**
-     * The user messages and the assistant messages with text of a conversation, in order. Tool
-     * calls, tool results and assistant messages without text are left out.
+     * The user messages and the assistant messages with text of a session, in order. Tool calls,
+     * tool results and assistant messages without text are left out.
      *
-     * @return the messages, empty for a conversation that does not exist yet
+     * @return the messages, empty for a session that does not exist yet
      */
-    public List<Message> messages(String conversationId) {
-        return sessionService.getEvents(conversationId).stream()
+    public List<Message> messages(String sessionId) {
+        return sessionService.getEvents(sessionId).stream()
                 .filter(SessionEvent::hasMessage)
                 .map(SessionEvent::getMessage)
                 .filter(ChatHistory::isShown)
@@ -75,17 +48,17 @@ public class ChatHistory {
     }
 
     /**
-     * A conversation grouped by turn, in order. A turn is a user message and everything stored after
+     * A session grouped by turn, in order. A turn is a user message and everything stored after
      * it until the next user message: the tool calls of all its rounds, each with its result, and
      * the assistant text of all its rounds, joined. Messages stored before the first user message
      * form a turn without a question.
      *
-     * @return the turns, empty for a conversation that does not exist yet
+     * @return the turns, empty for a session that does not exist yet
      */
-    public List<Turn> turns(String conversationId) {
+    public List<Turn> turns(String sessionId) {
         List<Turn> turns = new ArrayList<>();
         TurnBuilder turn = null;
-        for (SessionEvent event : sessionService.getEvents(conversationId)) {
+        for (SessionEvent event : sessionService.getEvents(sessionId)) {
             if (!event.hasMessage()) continue;
             Message message = event.getMessage();
             Instant time = event.getTimestamp();
@@ -106,7 +79,7 @@ public class ChatHistory {
     }
 
     /**
-     * One turn of a conversation.
+     * One turn of a session.
      *
      * @param question   the user's message; {@code null} for messages stored before the first one
      * @param askedAt    when the question was stored; {@code null} without a question

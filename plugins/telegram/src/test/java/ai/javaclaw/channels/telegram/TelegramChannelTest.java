@@ -2,12 +2,17 @@ package ai.javaclaw.channels.telegram;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatCommands;
+import ai.javaclaw.agent.ChatSessions;
+import ai.javaclaw.agent.ConversationKey;
+import ai.javaclaw.agent.SessionKind;
 import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.telegram.telegrambots.meta.api.methods.GetMe;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
@@ -18,6 +23,8 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -32,6 +39,9 @@ class TelegramChannelTest {
 
     @Mock
     private Agent agent;
+
+    @Mock
+    private ChatSessions chatSessions;
 
     // -----------------------------------------------------------------------
     // Ignored updates
@@ -132,7 +142,7 @@ class TelegramChannelTest {
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
 
-        verify(agent).respondTo(AgentRequest.chat("telegram-42", SessionChannel.TELEGRAM, "hello"));
+        verify(agent).respondTo(AgentRequest.chat(ConversationKey.telegram(42, null), SessionChannel.TELEGRAM, "hello"));
     }
 
     @Test
@@ -142,7 +152,7 @@ class TelegramChannelTest {
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, 567));
 
-        verify(agent).respondTo(AgentRequest.chat("telegram-42-567", SessionChannel.TELEGRAM, "hello"));
+        verify(agent).respondTo(AgentRequest.chat(ConversationKey.telegram(42, 567), SessionChannel.TELEGRAM, "hello"));
     }
 
     @Test
@@ -235,7 +245,7 @@ class TelegramChannelTest {
     // -----------------------------------------------------------------------
 
     private TelegramChannel channel(String allowedUsername) {
-        return new TelegramChannel("token", allowedUsername, telegramClient, agent, new ChannelRegistry());
+        return new TelegramChannel("token", allowedUsername, telegramClient, agent, new ChatCommands(chatSessions), new ChannelRegistry());
     }
 
     private Update updateFromUnknownUser(String username) {
@@ -265,5 +275,47 @@ class TelegramChannelTest {
         when(user.getUserName()).thenReturn(username);
 
         return update;
+    }
+
+    // -----------------------------------------------------------------------
+    // /new
+    // -----------------------------------------------------------------------
+
+    @Test
+    void newStartsANewSessionInsteadOfAskingTheAgent() throws TelegramApiException {
+        TelegramChannel channel = channel("allowed_user");
+
+        channel.consume(updateFrom("allowed_user", "/new Groceries", 42L, 567));
+
+        verify(chatSessions).create(ConversationKey.telegram(42, 567), SessionKind.CHAT, SessionChannel.TELEGRAM, "Groceries");
+        verify(agent, never()).respondTo(any(AgentRequest.class));
+        verify(telegramClient).execute(argThat((SendMessage msg) -> msg.getText().equals("Started a new conversation.")));
+    }
+
+    @Test
+    void newAddressedToThisBotStartsANewSession() throws TelegramApiException {
+        TelegramChannel channel = channel("allowed_user");
+        User bot = mock(User.class);
+        when(bot.getUserName()).thenReturn("JavaClawBot");
+        when(telegramClient.execute(any(GetMe.class))).thenReturn(bot);
+
+        channel.consume(updateFrom("allowed_user", "/new@javaclawbot", 42L, null));
+
+        verify(chatSessions).create(eq(ConversationKey.telegram(42, null)), eq(SessionKind.CHAT), eq(SessionChannel.TELEGRAM), isNull());
+        verify(agent, never()).respondTo(any(AgentRequest.class));
+    }
+
+    @Test
+    void newAddressedToAnotherBotGoesToTheAgent() throws TelegramApiException {
+        TelegramChannel channel = channel("allowed_user");
+        User bot = mock(User.class);
+        when(bot.getUserName()).thenReturn("JavaClawBot");
+        when(telegramClient.execute(any(GetMe.class))).thenReturn(bot);
+        when(agent.respondTo(any(AgentRequest.class))).thenReturn("hi");
+
+        channel.consume(updateFrom("allowed_user", "/new@OtherBot", 42L, null));
+
+        verify(agent).respondTo(AgentRequest.chat(ConversationKey.telegram(42, null), SessionChannel.TELEGRAM, "/new@OtherBot"));
+        verifyNoInteractions(chatSessions);
     }
 }

@@ -13,51 +13,78 @@ public class DefaultAgent implements Agent {
     private static final Logger log = LoggerFactory.getLogger(DefaultAgent.class);
 
     private final ChatClient chatClient;
+    private final ChatSessions chatSessions;
+    private final SessionTitles sessionTitles;
 
-    public DefaultAgent(ChatClient chatClient) {
+    public DefaultAgent(ChatClient chatClient, ChatSessions chatSessions, SessionTitles sessionTitles) {
         this.chatClient = chatClient;
+        this.chatSessions = chatSessions;
+        this.sessionTitles = sessionTitles;
     }
 
     @Override
     public String respondTo(AgentRequest request) {
-        return ask(request, _ -> {}).call().content();
+        String sessionId = sessionOf(request);
+        String reply = ask(request, sessionId, _ -> {}).call().content();
+        afterExchange(request, sessionId);
+        return reply;
     }
 
     @Override
     public void respondTo(AgentRequest request, Consumer<AgentEvent> events) {
+        String sessionId = sessionOf(request);
         try {
-            ask(request, events)
+            ask(request, sessionId, events)
                     .stream()
                     .content()
                     .doOnNext(token -> events.accept(new AgentEvent.Token(token)))
                     .blockLast();
+            afterExchange(request, sessionId);
             events.accept(new AgentEvent.Done());
         } catch (UnsupportedOperationException e) {
             // The configured model cannot stream — fall back to the blocking call, still reporting tools
-            events.accept(new AgentEvent.Token(ask(request, events).call().content()));
+            events.accept(new AgentEvent.Token(ask(request, sessionId, events).call().content()));
+            afterExchange(request, sessionId);
             events.accept(new AgentEvent.Done());
         } catch (RuntimeException e) {
-            log.warn("Streaming response failed for conversation {}", request.conversationId(), e);
+            log.warn("Streaming response failed for conversation {}", request.conversation(), e);
             events.accept(new AgentEvent.Failed(summarizeError(e)));
         }
     }
 
     @Override
     public <T> T prompt(AgentRequest request, Class<T> result) {
-        return ask(request, _ -> {}).call().entity(result);
+        return ask(request, sessionOf(request), _ -> {}).call().entity(result);
     }
 
     /**
-     * Every request names its conversation's session, tagging a new one with its kind and channel,
-     * and observes its tool calls.
+     * The session the request goes to: the one it names, or else the conversation's active session.
+     *
+     * @throws IllegalArgumentException if the request names a session of another conversation
      */
-    private ChatClient.ChatClientRequestSpec ask(AgentRequest request, Consumer<AgentEvent> events) {
+    private String sessionOf(AgentRequest request) {
+        if (request.sessionId() == null) {
+            return chatSessions.active(request.conversation(), request.kind(), request.channel());
+        }
+        if (!chatSessions.isSessionOf(request.conversation(), request.sessionId())) {
+            throw new IllegalArgumentException("Session " + request.sessionId() + " is not one of " + request.conversation() + "'s");
+        }
+        return request.sessionId();
+    }
+
+    /** A chat session gets a title after its first exchange; tasks' sessions are never listed. */
+    private void afterExchange(AgentRequest request, String sessionId) {
+        if (request.kind() == SessionKind.CHAT) {
+            sessionTitles.afterExchange(request.conversation(), sessionId);
+        }
+    }
+
+    /** Every request names its session and observes its tool calls. */
+    private ChatClient.ChatClientRequestSpec ask(AgentRequest request, String sessionId, Consumer<AgentEvent> events) {
         return chatClient
                 .prompt(request.input())
-                .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, request.conversationId())
-                        .param(SessionMemoryAdvisor.SESSION_METADATA_CONTEXT_KEY,
-                                ChatHistory.sessionMetadata(request.kind(), request.channel()))
-                        .advisors(new ToolCallObservingAdvisor(request.conversationId(), events)));
+                .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, sessionId)
+                        .advisors(new ToolCallObservingAdvisor(sessionId, events)));
     }
 
     private static String summarizeError(Throwable ex) {

@@ -1,6 +1,7 @@
 // htmx handles: WebSocket connect/send, OOB DOM swaps, form reset and Enter-to-send.
 // This script handles what htmx cannot: the streamed JSON frames (text, tool calls, done, error),
-// the connection status, and rendering agent text as Markdown (markdown.js).
+// the connection status, rendering agent text as Markdown (markdown.js), filtering the chat list
+// and the rename field in the header.
 (function () {
     'use strict';
 
@@ -57,7 +58,58 @@
         renderHistoryTools(messages);
         md.renderPending(messages);
         times.renderAll(messages);
+        times.renderAll(document.getElementById('chat-sessions'));
+        filterChats();
         scrollToBottom();
+    });
+
+    // --- Sidebar: search -----------------------------------------------------
+    // Filters the chat list by title, in the browser; the server re-sends the list on every change,
+    // so the filter is applied again each time.
+    function filterChats() {
+        var search = document.getElementById('chat-search');
+        var list = document.getElementById('chat-list');
+        if (!search || !list) return;
+        var query = search.value.trim().toLocaleLowerCase();
+        var shown = 0;
+        list.querySelectorAll('li').forEach(function (item) {
+            var title = item.querySelector('.ar-side__title');
+            var match = !query || (title && title.textContent.toLocaleLowerCase().indexOf(query) !== -1);
+            item.hidden = !match;
+            if (match) shown++;
+        });
+        var empty = document.getElementById('chat-list-empty');
+        if (empty) empty.hidden = shown > 0 || !query;
+    }
+    document.body.addEventListener('input', function (e) {
+        if (e.target.id === 'chat-search') filterChats();
+    });
+
+    // --- Header: rename ------------------------------------------------------
+    // The rename button turns the title into a text field with Save and Cancel. Save sends the
+    // form over the WebSocket (ws-send); the server answers with the new header.
+    function setRenaming(renaming) {
+        var title = document.getElementById('chat-title');
+        var button = document.getElementById('rename-btn');
+        var form = document.getElementById('rename-form');
+        if (!title || !button || !form) return;
+        var input = document.getElementById('rename-input');
+        title.hidden = renaming;
+        button.hidden = renaming;
+        form.hidden = !renaming;
+        if (renaming) {
+            input.value = input.getAttribute('data-title');
+            input.focus();
+            input.select();
+        }
+    }
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest) return;
+        if (e.target.closest('#rename-btn')) setRenaming(true);
+        else if (e.target.closest('#rename-cancel')) setRenaming(false);
+    });
+    document.body.addEventListener('keydown', function (e) {
+        if (e.target.id === 'rename-input' && e.key === 'Escape') setRenaming(false);
     });
 
     // --- Streaming frames ----------------------------------------------------
@@ -85,8 +137,17 @@
     // The time of the frame being handled; a turn started by it takes this as its time.
     var frameTime = null;
 
+    /** The chat session the page shows; the server marks the messages with it on every view. */
+    function shownSessionId() {
+        var messages = document.getElementById('chat-messages');
+        return messages ? messages.getAttribute('data-session-id') : null;
+    }
+
+    // A turn keeps the session it started in: frames of any session other than the shown one are
+    // ignored, typing indicator included, so switching mid-answer never moves the rest of it here.
     function handleStreamFrame(frame) {
-        var id = frame.conversationId || 'web';
+        var id = frame.sessionId;
+        if (!id || id !== shownSessionId()) return;
         frameTime = frame.time || new Date().toISOString();
         if (frame.type === 'chunk') {
             appendToken(id, frame.data);
@@ -115,11 +176,11 @@
     // One agent message per turn: a tool group on top (once a tool runs), then the turn's text.
     // Text is split into segments at each tool call, as history stores one message per segment,
     // so every segment renders the same live and after a reload.
-    var turns = {};     // conversationId -> { article, body, group, segment }
-    var toolCalls = {}; // tool call id -> { el, turn, conversationId, startedAt }
+    var turns = {};     // session id -> { article, body, group, segment }
+    var toolCalls = {}; // tool call id -> { el, turn, sessionId, startedAt }
 
-    function currentTurn(conversationId) {
-        var turn = turns[conversationId];
+    function currentTurn(sessionId) {
+        var turn = turns[sessionId];
         if (turn && turn.article.isConnected) return turn;
 
         var template = document.getElementById('agent-message-template');
@@ -128,12 +189,12 @@
         document.getElementById('chat-messages').appendChild(article);
         clearTypingIndicator();
         turn = { article: article, body: article.querySelector('.ar-msg__body'), group: null, segment: null };
-        turns[conversationId] = turn;
+        turns[sessionId] = turn;
         return turn;
     }
 
-    function appendToken(conversationId, token) {
-        var turn = currentTurn(conversationId);
+    function appendToken(sessionId, token) {
+        var turn = currentTurn(sessionId);
         if (!turn.segment) {
             var el = document.createElement('div');
             el.className = 'ar-md';
@@ -161,11 +222,11 @@
     }
 
     /** Tool calls still waiting when the answer ends will never get a result; settle them. */
-    function endTurn(conversationId, unfinishedClass, unfinishedLabel) {
-        var turn = turns[conversationId];
+    function endTurn(sessionId, unfinishedClass, unfinishedLabel) {
+        var turn = turns[sessionId];
         Object.keys(toolCalls).forEach(function (callId) {
             var entry = toolCalls[callId];
-            if (entry.conversationId !== conversationId) return;
+            if (entry.sessionId !== sessionId) return;
             showToolUnfinished(entry.el, unfinishedClass, unfinishedLabel);
             delete toolCalls[callId];
         });
@@ -173,21 +234,21 @@
             flushSegment(turn);
             if (turn.group) updateGroup(turn.group);
         }
-        delete turns[conversationId];
+        delete turns[sessionId];
     }
 
     // --- Tool calls ----------------------------------------------------------
     // Live tool calls and tool calls from history are built by the same functions below
     // (addToolGroup, addToolRow, showToolResult, showToolUnfinished), so a card looks the same
     // live and after a reload.
-    function renderToolCall(conversationId, data) {
-        var turn = currentTurn(conversationId);
+    function renderToolCall(sessionId, data) {
+        var turn = currentTurn(sessionId);
         flushSegment(turn);
         if (!turn.group) turn.group = addToolGroup(turn.body, Date.now());
 
         var el = addToolRow(turn.group, data);
         if (data.id) {
-            toolCalls[data.id] = { el: el, turn: turn, conversationId: conversationId, startedAt: Date.now() };
+            toolCalls[data.id] = { el: el, turn: turn, sessionId: sessionId, startedAt: Date.now() };
         }
     }
 

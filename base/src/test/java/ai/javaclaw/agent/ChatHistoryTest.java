@@ -8,13 +8,11 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.session.CreateSessionRequest;
 import org.springframework.ai.session.DefaultSessionService;
 import org.springframework.ai.session.InMemorySessionRepository;
-import org.springframework.ai.session.SessionAttributes;
 import org.springframework.ai.session.SessionEvent;
 import org.springframework.ai.session.SessionService;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -142,31 +140,8 @@ class ChatHistoryTest {
         assertThat(sessions.findById("web")).isNull();
     }
 
-    @Test
-    void listsTheChatConversationsTaggedWithTheAgentNameOnly() {
-        open("web");
-        open("telegram-42");
-        sessions.create(CreateSessionRequest.builder().id("task-2026-11-14-090000-report")
-                .metadata(ChatHistory.sessionMetadata(SessionKind.TASK, SessionChannel.INTERNAL)).build());
-        sessions.create(CreateSessionRequest.builder().id("someone-else").build());
-
-        assertThat(history.conversationIds()).containsExactlyInAnyOrder("web", "telegram-42");
-    }
-
-    @Test
-    void aSessionWithoutAKindIsAChatUnlessItsIdIsATasks() {
-        Map<String, Object> beforeKinds = Map.of(SessionAttributes.AGENT_NAME, ChatHistory.AGENT_NAME);
-        sessions.create(CreateSessionRequest.builder().id("discord-7").metadata(beforeKinds).build());
-        sessions.create(CreateSessionRequest.builder().id("task-2026-11-13-174009-check").metadata(beforeKinds).build());
-
-        assertThat(history.conversationIds()).containsExactly("discord-7");
-    }
-
     private void open(String conversationId) {
-        sessions.create(CreateSessionRequest.builder()
-                .id(conversationId)
-                .metadata(ChatHistory.sessionMetadata(SessionKind.CHAT, SessionChannel.WEB))
-                .build());
+        sessions.create(CreateSessionRequest.builder().id(conversationId).build());
     }
 
     private void at(String conversationId, int seconds, Message message) {

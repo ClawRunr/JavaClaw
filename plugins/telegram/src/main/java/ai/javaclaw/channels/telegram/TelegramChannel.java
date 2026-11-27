@@ -2,6 +2,8 @@ package ai.javaclaw.channels.telegram;
 
 import ai.javaclaw.agent.Agent;
 import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.ChatCommands;
+import ai.javaclaw.agent.ConversationKey;
 import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
@@ -14,6 +16,7 @@ import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsume
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
+import org.telegram.telegrambots.meta.api.methods.GetMe;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
@@ -24,8 +27,7 @@ import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
 
 import java.util.List;
-
-import static java.util.Optional.ofNullable;
+import java.util.Optional;
 
 public class TelegramChannel implements Channel, SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
@@ -41,18 +43,22 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
     private final String allowedUsername;
     private final TelegramClient telegramClient;
     private final Agent agent;
+    private final ChatCommands chatCommands;
     private final ChannelRegistry channelRegistry;
     private Long chatId;
+    /** This bot's user name, looked up once, when a command is first addressed to a bot. */
+    private volatile String botUsername;
 
-    public TelegramChannel(String botToken, String allowedUsername, Agent agent, ChannelRegistry channelRegistry) {
-        this(botToken, allowedUsername, new OkHttpTelegramClient(botToken), agent, channelRegistry);
+    public TelegramChannel(String botToken, String allowedUsername, Agent agent, ChatCommands chatCommands, ChannelRegistry channelRegistry) {
+        this(botToken, allowedUsername, new OkHttpTelegramClient(botToken), agent, chatCommands, channelRegistry);
     }
 
-    TelegramChannel(String botToken, String allowedUsername, TelegramClient telegramClient, Agent agent, ChannelRegistry channelRegistry) {
+    TelegramChannel(String botToken, String allowedUsername, TelegramClient telegramClient, Agent agent, ChatCommands chatCommands, ChannelRegistry channelRegistry) {
         this.botToken = botToken;
         this.allowedUsername = normalizeUsername(allowedUsername);
         this.telegramClient = telegramClient;
         this.agent = agent;
+        this.chatCommands = chatCommands;
         this.channelRegistry = channelRegistry;
         channelRegistry.registerChannel(this);
         LOGGER.info("Started Telegram integration");
@@ -84,7 +90,10 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
         this.chatId = requestMessage.getChatId();
         Integer messageThreadId = requestMessage.getMessageThreadId();
         channelRegistry.publishMessageReceivedEvent(new TelegramChannelMessageReceivedEvent(getName(), messageText, chatId, messageThreadId));
-        String response = agent.respondTo(AgentRequest.chat(getConversationId(chatId, messageThreadId), SessionChannel.TELEGRAM, messageText));
+        ConversationKey conversation = ConversationKey.telegram(chatId, messageThreadId);
+        Optional<String> commandReply = chatCommands.handle(conversation, SessionChannel.TELEGRAM, messageText, this::botUsername);
+        String response = commandReply.orElseGet(() ->
+                agent.respondTo(AgentRequest.chat(conversation, SessionChannel.TELEGRAM, messageText)));
         sendMessage(chatId, messageThreadId, response);
     }
 
@@ -160,8 +169,16 @@ public class TelegramChannel implements Channel, SpringLongPollingBot, LongPolli
         return normalizedUserName.isBlank() ? null : normalizedUserName;
     }
 
-    private String getConversationId(Long chatId, Integer messageThreadId) {
-        return "telegram-" + chatId + ofNullable(messageThreadId).map(i -> "-" + i).orElse("");
+    /** This bot's user name, for commands addressed to it ({@code /new@bot}); null if it cannot be looked up. */
+    private String botUsername() {
+        if (botUsername == null) {
+            try {
+                botUsername = telegramClient.execute(new GetMe()).getUserName();
+            } catch (TelegramApiException | RuntimeException e) {
+                LOGGER.warn("Could not look up the bot's user name: {}", e.getMessage());
+            }
+        }
+        return botUsername;
     }
 
     static class TelegramChannelMessageReceivedEvent extends ChannelMessageReceivedEvent {
