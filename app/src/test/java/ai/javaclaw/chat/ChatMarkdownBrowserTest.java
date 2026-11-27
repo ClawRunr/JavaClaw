@@ -450,6 +450,57 @@ class ChatMarkdownBrowserTest {
     }
 
     @Test
+    void eachSessionShowsItsOwnToolCardsWhenSwitchingAndAfterAReload() {
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Paris");
+        chatSessions.create(ConversationKey.web(), SessionKind.CHAT, SessionChannel.WEB, "Rome");
+        open();
+        assertThat(title()).isEqualTo("Rome");
+        agent.toolEvents = List.of(
+                new AgentEvent.ToolCall("call-rome", "clock", "{\"city\":\"Rome\"}"),
+                new AgentEvent.ToolResult("call-rome", "clock", "{\"time\":\"10:42\"}"));
+        agent.answer = "It is 10:42 in Rome. END-OF-ANSWER";
+        say("time in Rome?");
+        List<Map<String, Object>> rome = toolRows();
+
+        clickChat(page, "Paris");
+        agent.toolEvents = List.of(
+                new AgentEvent.ToolCall("call-paris", "weather", "{\"city\":\"Paris\"}"),
+                new AgentEvent.ToolResult("call-paris", "weather", "\"sunny\""));
+        agent.answer = "Paris is sunny. END-OF-ANSWER";
+        say("weather in Paris?");
+        List<Map<String, Object>> paris = toolRows();
+
+        assertThat(rome).singleElement().satisfies(row -> assertThat(row)
+                .containsEntry("name", "clock").containsEntry("args", "Rome").containsEntry("state", "done"));
+        assertThat(paris).singleElement().satisfies(row -> assertThat(row)
+                .containsEntry("name", "weather").containsEntry("output", "sunny").containsEntry("state", "done"));
+
+        // Switching shows the history of the session switched to, with its own cards only
+        clickChat(page, "Rome");
+        waitForAnswer();
+        assertThat(toolRows()).isEqualTo(rome);
+        assertThat(page.locator("#chat-messages .ar-tool").count()).isOne();
+
+        // The switch made Rome active, so a reload shows it again
+        page.reload();
+        waitForAnswer();
+        assertThat(title()).isEqualTo("Rome");
+        assertThat(toolRows()).isEqualTo(rome);
+        assertThat(page.locator("#chat-messages .ar-tool").count()).isOne();
+
+        clickChat(page, "Paris");
+        waitForAnswer();
+        assertThat(toolRows()).isEqualTo(paris);
+        assertThat(page.locator("#chat-messages .ar-tool").count()).isOne();
+
+        page.reload();
+        waitForAnswer();
+        assertThat(title()).isEqualTo("Paris");
+        assertThat(toolRows()).isEqualTo(paris);
+        assertThat(page.locator("#chat-messages .ar-tool").count()).isOne();
+    }
+
+    @Test
     void renamingUpdatesTheHeaderAndTheSidebar() {
         open();
 
