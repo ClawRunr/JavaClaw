@@ -1,0 +1,89 @@
+<div class="drawer-header">
+    <h2 class="title is-4 mb-0">{{ drawerTitle }}</h2>
+</div>
+<div class="drawer-body">
+    {% if error %}
+    <article class="message is-danger">
+        <div class="message-body">{{ error }}</div>
+    </article>
+    {% endif %}
+
+    <form id="agent-form"
+          {% if isEdit %}hx-put="{{ formAction }}"{% else %}hx-post="{{ formAction }}"{% endif %}
+          hx-target="#agents-list"
+          hx-swap="innerHTML"
+          hx-on:htmx:after-request="if(event.detail.successful) closeDrawer()">
+        <div class="field">
+            <label class="label" for="f-name">Name</label>
+            <div class="control">
+                <input class="input" type="text" id="f-name" name="name"
+                       value="{{ agentName }}" placeholder="e.g. summariser" autocomplete="off"
+                       {% if nameReadonly %}readonly{% endif %}>
+            </div>
+            <p class="help">Lowercase letters, numbers and hyphens only.</p>
+        </div>
+
+        <div class="field">
+            <label class="label" for="f-provider">Provider</label>
+            <div class="control">
+                <div class="select is-fullwidth">
+                    <select id="f-provider" name="provider">
+                        {% for p in providers %}
+                        <option value="{{ p.id }}" data-default-model="{{ p.defaultModel }}"
+                                {% if p.id == selectedProvider %}selected{% endif %}>{{ p.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="field">
+            <label class="label" for="f-baseurl">Base URL <span class="has-text-grey has-text-weight-normal">(optional)</span></label>
+            <div class="control">
+                <input class="input" type="text" id="f-baseurl" name="baseUrl"
+                       value="{{ baseUrl }}" placeholder="Leave blank to use the default endpoint" autocomplete="off">
+            </div>
+            <p class="help">Override it to reach a proxy, gateway or self-hosted server.</p>
+        </div>
+
+        <div class="field">
+            <label class="label" for="f-apikey">API Key</label>
+            <div class="control">
+                <input class="input" type="password" id="f-apikey" name="apiKey"
+                       placeholder="API key" autocomplete="off">
+            </div>
+            <p class="help">{% if apiKeyMasked %}Current: {{ apiKeyMasked }} — leave blank to keep{% endif %}</p>
+        </div>
+
+        <div class="field">
+            <label class="label" for="f-model">Model</label>
+            <div class="control">
+                <input class="input" type="text" id="f-model" name="model"
+                       value="{{ model }}" placeholder="Model id" autocomplete="off">
+            </div>
+            <p class="help">Defaults to the provider's model; type another to override.</p>
+        </div>
+
+        <div class="field">
+            <label class="label" for="f-description">Description</label>
+            <div class="control">
+                <input class="input" type="text" id="f-description" name="description"
+                       value="{{ description }}" placeholder="What does this agent do?" autocomplete="off">
+            </div>
+        </div>
+
+        <div class="field">
+            <label class="label" for="f-content">Instructions</label>
+            <div class="control">
+                <textarea class="textarea agent-content" id="f-content" name="content"
+                          placeholder="System prompt / instructions for this agent...">{{ content }}</textarea>
+            </div>
+        </div>
+    </form>
+</div>
+<div class="drawer-footer">
+    <div class="buttons is-right mb-0">
+        <button type="button" class="button" onclick="closeDrawer()">Cancel</button>
+        <button type="submit" class="button is-primary" form="agent-form">Save</button>
+    </div>
+</div>

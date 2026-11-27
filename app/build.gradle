@@ -7,6 +7,7 @@ plugins {
 dependencies {
     implementation project(':base')
     implementation project(':providers:anthropic')
+    implementation project(':providers:claude-code')
     implementation project(':providers:google')
     implementation project(':providers:ollama')
     implementation project(':providers:openai')
@@ -15,6 +16,10 @@ dependencies {
     implementation project(':plugins:telegram')
     implementation project(':plugins:playwright')
     implementation project(':plugins:brave')
+    implementation project(':plugins:whatsapp')
+    implementation project(':plugins:teams')
+
+    implementation project(':ui')
 
     implementation 'org.springframework.ai:spring-ai-client-chat'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
@@ -23,8 +28,21 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
     implementation(libs.pebble.spring.starter)
+    implementation(libs.webjars.locator.lite)
+    runtimeOnly(libs.webjars.marked)
+    runtimeOnly(libs.webjars.dompurify)
+    runtimeOnly(libs.webjars.font.inter)
+    runtimeOnly(libs.webjars.font.jetbrains.mono)
+    runtimeOnly(libs.webjars.htmx)
+    runtimeOnly(libs.webjars.htmx.ext.ws)
+    runtimeOnly(libs.webjars.bulma)
+    runtimeOnly(libs.webjars.bulma.timeline)
 
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
+    // Runs from the IDE can pick up ui's development-mode build info, which needs Vaadin's dev server.
+    // developmentOnly keeps it out of the boot jar and the Jib image, which stay in production mode.
+    developmentOnly platform(libs.bom.vaadin)
+    developmentOnly 'com.vaadin:vaadin-dev'
     runtimeOnly 'com.h2database:h2'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
@@ -34,6 +52,17 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-websocket-test'
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation libs.spring.modulith.starter.test
+    testImplementation libs.archunit.junit5
+    // Runs the chat page's JavaScript (Markdown rendering, sanitizing) in headless Chromium
+    testImplementation(libs.playwright)
+}
+
+// JobRunr's BOM also sets a Playwright version, and the higher of it and ours wins on the runtime
+// classpath; compile the tests against the versions they run with, or API changes between the two
+// fail with NoSuchMethodError.
+configurations.testCompileClasspath {
+    shouldResolveConsistentlyWith(configurations.testRuntimeClasspath)
 }
 
 bootRun {
@@ -41,6 +70,8 @@ bootRun {
 }
 
 jib {
+    // Like bootJar, leave developmentOnly dependencies (devtools, vaadin-dev) out of the image
+    configurationName = 'productionRuntimeClasspath'
     to {
         image = 'jobrunr.io/javaclaw'
         tags = ['latest']

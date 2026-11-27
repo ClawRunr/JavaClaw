@@ -1,6 +1,8 @@
 package ai.javaclaw.channels.telegram;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.ChannelRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +26,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -90,7 +94,7 @@ class TelegramChannelTest {
 
         channel.consume(updateFromUnknownUser("other_user"));
 
-        verify(agent, never()).respondTo(anyString(), anyString());
+        verify(agent, never()).respondTo(any(AgentRequest.class));
         verifyNoInteractions(telegramClient);
     }
 
@@ -101,31 +105,31 @@ class TelegramChannelTest {
     @Test
     void usernameMatchingIsCaseInsensitive() {
         TelegramChannel channel = channel("Allowed_User");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.respondTo(any(AgentRequest.class))).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
 
-        verify(agent).respondTo(anyString(), anyString());
+        verify(agent).respondTo(any(AgentRequest.class));
     }
 
     @Test
     void stripsLeadingAtFromConfiguredUsername() {
         TelegramChannel channel = channel("@Allowed_User");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.respondTo(any(AgentRequest.class))).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
 
-        verify(agent).respondTo(anyString(), anyString());
+        verify(agent).respondTo(any(AgentRequest.class));
     }
 
     @Test
     void stripsLeadingAtFromIncomingUsername() {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.respondTo(any(AgentRequest.class))).thenReturn("hi");
 
         channel.consume(updateFrom("@allowed_user", "hello", 42L, null));
 
-        verify(agent).respondTo(anyString(), anyString());
+        verify(agent).respondTo(any(AgentRequest.class));
     }
 
     // -----------------------------------------------------------------------
@@ -135,27 +139,27 @@ class TelegramChannelTest {
     @Test
     void usesChannelChatIdAsConversationId() {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.respondTo(any(AgentRequest.class))).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
 
-        verify(agent).respondTo(eq("telegram-42"), eq("hello"));
+        verify(agent).respondTo(AgentRequest.chat("telegram-42", SessionChannel.TELEGRAM, "hello"));
     }
 
     @Test
     void includesMessageThreadIdInConversationId() {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.respondTo(any(AgentRequest.class))).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, 567));
 
-        verify(agent).respondTo(eq("telegram-42-567"), eq("hello"));
+        verify(agent).respondTo(AgentRequest.chat("telegram-42-567", SessionChannel.TELEGRAM, "hello"));
     }
 
     @Test
     void sendsAgentResponseToCorrectChatId() throws TelegramApiException {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.respondTo(any(AgentRequest.class))).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
 
@@ -166,7 +170,7 @@ class TelegramChannelTest {
     @Test
     void passesMessageThreadIdToSendMessage() throws TelegramApiException {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.respondTo(any(AgentRequest.class))).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, 567));
 
@@ -177,7 +181,7 @@ class TelegramChannelTest {
     @Test
     void doesNotSetMessageThreadIdWhenAbsent() throws TelegramApiException {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString())).thenReturn("hi");
+        when(agent.respondTo(any(AgentRequest.class))).thenReturn("hi");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, null));
 
@@ -206,7 +210,7 @@ class TelegramChannelTest {
     @Test
     void sendMessageConvertsMarkdownToTelegramHtml() throws TelegramApiException {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString()))
+        when(agent.respondTo(any(AgentRequest.class)))
                 .thenReturn("Here is **bold** text and a [link](https://example.com)");
 
         channel.consume(updateFrom("allowed_user", "hello", 42L, 567));
@@ -222,7 +226,7 @@ class TelegramChannelTest {
     @Test
     void sendMessageFallbacksToSendingRawTextWhenFailingToSendHtml() throws TelegramApiException {
         TelegramChannel channel = channel("allowed_user");
-        when(agent.respondTo(anyString(), anyString()))
+        when(agent.respondTo(any(AgentRequest.class)))
                 .thenReturn("Here is **bold** text and an image: ![An example image](/assets/images/clawrunr.png)");
 
         when(telegramClient.execute(argThat((SendMessage msg) ->

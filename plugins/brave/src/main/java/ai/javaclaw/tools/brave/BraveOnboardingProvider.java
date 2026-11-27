@@ -10,7 +10,7 @@ import java.io.IOException;
 import java.util.Map;
 
 @Component
-@Order(55)
+@Order(56)
 public class BraveOnboardingProvider implements OnboardingProvider {
 
     public static final String AGENT_BROWSER_BRAVE_API_KEY = "agent.browser.brave.api-key";

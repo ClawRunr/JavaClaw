@@ -45,7 +45,7 @@ public class JavaClawApplication {
         @EventListener
         public void on(ConfigurationChangedEvent configurationChangedEvent) {
             ApplicationArguments args = applicationContext.getBean(ApplicationArguments.class);
-            
+
             Thread thread = new Thread(() -> {
                 try {
                     Thread.sleep(2000);

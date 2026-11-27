@@ -6,10 +6,10 @@ JavaClaw is a Java-based personal AI assistant that runs on your own devices. It
 
 ## Features
 
-- **Multi-Channel Support** — Chat UI (WebSocket), Telegram, Discord, and an extensible plugin-based channel architecture
+- **Multi-Channel Support** — Chat UI (WebSocket), Telegram, Discord, WhatsApp, Microsoft Teams, and an extensible plugin-based channel architecture
 - **Task Management** — Create, schedule (one-off, delayed, or recurring via cron), and track tasks as human-readable Markdown files
 - **Extensible Skills** — Load skills from `workspace/skills/` and from `skills jar` packages on the classpath
-- **LLM Provider Choice** — Plug in OpenAI, Anthropic, or Ollama (local); switchable during onboarding
+- **LLM Provider Choice** — Plug in OpenAI, Anthropic, your Claude Pro/Max subscription (via the official Claude Code CLI), or Ollama (local); switchable during onboarding
 - **MCP Support** — Model Context Protocol client for connecting external tool servers
 - **Shell & File Access** — Agent can read/write files and run bash commands on your machine
 - **Smart Web Tools** — Brave web search and intelligent web scraping
@@ -42,6 +42,7 @@ JavaClaw/
     ├── brave/      # Brave web search integration
     ├── discord/    # Discord Gateway channel plugin
     ├── playwright/ # Browser automation tools
+    ├── teams/      # Microsoft Teams webhook channel plugin
     └── telegram/   # Telegram long-poll channel plugin
 ```
 
@@ -51,7 +52,7 @@ JavaClaw/
 
 - Java 25
 - Gradle (or use the included `./gradlew` wrapper)
-- An LLM API key (OpenAI / Anthropic) **or** a running [Ollama](https://ollama.com) instance
+- An LLM API key (OpenAI / Anthropic), a Claude Pro/Max subscription with [Claude Code](https://code.claude.com) installed and logged in (`claude auth login`), **or** a running [Ollama](https://ollama.com) instance
 
 ### Run
 
@@ -70,7 +71,7 @@ Then open [http://localhost:8080/onboarding](http://localhost:8080/onboarding) t
 ### Onboarding
 
 1. **Welcome** — Introduction screen
-2. **Provider** — Choose Ollama, OpenAI, or Anthropic
+2. **Provider** — Choose Ollama, OpenAI, Anthropic, or Claude subscription
 3. **Credentials** — Enter your API key and model name
 4. **Agent Prompt** — Customize `workspace/AGENT.md` with your personal info (name, email, role, etc.)
 5. **MCP Servers** — Optionally configure Model Context Protocol servers
@@ -125,6 +126,106 @@ agent:
       token: <your-discord-bot-token>
       allowed-user: <your-discord-user-id>
 ```
+
+### WhatsApp
+
+WhatsApp connectivity uses [wacli](https://github.com/openclaw/wacli), a small Go CLI that pairs as a
+WhatsApp Web linked device. There is no Java WhatsApp library — JavaClaw launches `wacli` as a
+subprocess and receives inbound messages through a local webhook.
+
+**1. Install wacli**
+
+```bash
+# macOS
+brew install openclaw/tap/wacli
+
+# Linux
+go install github.com/openclaw/wacli@latest
+```
+
+**2. Pair your phone**
+
+Run the following and scan the QR code with WhatsApp on your phone (Settings → Linked devices → Link a
+device):
+
+```bash
+wacli auth
+```
+
+**3. Configure**
+
+Configure during onboarding or by setting:
+
+```yaml
+agent:
+  channels:
+    whatsapp:
+      enabled: true
+      allowed-chat-jid: "1234567890@s.whatsapp.net"
+```
+
+`allowed-chat-jid` is the JID of the single WhatsApp chat the assistant responds in. During
+onboarding you pick it by name from your synced chats, so you rarely need to type it — WhatsApp also
+issues opaque `@lid` identifiers that cannot be derived from a phone number. To find one yourself:
+
+```bash
+wacli chats list                    # every chat, with its JID
+wacli chats list --query "alice"    # search by name
+```
+
+Only one-to-one chats are accepted. Groups, newsletters and broadcasts are deliberately refused:
+the assistant authorises by chat, so every member of a group would be able to instruct it — and the
+agent can run shell commands. Point it at your own "Message Yourself" chat to talk to the assistant
+from your own number. `wacli` itself is taken from your `PATH`.
+
+> **Disclaimer:** wacli uses the unofficial WhatsApp Web protocol — use at your own risk.
+
+### Microsoft Teams
+
+Teams delivers messages to a bot through [Azure Bot Service](https://learn.microsoft.com/azure/bot-service/):
+Microsoft calls a public HTTPS webhook on JavaClaw, and JavaClaw answers through the Bot Framework
+Connector API.
+
+**1. Expose the webhook**
+
+The webhook lives at `/api/teams/webhook`. Azure must be able to reach it over public HTTPS, so for
+a self-hosted setup put a tunnel in front of JavaClaw, for example:
+
+```bash
+ngrok http 8080   # gives you https://<random>.ngrok-free.app
+```
+
+**2. Create the bot**
+
+In the Azure portal, create an **Azure Bot** resource, set its messaging endpoint to
+`https://<your-host>/api/teams/webhook`, and enable the **Microsoft Teams** channel. Note the bot's
+App ID, create a client secret for it, and note your Tenant ID.
+
+**3. Configure**
+
+Configure during onboarding or by setting:
+
+```yaml
+agent:
+  channels:
+    teams:
+      enabled: true
+      app-id: <bot-app-id>
+      app-secret: <bot-client-secret>
+      tenant-id: <azure-tenant-id>
+      allowed-user-id: <your-entra-object-id>
+```
+
+`allowed-user-id` is the only Teams user the assistant responds to: either your Microsoft Entra
+object ID (Azure portal → Microsoft Entra ID → Users) or your Teams user ID (`29:...`). It is
+required, because the agent can run shell commands; without it every message is ignored. Every
+webhook call must carry a valid Bot Framework JWT (signature, issuer, audience, expiry and
+`serviceUrl` are checked), so requests that do not come from Microsoft are rejected with `401`.
+
+The assistant only responds in personal (1:1) chats with the bot. Messages in team channels or group
+chats are ignored, even from the allowed user, because replies can contain shell output or file
+contents. Messages the agent sends on its own, e.g. from scheduled tasks, also only go to the 1:1 chat.
+
 
 ## Skills
 

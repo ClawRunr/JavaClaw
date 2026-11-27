@@ -13,6 +13,7 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -45,6 +46,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 Htmx.oobInnerHtml("channel-selector", conversationSelector),
                 Htmx.oobInnerHtml("chat-messages", bubbles),
                 Htmx.oobInnerHtml("chat-input-area", inputArea));
+        chatChannel.flushPendingMessages();
     }
 
     @Override
@@ -87,19 +89,18 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
         // Echo user message + show typing indicator
         chatChannel.sendHtml(
-                Htmx.oobAppend("chat-messages", ChatHtml.userBubble(userMessage)),
+                Htmx.oobAppend("chat-messages", ChatHtml.userBubble(userMessage, Instant.now())),
                 Htmx.oobReplace("typing-indicator", ChatHtml.typingDots()));
 
         try {
-            // Call agent (blocking — background tasks may push messages via ChatChannel during this)
-            String response = chatChannel.chat(conversationId, userMessage);
-            chatChannel.sendHtml(
-                    Htmx.oobAppend("chat-messages", ChatHtml.agentBubble(response)),
-                    Htmx.oobReplace("typing-indicator", ""));
+            // Call agent (blocking — the response is streamed to the client as JSON frames
+            // by ChatChannel while this call runs; background tasks may push messages too)
+            chatChannel.chat(conversationId, userMessage);
+            chatChannel.sendHtml(Htmx.oobReplace("typing-indicator", ""));
         } catch (RuntimeException ex) {
             log.warn("Chat request failed for conversation {}", conversationId, ex);
             chatChannel.sendHtml(
-                    Htmx.oobAppend("chat-messages", ChatHtml.agentBubble(genericUserFacingError(ex))),
+                    Htmx.oobAppend("chat-messages", ChatHtml.agentError(genericUserFacingError(ex), Instant.now())),
                     Htmx.oobReplace("typing-indicator", ""));
         }
     }

@@ -1,0 +1,79 @@
+<div id="onboarding-step" class="step-fragment">
+    <p class="is-uppercase has-text-weight-semibold has-text-grey is-size-7 mb-3">Step {{ currentStepNumber }} of {{ totalSteps }}</p>
+    <h2 class="title is-3 mb-3">Connect WhatsApp.</h2>
+    <p class="subtitle is-5 has-text-grey-dark">JavaClaw talks to WhatsApp through
+        <a href="https://github.com/openclaw/wacli" target="_blank">wacli</a>, a small CLI that pairs as a
+        WhatsApp Web linked device. Only the WhatsApp account you configure below will be allowed to
+        message your assistant.
+    </p>
+
+    {% if error %}
+    <article class="message is-danger">
+        <div class="message-body">{{ error }}</div>
+    </article>
+    {% endif %}
+
+    {% if not wacliInstalled %}
+    <article class="message is-warning">
+        <div class="message-body">
+            <p class="has-text-weight-semibold mb-2">wacli is not installed</p>
+            <p class="mb-1">Install it, then click Continue:</p>
+            <pre class="mb-2">macOS:  brew install openclaw/tap/wacli
+Linux:  go install github.com/openclaw/wacli@latest</pre>
+        </div>
+    </article>
+    {% elseif not wacliPaired %}
+    <article class="message is-info">
+        <div class="message-body">
+            <p class="has-text-weight-semibold mb-2">Pair your phone</p>
+            <p class="mb-1">Run the following in your terminal and scan the QR code with WhatsApp on your phone
+                (Settings &rarr; Linked devices &rarr; Link a device):</p>
+            <pre class="mb-2">wacli auth</pre>
+            <p>Once pairing succeeds, click Continue.</p>
+        </div>
+    </article>
+    {% else %}
+    <article class="message is-success">
+        <div class="message-body">wacli is installed and paired. 🎉</div>
+    </article>
+    {% endif %}
+
+    <form method="post" action="/onboarding/whatsapp">
+        <div class="field">
+            <label class="label" for="whatsappAllowedChatJid">Chat to answer in</label>
+            <div class="control">
+                <input id="whatsappAllowedChatJid" class="input is-medium" type="text" name="whatsappAllowedChatJid"
+                       value="{{ whatsappAllowedChatJid }}" list="whatsappChatOptions"
+                       placeholder="{% if whatsappChats is empty %}1234567890@s.whatsapp.net{% else %}Start typing a name…{% endif %}"
+                       autocomplete="off" autocapitalize="none" spellcheck="false">
+                <datalist id="whatsappChatOptions">
+                    {% for chat in whatsappChats %}
+                    <option value="{{ chat.name }} — {{ chat.jid }}"></option>
+                    {% endfor %}
+                </datalist>
+            </div>
+            {% if whatsappChats is empty %}
+            <p class="help">Type the chat's JID — a contact's number followed by
+                <code>@s.whatsapp.net</code>, or a <code>@lid</code>. Once wacli has synced, this box
+                suggests your chats by name instead. Run <code>wacli chats list</code> to see them.</p>
+            {% else %}
+            <p class="help">Start typing a contact's name and pick them from the list. Only messages in
+                that one chat are answered. Group chats are not offered: the assistant would take
+                instructions from everyone in the group.</p>
+            {% endif %}
+        </div>
+
+        <div class="notification is-light mt-4">
+            <p class="has-text-weight-semibold mb-2">Stored properties</p>
+            <p class="has-text-grey-dark">agent.channels.whatsapp.enabled</p>
+            <p class="has-text-grey-dark">agent.channels.whatsapp.allowed-chat-jid</p>
+        </div>
+
+        <div class="buttons mt-4">
+            <a class="button is-light is-medium" href="{{ previousStepUrl }}">Back</a>
+            <button class="button is-primary is-medium" type="submit">Continue</button>
+            {% if isOptional %}<a class="button is-ghost is-medium" href="{{ nextStepUrl }}">Skip</a>{% endif %}
+            <span class="button is-ghost is-medium htmx-indicator">Saving...</span>
+        </div>
+    </form>
+</div>

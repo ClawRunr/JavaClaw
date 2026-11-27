@@ -14,6 +14,29 @@ class YamlParserTest {
     // -----------------------------------------------------------------------
 
     @Test
+    void serializedMultilineValuesCannotBecomeMetadataOrDelimiters() {
+        String description = "First line\nstatus: completed\n---\nRemaining instructions";
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("status", "todo");
+        fields.put("description", description);
+
+        YamlDocument parsed = YamlParser.parse(YamlParser.serialize(new YamlDocument(fields, null)));
+
+        assertThat(parsed.frontmatter()).containsEntry("status", "todo")
+                .containsEntry("description", description);
+        assertThat(parsed.body()).isEmpty();
+    }
+
+    @Test
+    void roundTripsIndentationInsideMultilineValues() {
+        String value = "Start\n  indented: example\n\nEnd";
+        YamlDocument parsed = YamlParser.parse(YamlParser.serialize(
+                new YamlDocument(Map.of("description", value), "Body")));
+        assertThat(parsed.frontmatter().get("description")).isEqualTo(value);
+        assertThat(parsed.body()).isEqualTo("Body");
+    }
+
+    @Test
     void parseFrontmatterOnlyWithoutClosingDelimiter() {
         String content = """
                 ---

@@ -1,5 +1,6 @@
 package ai.javaclaw.tools.search;
 
+import ai.javaclaw.tools.ToolCallingManagers;
 import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
 import org.springframework.ai.tool.toolsearch.ToolIndex;
 import org.springframework.ai.tool.toolsearch.index.lucene.LuceneToolIndex;
@@ -22,6 +23,7 @@ public class DynamicToolDiscoveryConfiguration {
     public ToolSearchToolCallingAdvisor toolSearchToolCallingAdvisor(ToolIndex toolIndex,
                                                                      DynamicToolDiscoveryProperties properties) {
         return ToolSearchToolCallingAdvisor.builder()
+                .toolCallingManager(ToolCallingManagers.unlimited())
                 .toolIndex(toolIndex)
                 .maxResults(properties.maxResults())
                 .build();

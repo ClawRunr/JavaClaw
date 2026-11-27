@@ -12,11 +12,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class ChatWebSocketHandlerTest {
 
@@ -26,14 +22,14 @@ class ChatWebSocketHandlerTest {
         WebSocketSession session = mock(WebSocketSession.class);
         ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
 
-        when(chatChannel.chat("web", "hello")).thenThrow(new RuntimeException("""
+        doThrow(new RuntimeException("""
                 HTTP 401 - {
                     "error": {
                         "message": "Incorrect API key provided: Test.",
                         "code": "invalid_api_key"
                     }
                 }
-                """));
+                """)).when(chatChannel).chat("web", "hello");
 
         handler.handleTextMessage(session, new TextMessage(new ObjectMapper().writeValueAsString(Map.of(
                 "type", "userMessage",
@@ -54,6 +50,7 @@ class ChatWebSocketHandlerTest {
                 .contains("ar-typing");
 
         assertThat(String.join("", htmlCaptor.getAllValues().get(1)))
+                .contains("ar-msg--agent ar-msg--error")
                 .contains("An error occurred while contacting the AI provider")
                 .contains("Details: HTTP 401 - {")
                 .contains("typing-indicator")
@@ -66,7 +63,7 @@ class ChatWebSocketHandlerTest {
         WebSocketSession session = mock(WebSocketSession.class);
         ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
 
-        when(chatChannel.chat(anyString(), anyString())).thenThrow(new RuntimeException("boom"));
+        doThrow(new RuntimeException("boom")).when(chatChannel).chat(anyString(), anyString());
 
         handler.handleTextMessage(session, new TextMessage(new ObjectMapper().writeValueAsString(Map.of(
                 "type", "userMessage",
@@ -83,6 +80,33 @@ class ChatWebSocketHandlerTest {
         assertThat(String.join("", htmlCaptor.getAllValues().get(1)))
                 .contains("An error occurred while contacting the AI provider")
                 .contains("Details: boom");
+    }
+
+    @Test
+    void handleUserMessageClearsTypingIndicatorWithoutAppendingBubbleWhenResponseWasStreamed() throws Exception {
+        ChatChannel chatChannel = mock(ChatChannel.class);
+        WebSocketSession session = mock(WebSocketSession.class);
+        ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper());
+
+        // the response is streamed to the client by ChatChannel while chat() runs
+
+        handler.handleTextMessage(session, new TextMessage(new ObjectMapper().writeValueAsString(Map.of(
+                "type", "userMessage",
+                "conversationId", "web",
+                "message", "hello"
+        ))));
+
+        ArgumentCaptor<String[]> htmlCaptor = ArgumentCaptor.forClass(String[].class);
+        var inOrder = inOrder(chatChannel);
+        inOrder.verify(chatChannel).sendHtml(htmlCaptor.capture());
+        inOrder.verify(chatChannel).chat("web", "hello");
+        inOrder.verify(chatChannel).sendHtml(htmlCaptor.capture());
+        verifyNoMoreInteractions(chatChannel);
+
+        assertThat(String.join("", htmlCaptor.getAllValues().get(1)))
+                .contains("typing-indicator")
+                .doesNotContain("streamed response")
+                .doesNotContain("ar-msg--agent");
     }
 
     @Test

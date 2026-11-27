@@ -1,9 +1,7 @@
 package ai.javaclaw.providers.ollama;
 
 import ai.javaclaw.onboarding.AgentOnboardingProvider;
-import org.springframework.stereotype.Component;
 
-@Component
 public class OllamaAgentOnboardingProvider implements AgentOnboardingProvider {
 
     @Override

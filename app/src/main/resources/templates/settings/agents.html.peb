@@ -1,0 +1,102 @@
+{% extends "../base" %}
+{% block title %} · Agents{% endblock %}
+
+{% block head %}
+<style>
+    body { background-color: #f6f8fc; }
+    .settings-main { max-width: 880px; margin: 0 auto; padding: 2.5rem 1.25rem; }
+    .agent-card { display: flex; align-items: center; gap: 1rem; }
+    .agent-meta { flex: 1 1 auto; min-width: 0; }
+    .agent-name { font-weight: 700; font-size: 1.05rem; }
+    .agent-sub { color: #5b6b7b; font-size: .9rem; }
+
+    .drawer-backdrop {
+        position: fixed; inset: 0; background: rgba(10,15,25,.35);
+        opacity: 0; visibility: hidden; transition: opacity .2s ease; z-index: 40;
+    }
+    .drawer-backdrop.is-open { opacity: 1; visibility: visible; }
+    .drawer {
+        position: fixed; top: 0; right: 0; height: 100%; width: 520px; max-width: 94vw;
+        background: #fff; box-shadow: -8px 0 24px rgba(10,15,25,.18);
+        transform: translateX(100%); transition: transform .22s ease; z-index: 41;
+        display: flex; flex-direction: column;
+    }
+    .drawer.is-open { transform: translateX(0); }
+    .drawer-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid #eceff4; }
+    .drawer-body { padding: 1.5rem; overflow-y: auto; flex: 1 1 auto; }
+    .drawer-footer { padding: 1rem 1.5rem; border-top: 1px solid #eceff4; }
+    textarea.agent-content { min-height: 16rem; font-family: "SFMono-Regular", "Menlo", monospace; }
+</style>
+{% endblock %}
+
+{% block content %}
+<nav class="navbar has-background-dark" role="navigation" aria-label="main navigation">
+    <div class="navbar-brand">
+        <span class="navbar-item">
+            <img class="brand-mascot" src="/brand/icon-192.png" alt="ClawRunr" width="28" height="28" draggable="false">
+            <div class="brand-lockup">
+                <p class="brand-word"><span class="brand-agent">Java</span><span class="brand-runr">Claw</span></p>
+            </div>
+        </span>
+    </div>
+    <div class="navbar-end">
+        <div class="navbar-item">
+            <a href="/chat" class="button is-small is-dark" hx-boost="false">Back to chat</a>
+        </div>
+    </div>
+</nav>
+
+<div class="settings-main">
+    <div class="level mb-5">
+        <div class="level-left">
+            <div>
+                <h1 class="title is-3 mb-1">Agents</h1>
+                <p class="subtitle is-6 has-text-grey">Agents the main assistant can delegate to. Each runs on a provider and model.</p>
+            </div>
+        </div>
+        <div class="level-right">
+            <button class="button is-primary"
+                    hx-get="/settings/agents/new"
+                    hx-target="#agent-drawer"
+                    hx-swap="innerHTML">Add Agent</button>
+        </div>
+    </div>
+
+    <div id="agents-list"
+         hx-get="/settings/agents/fragments/list"
+         hx-trigger="load"
+         hx-target="this"
+         hx-swap="innerHTML"></div>
+</div>
+
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<aside class="drawer" id="agent-drawer" aria-hidden="true"
+       hx-on:htmx:after-swap="openDrawer()"></aside>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function openDrawer() {
+        document.getElementById('agent-drawer').classList.add('is-open');
+        document.getElementById('drawer-backdrop').classList.add('is-open');
+    }
+    function closeDrawer() {
+        document.getElementById('agent-drawer').classList.remove('is-open');
+        document.getElementById('drawer-backdrop').classList.remove('is-open');
+    }
+    document.getElementById('drawer-backdrop').addEventListener('click', closeDrawer);
+
+    // Provider change -> suggest that provider's default model.
+    document.addEventListener('change', (e) => {
+        if (e.target && e.target.id === 'f-provider') {
+            const opt = e.target.selectedOptions && e.target.selectedOptions[0];
+            document.getElementById('f-model').value = opt ? (opt.dataset.defaultModel || '') : '';
+        }
+    });
+
+    // Allow 422 validation-error responses to swap their body into the drawer.
+    document.body.addEventListener('htmx:beforeSwap', (e) => {
+        if (e.detail.xhr && e.detail.xhr.status === 422) e.detail.shouldSwap = true;
+    });
+</script>
+{% endblock %}

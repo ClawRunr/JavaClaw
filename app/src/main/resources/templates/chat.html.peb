@@ -3,265 +3,126 @@
 {% block title %} Chat{% endblock %}
 
 {% block head %}
-<style>
-.chat-page {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    background-color: hsl(229, 18%, 8%);
-}
-
-.chat-page > .navbar {
-    flex-shrink: 0;
-    border-bottom: 1px solid rgba(255, 255, 255, .06);
-}
-
-.chat-body {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    scroll-behavior: smooth;
-}
-.chat-body::-webkit-scrollbar { width: 4px; }
-.chat-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 4px; }
-
-.chat-body .container {
-    display: flex;
-    flex-direction: column;
-    min-height: 100%;
-    padding: 1.5rem 1.5rem .5rem;
-}
-
-#chat-messages {
-    margin-top: auto;
-    display: flex;
-    flex-direction: column;
-    gap: .875rem;
-    padding-bottom: .25rem;
-}
-
-.ar-msg {
-    display: flex;
-    align-items: flex-end;
-    gap: .55rem;
-    max-width: 76%;
-    animation: msg-in .22s cubic-bezier(.22, 1, .36, 1);
-}
-@keyframes msg-in {
-    from { opacity: 0; transform: translateY(8px) scale(.98); }
-    to   { opacity: 1; transform: translateY(0)   scale(1);   }
-}
-.ar-msg--user  { align-self: flex-end;  flex-direction: row-reverse; }
-.ar-msg--agent { align-self: flex-start; }
-
-.ar-msg__avatar {
-    flex-shrink: 0;
-    width: 30px; height: 30px;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: .58rem; font-weight: 800; letter-spacing: .04em;
-    background: hsl(160, 30%, 14%);
-    border: 1px solid color-mix(in srgb, var(--bulma-primary) 30%, transparent);
-    color: var(--bulma-primary);
-}
-
-.ar-msg__bubble {
-    padding: .6rem .95rem;
-    border-radius: 1.1rem;
-    line-height: 1.65;
-    white-space: pre-wrap;
-    word-break: break-word;
-}
-.ar-msg--user  .ar-msg__bubble {
-    background: var(--bulma-primary);
-    color: #fff;
-    border-bottom-right-radius: .25rem;
-    box-shadow: 0 3px 14px color-mix(in srgb, var(--bulma-primary) 40%, transparent);
-}
-.ar-msg--agent .ar-msg__bubble,
-.ar-typing__dots {
-    background: hsl(228, 22%, 13%);
-    border: 1px solid rgba(255, 255, 255, .07);
-    border-radius: 1.1rem;
-    border-bottom-left-radius: .25rem;
-}
-
-.ar-msg--agent .ar-msg__bubble {
-    color: #c8cee0;
-}
-
-.ar-typing { display: flex; align-items: flex-end; gap: .55rem; padding-top: .5rem; animation: msg-in .22s cubic-bezier(.22,1,.36,1); }
-.ar-typing__dots {
-    display: flex; gap: .3rem; align-items: center;
-    padding: .65rem .9rem;
-}
-.ar-typing__dots span {
-    display: block; width: 6px; height: 6px; border-radius: 50%;
-    background: color-mix(in srgb, var(--bulma-primary) 65%, transparent);
-    animation: bounce 1.2s ease infinite;
-}
-.ar-typing__dots span:nth-child(2) { animation-delay: .15s; }
-.ar-typing__dots span:nth-child(3) { animation-delay: .30s; }
-@keyframes bounce {
-    0%, 60%, 100% { transform: translateY(0);    opacity: .3; }
-    30%            { transform: translateY(-5px); opacity: 1;  }
-}
-
-.chat-footer {
-    flex-shrink: 0;
-    padding: .875rem 1.5rem 1rem;
-    border-top: 1px solid rgba(255, 255, 255, .06);
-    background: hsl(229, 22%, 7%);
-}
-
-.chat-footer .textarea {
-    background: hsl(229, 20%, 12%);
-    border-color: rgba(255, 255, 255, .1);
-    color: #d8dde8;
-    border-radius: .75rem;
-    resize: none;
-    overflow-y: hidden;
-    min-height: 2.75rem;
-    max-height: 9rem;
-    padding: .6rem .9rem;
-    line-height: 1.5;
-    transition: border-color .15s, box-shadow .15s;
-}
-.chat-footer .textarea::placeholder { color: rgba(180, 195, 235, .28); }
-.chat-footer .textarea:focus {
-    border-color: var(--bulma-primary);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--bulma-primary) 16%, transparent);
-}
-.chat-footer .button.is-primary {
-    border-radius: .75rem;
-    height: 2.75rem;
-    align-self: flex-end;
-    box-shadow: 0 3px 12px color-mix(in srgb, var(--bulma-primary) 45%, transparent);
-}
-
-.chat-readonly-notice {
-    color: rgba(180, 195, 235, .45);
-    font-size: .875rem;
-    text-align: center;
-    padding: .4rem 0;
-}
-.chat-readonly-notice strong {
-    color: rgba(180, 195, 235, .7);
-}
-</style>
+<link rel="stylesheet" href="/webjars/fontsource__inter/400.css">
+<link rel="stylesheet" href="/webjars/fontsource__inter/500.css">
+<link rel="stylesheet" href="/webjars/fontsource__inter/600.css">
+<link rel="stylesheet" href="/webjars/fontsource__inter/700.css">
+<link rel="stylesheet" href="/webjars/fontsource__jetbrains-mono/400.css">
+<link rel="stylesheet" href="/webjars/fontsource__jetbrains-mono/500.css">
+<link rel="stylesheet" href="/chat/chat.css">
 {% endblock %}
 
 {% block content %}
 <div class="chat-page" hx-ext="ws" ws-connect="/ws/chat">
 
-    <nav class="navbar has-background-dark" role="navigation" aria-label="main navigation">
-        <div class="navbar-brand">
-            <span class="navbar-item">
-                <div class="brand-lockup">
-                    <p class="brand-word"><span class="brand-agent">Java</span><span class="brand-runr">Claw</span></p>
-                </div>
-            </span>
-        </div>
-        <div class="navbar-end">
-            <div class="navbar-item">
-                <div class="select is-small is-dark" id="channel-selector"></div>
-            </div>
-            <div class="navbar-item">
-                <a href="/onboarding" class="button is-small is-dark">
-                    <span>Settings</span>
-                </a>
-            </div>
-            <div class="navbar-item">
-                <a href="http://localhost:{{ jobrunrDashboardPort }}" target="_blank" rel="noopener noreferrer" class="button is-small is-dark">
-                    <span>JobRunr Dashboard</span>
-                </a>
-            </div>
-            <div class="navbar-item">
-                <span id="status-tag" class="tag is-success is-light is-rounded">Connected</span>
+    <header class="ar-header" role="banner">
+        <div class="ar-header__brand">
+            <img class="brand-mascot" src="/brand/icon-192.png" alt="ClawRunr" width="30" height="30" draggable="false">
+            <div class="brand-lockup">
+                <p class="brand-word"><span class="brand-agent">Java</span><span class="brand-runr">Claw</span></p>
             </div>
         </div>
-    </nav>
+        <div class="ar-conv">
+            <label class="ar-conv__label" for="channel-select">Conversation</label>
+            <div id="channel-selector"></div>
+        </div>
+        <nav class="ar-nav" aria-label="main navigation">
+            <a href="/settings/agents" class="ar-nav__link" hx-boost="false">Agents</a>
+            <a href="/onboarding" class="ar-nav__link" hx-boost="false">Settings</a>
+            <a href="http://localhost:{{ jobrunrDashboardPort }}" target="_blank" rel="noopener noreferrer" class="ar-nav__link">JobRunr Dashboard</a>
+        </nav>
+        <span id="status-tag" class="ar-status ar-status--ok" role="status">
+            <span class="ar-status__dot" aria-hidden="true"></span><span class="ar-status__text">Connected</span>
+        </span>
+    </header>
 
-    <div class="chat-body">
-        <div class="container">
+    <main class="chat-body">
+        <div class="ar-column">
             <div id="chat-messages">
             </div>
             <div id="typing-indicator"></div>
         </div>
-    </div>
+    </main>
 
-    <div class="chat-footer">
-        <div class="container" id="chat-input-area">
-            <form id="chat-form" ws-send hx-boost="false"
+    <footer class="chat-footer">
+        <div class="ar-column" id="chat-input-area">
+            <form id="chat-form" class="ar-composer" ws-send hx-boost="false"
                   hx-vals='js:{"type": "userMessage", "conversationId": document.getElementById("channel-select") ? document.getElementById("channel-select").value : "web"}'>
-                <div class="field is-grouped" style="align-items: flex-end; margin: 0;">
-                    <div class="control is-expanded">
-                        <textarea id="message-input" class="textarea" name="message" rows="1"
-                            placeholder="Message JavaClaw…"
-                            autocomplete="off" spellcheck="true" autofocus
-                            hx-trigger="keydown[key=='Enter'&&!shiftKey] consume"
-                            ws-send></textarea>
-                    </div>
-                    <div class="control">
-                        <button id="send-btn" type="submit" class="button is-primary" title="Send (Enter)">
-                            <span class="icon">
-                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-                                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                                </svg>
-                            </span>
-                        </button>
-                    </div>
-                </div>
+                <label for="message-input" class="is-sr-only">Message JavaClaw</label>
+                <textarea id="message-input" class="ar-composer__input" name="message" rows="1"
+                    placeholder="Message JavaClaw…"
+                    autocomplete="off" spellcheck="true" autofocus
+                    hx-trigger="keydown[key=='Enter'&&!shiftKey] consume"
+                    ws-send></textarea>
+                <button id="send-btn" type="submit" class="ar-composer__send" title="Send (Enter)" aria-label="Send">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                         stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 19V5M5 12l7-7 7 7"/>
+                    </svg>
+                </button>
             </form>
         </div>
-    </div>
+    </footer>
+
+    {# Markup the streaming script clones; it fills in text with textContent only. #}
+    <template id="agent-message-template">
+        <article class="ar-msg ar-msg--agent">
+            <header class="ar-msg__head">
+                <img class="ar-msg__mascot" src="/brand/icon-192.png" alt="" width="26" height="26" draggable="false">
+                <span class="ar-msg__author">JavaClaw</span>
+                <time class="ar-msg__time"></time>
+            </header>
+            <div class="ar-msg__body"></div>
+        </article>
+    </template>
+
+    <template id="tool-group-template">
+        <div class="ar-tools">
+            <button type="button" class="ar-tools__head" aria-expanded="true">
+                <span class="ar-tools__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.1-2.1z"/>
+                    </svg>
+                </span>
+                <span class="ar-tools__title"></span>
+                <span class="ar-tools__time"></span>
+                <span class="ar-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="ar-tools__list"></div>
+        </div>
+    </template>
+
+    <template id="tool-call-template">
+        <div class="ar-tool">
+            <button type="button" class="ar-tool__row" aria-expanded="false">
+                <span class="ar-tool__dot" aria-hidden="true"></span>
+                <span class="ar-tool__name"></span>
+                <span class="ar-tool__args"></span>
+                <span class="ar-tool__time"></span>
+                <span class="ar-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="ar-tool__detail" hidden>
+                <div class="ar-tool__label">Input</div>
+                <pre class="ar-tool__pre ar-tool__input"></pre>
+                <div class="ar-tool__output-section" hidden>
+                    <div class="ar-tool__label">Output
+                        <button type="button" class="ar-copy ar-tool__copy">Copy</button>
+                    </div>
+                    <pre class="ar-tool__pre ar-tool__output"></pre>
+                </div>
+            </div>
+        </div>
+    </template>
 
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.2/ws.js"></script>
-<script>
-// htmx handles: WebSocket connect/send, OOB DOM swaps, auto-scroll (show:bottom),
-// form reset (hx-on:htmx:wsAfterSend), and Enter-to-send (hx-trigger on textarea).
-// JS handles only what htmx cannot: updating two separate DOM nodes from one WS event.
-(function () {
-    const statusTag  = document.getElementById('status-tag');
-
-    document.body.addEventListener('htmx:wsOpen', function () {
-        statusTag.className = 'tag is-success is-light is-rounded';
-        statusTag.textContent = 'Connected';
-        var ta = document.getElementById('message-input');
-        var btn = document.getElementById('send-btn');
-        if (ta) ta.disabled = false;
-        if (btn) btn.disabled = false;
-    });
-    document.body.addEventListener('htmx:wsClose', function () {
-        statusTag.className = 'tag is-warning is-light is-rounded';
-        statusTag.textContent = 'Reconnecting…';
-        var ta = document.getElementById('message-input');
-        var btn = document.getElementById('send-btn');
-        if (ta) ta.disabled = true;
-        if (btn) btn.disabled = true;
-    });
-    document.body.addEventListener('htmx:wsError', function () {
-        statusTag.className = 'tag is-danger is-light is-rounded';
-        statusTag.textContent = 'Connection error';
-    });
-    document.body.addEventListener('keydown', function (e) {
-        if (e.target.id === 'message-input' && e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-        }
-    });
-    document.body.addEventListener('htmx:wsAfterSend', function () {
-        var ta = document.getElementById('message-input');
-        if (ta) { ta.value = ''; ta.style.height = ''; }
-    });
-    document.body.addEventListener('htmx:wsAfterMessage', function () {
-        var body = document.querySelector('.chat-body');
-        if (body) body.scrollTop = body.scrollHeight;
-    });
-}());
-</script>
+<script src="/webjars/htmx-ext-ws/ws.js"></script>
+<script src="/webjars/marked/lib/marked.umd.js"></script>
+<script src="/webjars/dompurify/dist/purify.min.js"></script>
+<script src="/chat/markdown.js"></script>
+<script src="/chat/time.js"></script>
+<script src="/chat/chat.js"></script>
 {% endblock %}

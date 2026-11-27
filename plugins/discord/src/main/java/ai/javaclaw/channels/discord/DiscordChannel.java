@@ -1,6 +1,8 @@
 package ai.javaclaw.channels.discord;
 
 import ai.javaclaw.agent.Agent;
+import ai.javaclaw.agent.AgentRequest;
+import ai.javaclaw.agent.SessionChannel;
 import ai.javaclaw.channels.Channel;
 import ai.javaclaw.channels.ChannelMessageReceivedEvent;
 import ai.javaclaw.channels.ChannelRegistry;
@@ -57,7 +59,7 @@ public class DiscordChannel extends ListenerAdapter implements Channel {
 
         lastChannel = channel;
         channelRegistry.publishMessageReceivedEvent(new ChannelMessageReceivedEvent(getName(), content));
-        String response = agent.respondTo(getConversationId(channel.getId()), content);
+        String response = agent.respondTo(AgentRequest.chat(getConversationId(channel.getId()), SessionChannel.DISCORD, content));
         reply(channel, response);
     }
 

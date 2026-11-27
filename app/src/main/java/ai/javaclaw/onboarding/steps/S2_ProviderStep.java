@@ -1,12 +1,14 @@
 package ai.javaclaw.onboarding.steps;
 
 import ai.javaclaw.configuration.ConfigurationManager;
+import ai.javaclaw.llm.LlmProviderProperties;
 import ai.javaclaw.onboarding.AgentOnboardingProvider;
 import ai.javaclaw.onboarding.AgentOnboardingProviders;
 import ai.javaclaw.onboarding.OnboardingProvider;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
@@ -17,8 +19,9 @@ import java.util.Map;
 public class S2_ProviderStep implements OnboardingProvider {
 
     static final String SESSION_PROVIDER = "onboarding.provider";
-    static final String SESSION_MODEL = "onboarding.model";
+    static final String SESSION_BASE_URL = "onboarding.baseUrl";
     static final String SESSION_API_KEY = "onboarding.apiKey";
+    static final String SESSION_MODEL = "onboarding.model";
 
     private final AgentOnboardingProviders agentOnboardingProviders;
     private final Environment env;
@@ -40,7 +43,7 @@ public class S2_ProviderStep implements OnboardingProvider {
     @Override
     public void prepareModel(Map<String, Object> session, Map<String, Object> model) {
         model.put("providers", agentOnboardingProviders.getAll());
-        model.put("selectedProvider", session.getOrDefault(SESSION_PROVIDER, env.getProperty("spring.ai.model.chat", "")));
+        model.put("selectedProvider", session.getOrDefault(SESSION_PROVIDER, env.getProperty("agent.llm.providers.default.provider", "")));
     }
 
     @Override
@@ -53,8 +56,9 @@ public class S2_ProviderStep implements OnboardingProvider {
         // Clear downstream session state when provider changes
         String currentProvider = (String) session.get(SESSION_PROVIDER);
         if (!agentOnboardingProvider.getId().equals(currentProvider)) {
-            session.remove(SESSION_MODEL);
+            session.remove(SESSION_BASE_URL);
             session.remove(SESSION_API_KEY);
+            session.remove(SESSION_MODEL);
         }
         session.put(SESSION_PROVIDER, agentOnboardingProvider.getId());
         return null;
@@ -63,14 +67,25 @@ public class S2_ProviderStep implements OnboardingProvider {
     @Override
     public void saveConfiguration(Map<String, Object> session, ConfigurationManager configurationManager) throws IOException {
         String providerId = (String) session.get(SESSION_PROVIDER);
-        String model = (String) session.get(SESSION_MODEL);
+        if (providerId == null || providerId.isBlank()) {
+            return;
+        }
+        String baseUrl = (String) session.getOrDefault(SESSION_BASE_URL, "");
         String apiKey = (String) session.getOrDefault(SESSION_API_KEY, "");
+        String model = (String) session.get(SESSION_MODEL);
 
         AgentOnboardingProvider agentOnboardingProvider = agentOnboardingProviders.getById(providerId);
+
+        // The single provider configured during onboarding becomes the "default" named provider.
+        String base = "agent.llm.providers." + LlmProviderProperties.DEFAULT_PROVIDER_NAME;
         Map<String, Object> props = new LinkedHashMap<>();
-        agentOnboardingProvider.saveProperty(props, "chat.options.model", model);
-        agentOnboardingProvider.saveProperty(props, "api-key", apiKey);
-        props.put("spring.ai.model.chat", agentOnboardingProvider.getId().replace(".", "-"));
+        props.put(base + ".provider", agentOnboardingProvider.getId());
+        // A null value removes the key, so a base URL or API key left by a previously configured provider is dropped.
+        props.put(base + ".base-url", StringUtils.hasText(baseUrl) ? baseUrl : null);
+        props.put(base + ".api-key", StringUtils.hasText(apiKey) ? apiKey : null);
+        if (StringUtils.hasText(model)) {
+            props.put(base + ".model", model);
+        }
         configurationManager.updateProperties(props);
     }
 }
