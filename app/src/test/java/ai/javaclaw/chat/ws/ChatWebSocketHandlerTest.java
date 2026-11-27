@@ -25,8 +25,8 @@ class ChatWebSocketHandlerTest {
     private final WebSocketSession tab = mock(WebSocketSession.class);
     /** Answers queued here run when the test says so, as if on their own thread. */
     private final List<Runnable> answers = new ArrayList<>();
-    private final Executor executor = answers::add;
-    private final ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper(), executor);
+    private final Executor concurrentChatExecutor = answers::add;
+    private final ChatWebSocketHandler handler = new ChatWebSocketHandler(chatChannel, new ObjectMapper(), concurrentChatExecutor);
 
     @Test
     void aMessageIsEchoedToItsSessionAndAnsweredOffTheSocketThread() throws Exception {

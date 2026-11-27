@@ -34,6 +34,7 @@ import java.util.function.Consumer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -219,8 +220,8 @@ class ChatChannelTest {
         chatChannel.chat(first.shownSessionId(), "milk?");
         chatChannel.chat(second.shownSessionId(), "museums?");
 
-        verify(agent).respondTo(org.mockito.ArgumentMatchers.eq(AgentRequest.chat(WEB, groceries, SessionChannel.WEB, "milk?")), any());
-        verify(agent).respondTo(org.mockito.ArgumentMatchers.eq(AgentRequest.chat(WEB, lisbon, SessionChannel.WEB, "museums?")), any());
+        verify(agent).respondTo(eq(AgentRequest.chat(WEB, groceries, SessionChannel.WEB, "milk?")), any());
+        verify(agent).respondTo(eq(AgentRequest.chat(WEB, lisbon, SessionChannel.WEB, "museums?")), any());
     }
 
     @Test

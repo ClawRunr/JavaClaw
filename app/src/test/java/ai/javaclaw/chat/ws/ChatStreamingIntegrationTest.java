@@ -22,9 +22,11 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -33,6 +35,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Full WebSocket round trip: a userMessage frame is sent to /ws/chat and the streamed
@@ -77,15 +80,16 @@ class ChatStreamingIntegrationTest {
     }
 
     /** The session the first view shows: the tab sends its messages there. */
-    private static String shownSessionId(BlockingQueue<String> received) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + 10_000;
-        while (System.currentTimeMillis() < deadline) {
-            String payload = received.poll(500, TimeUnit.MILLISECONDS);
-            if (payload == null) continue;
-            Matcher view = SHOWN_SESSION.matcher(payload);
-            if (view.find()) return view.group(1);
-        }
-        throw new AssertionError("No view arrived");
+    private static String shownSessionId(BlockingQueue<String> received) {
+        return await("a view").atMost(Duration.ofSeconds(10))
+                .until(() -> sessionShownIn(received.poll()), Objects::nonNull);
+    }
+
+    /** The session a view frame shows, or null for any other payload or none. */
+    private static String sessionShownIn(String payload) {
+        if (payload == null) return null;
+        Matcher view = SHOWN_SESSION.matcher(payload);
+        return view.find() ? view.group(1) : null;
     }
 
     private static final Pattern SHOWN_SESSION = Pattern.compile("id=\"chat-messages\" data-session-id=\"([^\"]+)\"");
@@ -94,18 +98,19 @@ class ChatStreamingIntegrationTest {
      * Collects the {@code type} of every JSON frame until the done frame arrives.
      * Non-JSON payloads (htmx HTML fragments) are ignored.
      */
-    private List<String> collectFrameTypesUntilDone(BlockingQueue<String> received) throws Exception {
+    private List<String> collectFrameTypesUntilDone(BlockingQueue<String> received) {
         List<String> frameTypes = new ArrayList<>();
-        long deadline = System.currentTimeMillis() + 10_000;
-        while (System.currentTimeMillis() < deadline) {
-            String payload = received.poll(500, TimeUnit.MILLISECONDS);
-            if (payload == null || !payload.startsWith("{")) continue;
+        await("the done frame").atMost(Duration.ofSeconds(10)).until(() -> {
+            for (String payload = received.poll(); payload != null; payload = received.poll()) {
+                if (!payload.startsWith("{")) continue;
 
-            @SuppressWarnings("unchecked")
-            Map<String, Object> frame = objectMapper.readValue(payload, Map.class);
-            frameTypes.add((String) frame.get("type"));
-            if ("done".equals(frame.get("type"))) break;
-        }
+                @SuppressWarnings("unchecked")
+                Map<String, Object> frame = objectMapper.readValue(payload, Map.class);
+                frameTypes.add((String) frame.get("type"));
+                if ("done".equals(frame.get("type"))) return true;
+            }
+            return false;
+        });
         return frameTypes;
     }
 

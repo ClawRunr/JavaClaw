@@ -34,17 +34,17 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     private final ChatChannel chatChannel;
     private final ObjectMapper objectMapper;
-    private final Executor answers;
+    private final Executor concurrentChatExecutor;
 
     @Autowired
     public ChatWebSocketHandler(ChatChannel chatChannel, ObjectMapper objectMapper) {
         this(chatChannel, objectMapper, Executors.newVirtualThreadPerTaskExecutor());
     }
 
-    ChatWebSocketHandler(ChatChannel chatChannel, ObjectMapper objectMapper, Executor answers) {
+    ChatWebSocketHandler(ChatChannel chatChannel, ObjectMapper objectMapper, Executor concurrentChatExecutor) {
         this.chatChannel = chatChannel;
         this.objectMapper = objectMapper;
-        this.answers = answers;
+        this.concurrentChatExecutor = concurrentChatExecutor;
     }
 
     @Override
@@ -111,7 +111,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 Htmx.oobAppend("chat-messages", ChatHtml.userBubble(question, Instant.now())),
                 Htmx.oobReplace("typing-indicator", ChatHtml.typingDots()));
 
-        answers.execute(() -> {
+        concurrentChatExecutor.execute(() -> {
             try {
                 chatChannel.chat(sessionId, question);
             } catch (RuntimeException ex) {

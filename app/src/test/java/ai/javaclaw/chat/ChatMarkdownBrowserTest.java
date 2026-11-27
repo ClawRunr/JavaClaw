@@ -43,6 +43,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Runs the web chat page in headless Chromium against the real chat WebSocket handler, with an
@@ -547,9 +549,8 @@ class ChatMarkdownBrowserTest {
 
         clickChat(page, "Other");
         page.waitForFunction("() => document.getElementById('chat-title').textContent === 'Other'");
-        finishHeldAnswer();
+        finishHeldAnswer(page);
 
-        assertNothingOfTheAnswerIsShown(page);
         clickChat(page, "Main");
         assertTheFullAnswerIsShown();
     }
@@ -562,9 +563,8 @@ class ChatMarkdownBrowserTest {
         page.fill("#message-input", "/new");
         page.click("#send-btn");
         page.waitForFunction("() => document.getElementById('chat-messages').textContent.includes('Started a new conversation.')");
-        finishHeldAnswer();
+        finishHeldAnswer(page);
 
-        assertNothingOfTheAnswerIsShown(page);
         clickChat(page, "Main");
         assertTheFullAnswerIsShown();
     }
@@ -578,9 +578,8 @@ class ChatMarkdownBrowserTest {
 
         page.click("#chat-sessions button[hx-vals*='viewSession']");
         page.waitForFunction("() => document.getElementById('chat-title').textContent === 'Weather'");
-        finishHeldAnswer();
+        finishHeldAnswer(page);
 
-        assertNothingOfTheAnswerIsShown(page);
         assertThat(page.textContent("#chat-messages")).contains("Rain tomorrow?");
         clickChat(page, "Main");
         assertTheFullAnswerIsShown();
@@ -595,7 +594,7 @@ class ChatMarkdownBrowserTest {
             clickChat(second, "Other");
 
             startHeldAnswer();
-            finishHeldAnswer();
+            finishHeldAnswer(second);
             waitForAnswer();
 
             assertNothingOfTheAnswerIsShown(second);
@@ -623,11 +622,16 @@ class ChatMarkdownBrowserTest {
                 + ".some(md => md.textContent.startsWith('Par'))");
     }
 
-    /** Lets the held answer finish, and gives any stray frame time to arrive. */
-    private void finishHeldAnswer() throws InterruptedException {
+    /**
+     * Lets the held answer finish, then checks for a while that none of it reaches {@code tab}: a
+     * stray frame would arrive within that time. Polls on the test thread, as Playwright requires.
+     */
+    private void finishHeldAnswer(Page tab) throws InterruptedException {
         agent.hold.countDown();
         assertThat(agent.finished.await(10, TimeUnit.SECONDS)).as("answer finished").isTrue();
-        page.waitForTimeout(300);
+        await("no stray frame").pollInSameThread()
+                .during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertNothingOfTheAnswerIsShown(tab));
     }
 
     private static void assertNothingOfTheAnswerIsShown(Page page) {
@@ -751,13 +755,16 @@ class ChatMarkdownBrowserTest {
     }
 
     private void assertNothingRan() {
-        // Give event handlers (onerror on a broken image, say) the chance to fire
-        page.waitForTimeout(300);
-        assertThat(page.evaluate("() => window.__xss")).as("script run by model output").isNull();
-        assertThat(page.locator("#chat-messages .ar-md img").count()).isZero();
-        assertThat(page.locator("#chat-messages script").count()).isZero();
-        assertThat(page.locator("#chat-messages [onerror], #chat-messages [onmouseover]").count()).isZero();
-        assertThat(page.locator("#chat-messages a[href^='javascript']").count()).isZero();
+        // Keep checking long enough for event handlers (onerror on a broken image, say) to fire
+        await("nothing ran").pollInSameThread()
+                .during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> {
+                    assertThat(page.evaluate("() => window.__xss")).as("script run by model output").isNull();
+                    assertThat(page.locator("#chat-messages .ar-md img").count()).isZero();
+                    assertThat(page.locator("#chat-messages script").count()).isZero();
+                    assertThat(page.locator("#chat-messages [onerror], #chat-messages [onmouseover]").count()).isZero();
+                    assertThat(page.locator("#chat-messages a[href^='javascript']").count()).isZero();
+                });
     }
 
     @Configuration(proxyBeanMethods = false)
