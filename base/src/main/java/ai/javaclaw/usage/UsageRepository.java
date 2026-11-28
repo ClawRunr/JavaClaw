@@ -1,7 +1,7 @@
 package ai.javaclaw.usage;
 
 /**
- * Persists {@link UsageRecord}s so they survive application restarts.
+ * Where {@link UsageRecord}s are kept.
  */
 public interface UsageRepository {
 
