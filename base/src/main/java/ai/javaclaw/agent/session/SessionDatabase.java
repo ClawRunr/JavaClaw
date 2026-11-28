@@ -15,7 +15,7 @@ import java.nio.file.Path;
  *
  * <p>Deliberately not a {@link DataSource} bean: Spring Boot backs off its own DataSource as soon
  * as one exists, and JobRunr would then write into this database. The pool is handed only to the
- * session repository.
+ * session repository and the token usage repository.
  */
 public final class SessionDatabase implements AutoCloseable {
 
@@ -40,8 +40,8 @@ public final class SessionDatabase implements AutoCloseable {
         new ResourceDatabasePopulator(new ClassPathResource(SCHEMA)).execute(pool);
     }
 
-    /** The pool, for the session repository only. */
-    DataSource dataSource() {
+    /** The pool, for the session and token usage repositories only. */
+    public DataSource dataSource() {
         return pool;
     }
 

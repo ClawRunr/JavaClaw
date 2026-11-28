@@ -95,7 +95,7 @@ User/Agent → TaskManager.create()
 
 **Prompt construction** (`MainChatClientProvider.java`):
 - System prompt = `workspace/AGENT.private.md` (falls back to `workspace/AGENT.md`) + `workspace/INFO.md`
-- **Advisors**: `SimpleLoggerAdvisor`, `ToolSearchToolCallingAdvisor` (falls back to plain `ToolCallingAdvisor`), Spring AI session advisors (chat history in `workspace/data/sessions`, see `agent/session/SessionStoreConfiguration`)
+- **Advisors**: `SimpleLoggerAdvisor`, `ToolSearchToolCallingAdvisor` (falls back to plain `ToolCallingAdvisor`), Spring AI session advisors (chat history in `workspace/data/sessions`, see `agent/session/SessionStoreConfiguration`), `TokenUsageAdvisor` (one row per model call / tool-loop round in the `token_usage` table of the sessions H2 database; conversation, channel and kind come from the session's metadata, and `UsageRecorder` writes off the calling thread)
 
 **Default Tools** always injected:
 | Tool | Purpose |
